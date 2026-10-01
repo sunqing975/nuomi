@@ -373,3 +373,12 @@ models.py 删除 BUILTIN_PROVIDERS（deepseek/doubao/local）与 PROVIDERS/MODEL
 - **去掉抽屉，侧栏常驻左列**：删 App 的 menu-toggle 汉堡 + sidebar-backdrop + sidebarOpen 状态、SideBar 的 open/onClose；layout.css 删 .menu-toggle/.sidebar-backdrop/.sidebar.open，≤1024 不再 fixed 抽屉而是 `220px 1fr`、≤720 `200px 1fr`（同一框内左分列）；i18n 删 app.openSidebar。
 - **修复挂载侧栏空 bug**：初始 useEffect 里 fetchThreads 只用来找标题忘了 setThreads（有已存会话时刷新后侧栏一直空，直到交互才恢复）→ 挂载即 refreshThreads() + 恢复分支补 setThreads(ts)。
 - 验证：tsc ✓；浏览器实测无汉堡/无遮罩、grid 200px 502px、sidebar relative、.chat-title 为 DIV 无图标 cursor auto、刷新后 hello 组 6 会话正常列出；后端 12 passed。
+
+## 标题生成并行化 + 占位标题全面清理（2026-10-01，用户要求「最好并行」）
+
+- **并行命名**：`event_stream()` 在回复流开始前 `asyncio.create_task(_generate_thread_title(req.message, ""))` 并行启动（只基于用户消息）；done 事件后立即取结果 → rename/回退 → 发 title。实测 done→title 延迟 **1632ms → 0ms**（llama 场景，回复期间标题已算好）。
+- **_generate_thread_title 支持空回复**：prompt 仅在有回复摘要时附加该行。
+- **占位标题统一**：projects.py 新增 `PLACEHOLDER_TITLES = {"", "新会话", "新建会话"}` + `is_placeholder_title()`；main.py 命名判断改用之（修复：前端曾传「新建会话」，后端旧判断只认 ""/"新会话" → 模型命名永不触发）。
+- **前端默认标题改空**：api.ts `createThread(projectId?, title = "")`（原默认 t("app.newThread") = "新建会话" —— 这是用户看到「还是新建会话」的根因之一）。
+- **主区/侧栏过滤占位**：ChatWindow `PLACEHOLDER_TITLES` 命中则不渲染标题（旧会话「新建会话」不再显示）；SideBar 同样将 新会话/新建会话 显示为「未命名」。
+- 验证：tsc ✓、12 passed ✓、dist 重建 ✓；浏览器端到端：新会话无占位标题 → 发消息 → 回复完成瞬间主区+侧栏出现「糯米是什么」，全程无「新建会话」。

@@ -407,7 +407,7 @@ export async function fetchThreads(projectId?: number | null): Promise<ThreadInf
   return body.threads;
 }
 
-export async function createThread(projectId?: number | null, title = t("app.newThread")): Promise<ThreadInfo> {
+export async function createThread(projectId?: number | null, title = ""): Promise<ThreadInfo> {
   const res = await fetch("/api/threads", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

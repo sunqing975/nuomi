@@ -35,7 +35,7 @@ from .models import (
     list_providers,
 )
 from .partner import assemble_system_prompt, load_partner
-from .projects import ProjectStore
+from .projects import ProjectStore, is_placeholder_title
 from .plugin_runtime import (
     MESSAGE_RECEIVED,
     MODEL_SWITCHED,
@@ -419,8 +419,8 @@ def build_app(
                 "为下面的对话起一个简短的会话标题。要求：4-12 个字，概括对话主题，"
                 "不要引号、不要标点、不要“标题”字样、不要英文。\n"
                 f"用户消息：{sample_user}\n"
-                f"回复摘要：{sample_reply}\n"
-                "标题："
+                + (f"回复摘要：{sample_reply}\n" if sample_reply else "")
+                + "标题："
             )
             resp = await asyncio.wait_for(
                 llm.ainvoke([("user", prompt)]), timeout=10
@@ -733,6 +733,11 @@ def build_app(
         async def event_stream():
             yield sse("meta", {"thread_id": thread_id})
             app.state.event_bus.publish(MESSAGE_RECEIVED, {"message": req.message, "thread_id": thread_id})
+            # 需要模型命名的会话：回复流开始前并行启动标题生成（只基于用户消息），
+            # 回复完成（done）后取结果回传 title 事件，标题几乎零等待回显
+            cur_title = (store.get_thread(thread_id) or {}).get("title")
+            need_title = is_new or is_placeholder_title(cur_title)
+            title_task = asyncio.create_task(_generate_thread_title(req.message, "")) if need_title else None
             full = ""
             reasoning = ""
             try:
@@ -784,10 +789,12 @@ def build_app(
                      "emotion": getattr(app.state, "last_emotion", "neutral"),
                      "usage": last_usage or None},
                 )
-                cur_title = (store.get_thread(thread_id) or {}).get("title")
-                if is_new or not cur_title or cur_title == "新会话":
-                    # 标题生成放 done 之后：不阻塞用户看到完整回复；失败回退首条消息截断
-                    title = await _generate_thread_title(req.message, full)
+                if title_task is not None:
+                    # 并行任务结果：通常已完成（回复期间已算好），失败回退首条消息截断
+                    try:
+                        title = title_task.result() if title_task.done() else await title_task
+                    except Exception:  # noqa: BLE001 — 命名失败回退
+                        title = None
                     if title:
                         store.rename_thread(thread_id, title)
                     else:
@@ -795,6 +802,8 @@ def build_app(
                     yield sse("title", {"thread_id": thread_id, "title": title or (store.get_thread(thread_id) or {}).get("title", "")})
                 await _trace_turn(app, key, req.message, full, "", started, user)
             except Exception as e:  # 流中途出错：告知前端而非挂死
+                if title_task is not None and not title_task.done():
+                    title_task.cancel()
                 yield sse("error", {"message": f"{e.__class__.__name__}: {e}"})
                 await _trace_turn(app, key, req.message, "", str(e), started, user)
 

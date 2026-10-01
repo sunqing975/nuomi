@@ -63,6 +63,9 @@ export default function ChatWindow({
 
   const status = listening ? t("chat.listening") : busy ? t("chat.typing") : teamMode ? t("chat.teamOnline") : t("chat.online");
   const suggestions = [t("chat.suggestion1"), t("chat.suggestion2"), t("chat.suggestion3")];
+  // 占位标题（模型命名前的默认值）不展示：只显示模型生成/用户改过的真实名字
+  const PLACEHOLDER_TITLES = ["新会话", "新建会话", "未命名"];
+  const showTitle = !!threadTitle && !PLACEHOLDER_TITLES.includes(threadTitle);
 
   return (
     <div className={`chat ${messages.length === 0 ? "empty" : ""}`}>
@@ -75,7 +78,7 @@ export default function ChatWindow({
         </div>
       </div>
 
-      {threadTitle && (
+      {showTitle && (
         <div className="chat-header">
           <div className="chat-title">{threadTitle}</div>
         </div>

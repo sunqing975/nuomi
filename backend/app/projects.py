@@ -11,6 +11,13 @@ import time
 from pathlib import Path
 from typing import Any
 
+# 会话占位标题（模型命名前的默认值）：命中则视为"未命名"，需要调用模型生成
+PLACEHOLDER_TITLES = {"", "新会话", "新建会话"}
+
+
+def is_placeholder_title(title: str | None) -> bool:
+    return (title or "") in PLACEHOLDER_TITLES
+
 
 def _iso(ts: float | None = None) -> str:
     return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts or time.time()))

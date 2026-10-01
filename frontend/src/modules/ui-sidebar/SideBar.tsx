@@ -152,7 +152,8 @@ export default function SideBar({
     return (
       <div className="thread-list">
         {visible.map((t) => {
-          const title = t.title || tr("sidebar.untitled");
+          // 占位标题（模型命名前）一律显示「未命名」，不出现「新建会话」等占位字
+          const title = (!t.title || t.title === "新会话" || t.title === "新建会话") ? tr("sidebar.untitled") : t.title;
           const isPinned = pinnedIds.has(t.id);
           return (
             <div
