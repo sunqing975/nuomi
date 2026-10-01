@@ -47,6 +47,7 @@ const zhCN = {
   "sidebar.newSession": "新会话",
   "sidebar.navPlugins": "插件",
   "sidebar.newProject": "＋ 新建项目",
+  "sidebar.newProjectPlaceholder": "输入项目名称",
   "sidebar.newThreadIn": "在该项目新建会话",
   "sidebar.deleteProject": "删除项目",
   "sidebar.deleteProjectConfirm": "删除项目「{name}」及其中全部会话？此操作不可恢复。",

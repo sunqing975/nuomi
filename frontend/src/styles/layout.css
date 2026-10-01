@@ -826,3 +826,17 @@
 .confirm-btn.primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
 .confirm-btn.primary.danger { background: var(--danger, #e5484d); border-color: var(--danger, #e5484d); }
 .confirm-btn.primary.danger:hover { filter: brightness(1.08); }
+.prompt-input {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-md);
+  background: var(--dsw-sidebar-fill);
+  color: var(--label);
+  font-size: var(--fs-13);
+  outline: none;
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+}
+.prompt-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+.prompt-input::placeholder { color: var(--label-3); }
+.confirm-btn:disabled { opacity: 0.45; cursor: not-allowed; }

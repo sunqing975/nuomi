@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import type { ProjectInfo, ThreadInfo } from "../../api";
 import { t as tr } from "../../i18n";
 import ConfirmDialog, { type ConfirmState } from "../ui-confirm/ConfirmDialog";
+import PromptDialog, { type PromptState } from "../ui-confirm/PromptDialog";
 import {
   ChevronDownIcon,
   FolderIcon,
@@ -98,6 +99,7 @@ export default function SideBar({
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameText, setRenameText] = useState("");
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
+  const [prompt, setPrompt] = useState<PromptState | null>(null);
   const [search, setSearch] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [pinned, setPinned] = useState<Record<number, string[]>>(() => loadJson(PIN_KEY, {}));
@@ -291,10 +293,14 @@ export default function SideBar({
           <button
             className="icon-btn"
             title={tr("sidebar.newProjectIcon")}
-            onClick={() => {
-              const name = window.prompt(tr("sidebar.newProjectName"));
-              if (name?.trim()) onCreateProject(name.trim());
-            }}
+            onClick={() =>
+              setPrompt({
+                message: tr("sidebar.newProjectName"),
+                placeholder: tr("sidebar.newProjectPlaceholder"),
+                confirmText: tr("common.confirm"),
+                onSubmit: (name) => onCreateProject(name),
+              })
+            }
           >
             <FolderPlusIcon />
           </button>
@@ -383,6 +389,7 @@ export default function SideBar({
         </button>
       </div>
       {confirm && <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />}
+      {prompt && <PromptDialog state={prompt} onClose={() => setPrompt(null)} />}
     </aside>
   );
 }

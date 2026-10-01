@@ -389,3 +389,8 @@ models.py 删除 BUILTIN_PROVIDERS（deepseek/doubao/local）与 PROVIDERS/MODEL
 - 替换全部 4 处 `window.confirm`：侧栏删除会话（含 detail「删除后不可恢复」）、删除项目、插件卸载、设置-删除自定义模型供应商。
 - 样式进 layout.css（.confirm-mask/.confirm-dialog，独立 keyframes，不依赖 settings.css）。
 - **坑（已修）**：弹窗最初渲染在 SideBar 内部，`.sidebar` 有 `backdrop-filter: blur(6px)` 会捕获 `position: fixed` 子元素 → 弹窗只覆盖侧栏、被「挤在左侧菜单」。修复：`createPortal` 挂到 `document.body`。验证：mask 覆盖全视口、dialog 居中、maskParent=BODY。
+
+## 新建项目输入弹窗替换 window.prompt + 数据丢失事故恢复（2026-10-01）
+
+- **PromptDialog**：`ui-confirm/PromptDialog.tsx`（复用 confirm 样式，输入框 + 取消/确认 + Enter 提交 + Esc 关闭 + 空值禁用确认，createPortal 到 body）；SideBar 新建项目改用它；i18n 新增 sidebar.newProjectPlaceholder。
+- **⚠️ 数据丢失事故与恢复**：用户浏览器测试删除功能时执行了 `DELETE /api/threads/c54cd303a5ae`、`/a4375a74b6db`、`/c9ecb978be4f` + `DELETE /api/projects/3`（hello）→ 级联删光全部会话，threads.db 全空。**恢复方法（可复用）**：会话消息都在 LangGraph checkpointer（`data/nuomi.sqlite` 的 checkpoints 表，msgpack 序列化，通过 `AsyncSqliteSaver.aget_tuple` 读取）；从 checkpoints 提取 12-hex thread_id + 首条 user 消息（截断 24 字作标题）+ checkpoint_id 时间（uuidv7 前 48bit 是时间戳但实测有偏差，采用**归一化**：以最新会话为「刚刚」统一平移）；重建 projects(id=3 hello)+threads 15 条。**教训：删除项目是级联高危操作，测试删除功能会真删数据；threads.db 未被 git 跟踪（backend/data 在 .gitignore），无备份会真丢。**
