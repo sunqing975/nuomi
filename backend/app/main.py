@@ -179,6 +179,30 @@ def _chunk_reasoning(chunk) -> str:
     return v if isinstance(v, str) else (v or "")
 
 
+def _chunk_tools(chunk) -> list[str]:
+    """流式 chunk 中正在调用的工具名（增量片段；去重由调用方累积）。
+
+    单 Agent（messages 模式）产出 AIMessageChunk，工具调用增量在 tool_call_chunks；
+    团队（updates 模式）产出完整 AIMessage，工具调用在 tool_calls。
+    """
+    names: list[str] = []
+    tcc = getattr(chunk, "tool_call_chunks", None)
+    if tcc:
+        for c in tcc:
+            if isinstance(c, dict) and c.get("name"):
+                names.append(c["name"])
+    if names:
+        return names
+    tcs = getattr(chunk, "tool_calls", None)
+    if tcs:
+        for c in tcs:
+            if isinstance(c, dict) and c.get("name"):
+                names.append(c["name"])
+            elif isinstance(c, object) and hasattr(c, "name") and getattr(c, "name", None):
+                names.append(c["name"])
+    return names
+
+
 def _merge_usage(acc: dict, chunk) -> None:
     """从最后一个 chunk 的 usage_metadata 提取 token 统计（取累计值即最终值）。"""
     um = getattr(chunk, "usage_metadata", None) or {}
@@ -740,6 +764,7 @@ def build_app(
             title_task = asyncio.create_task(_generate_thread_title(req.message, "")) if need_title else None
             full = ""
             reasoning = ""
+            tool_names: set[str] = set()
             try:
                 async for ev in agent.astream(
                     {"messages": [{"role": "user", "content": req.message}]},
@@ -755,6 +780,10 @@ def build_app(
                                 msgs = (payload or {}).get("messages", [])
                                 for m in msgs:
                                     if isinstance(m, AIMessageChunk) or type(m).__name__ == "AIMessage":
+                                        for tname in _chunk_tools(m):
+                                            if tname and tname not in tool_names:
+                                                tool_names.add(tname)
+                                                yield sse("tool", {"name": tname})
                                         text = _chunk_text(m)
                                         if text:
                                             full += text
@@ -777,6 +806,10 @@ def build_app(
                         if r:
                             reasoning += r
                             yield sse("reasoning", {"content": r})
+                        for tname in _chunk_tools(chunk):
+                            if tname and tname not in tool_names:
+                                tool_names.add(tname)
+                                yield sse("tool", {"name": tname})
                         _merge_usage(last_usage, chunk)
                 app.state.event_bus.publish(
                     RESPONSE_DONE,
