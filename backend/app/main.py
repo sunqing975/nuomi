@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import shutil
 import uuid
 from contextlib import asynccontextmanager
@@ -299,6 +300,11 @@ def build_app(
                 if summarize_keep_recent is not None:
                     svc["store"].set("summarize_keep_recent", keep_recent, persist=False)
 
+            # V2 兼容读点：rebuild_agents 委托给 agentLoop 服务（插件/设置变更事件已驱动重建）
+            def rebuild_agents():
+                loop = app.state.scope.get("agentLoop")
+                return loop.build_all() if loop is not None else None
+
             # 恢复上次激活的模型（自定义供应商 + 设置内 API Key；测试注入 llm 时不覆盖）
             if llm is None and svc is not None:
                 am = svc["store"].get("active_model")
@@ -313,13 +319,11 @@ def build_app(
                             app.state.model_provider = am["provider"]
                             app.state.model_name = am["model"]
                             app.state.llm_effort = effort
+                            # llm 在 composer.load() 之后才注册（依赖 settings），scope.register 不发事件，
+                            # 必须手动重建 agentLoop，否则重启后 agent=None、/api/chat 直接报错
+                            rebuild_agents()
                     except Exception:  # noqa: BLE001 — 模型不可用则回退默认
                         pass
-
-            # V2 兼容读点：rebuild_agents 委托给 agentLoop 服务（插件/设置变更事件已驱动重建）
-            def rebuild_agents():
-                loop = app.state.scope.get("agentLoop")
-                return loop.build_all() if loop is not None else None
 
             app.state.rebuild_agents = rebuild_agents
             if svc is not None and (summarize_max_messages is not None or summarize_keep_recent is not None):
@@ -392,6 +396,40 @@ def build_app(
             return [], {}
         cps = svc["store"].get("custom_providers", []) or []
         return [c for c in cps if isinstance(c, dict) and c.get("key")], _keys_of(svc)
+
+    async def _generate_thread_title(user_msg: str, reply: str) -> str | None:
+        """调用当前激活模型为会话生成简短标题（对齐 Harness LLM 命名）。
+
+        - 无激活模型 / 模型不可用 / 调用失败 → 返回 None（调用方回退截断标题）
+        - 非流式短调用：max_tokens=32、timeout=10s，不阻塞主回复（在 done 之后执行）
+        """
+        provider = getattr(app.state, "model_provider", None)
+        model = getattr(app.state, "model_name", None)
+        if not provider or provider == "none" or not model or model == "none":
+            return None
+        svc = app.state.scope.get("settings")
+        cps, keys = _model_ctx(svc)
+        try:
+            if find_model(provider, model, cps, keys) is None:
+                return None
+            llm = build_model_llm(provider, model, None, cps, keys, streaming=False, max_tokens=32)
+            sample_user = (user_msg or "").strip().replace("\n", " ")[:120]
+            sample_reply = (reply or "").strip().replace("\n", " ")[:200]
+            prompt = (
+                "为下面的对话起一个简短的会话标题。要求：4-12 个字，概括对话主题，"
+                "不要引号、不要标点、不要“标题”字样、不要英文。\n"
+                f"用户消息：{sample_user}\n"
+                f"回复摘要：{sample_reply}\n"
+                "标题："
+            )
+            resp = await asyncio.wait_for(
+                llm.ainvoke([("user", prompt)]), timeout=10
+            )
+            title = (getattr(resp, "content", "") or "").strip()
+            title = title.strip("\"'“”《》").splitlines()[0].strip()[:20]
+            return title or None
+        except Exception:  # noqa: BLE001 — 命名失败回退截断，不影响主流程
+            return None
 
     @app.get("/api/models")
     async def models():
@@ -735,8 +773,6 @@ def build_app(
                             reasoning += r
                             yield sse("reasoning", {"content": r})
                         _merge_usage(last_usage, chunk)
-                if is_new or (store.get_thread(thread_id) or {}).get("title") == "新会话":
-                    store.auto_title(thread_id, req.message)
                 app.state.event_bus.publish(
                     RESPONSE_DONE,
                     {"reply": full, "thread_id": thread_id, "user": user,
@@ -748,6 +784,14 @@ def build_app(
                      "emotion": getattr(app.state, "last_emotion", "neutral"),
                      "usage": last_usage or None},
                 )
+                if is_new or (store.get_thread(thread_id) or {}).get("title") == "新会话":
+                    # 标题生成放 done 之后：不阻塞用户看到完整回复；失败回退首条消息截断
+                    title = await _generate_thread_title(req.message, full)
+                    if title:
+                        store.rename_thread(thread_id, title)
+                    else:
+                        store.auto_title(thread_id, req.message)
+                    yield sse("title", {"thread_id": thread_id, "title": title or (store.get_thread(thread_id) or {}).get("title", "")})
                 await _trace_turn(app, key, req.message, full, "", started, user)
             except Exception as e:  # 流中途出错：告知前端而非挂死
                 yield sse("error", {"message": f"{e.__class__.__name__}: {e}"})

@@ -4,6 +4,7 @@ import {
   activateModel,
   createProject,
   createThread,
+  deleteProject,
   deleteThread,
   fetchPlugins,
   fetchProjects,
@@ -206,6 +207,22 @@ export default function App() {
     }
   };
 
+  const removeProject = async (id: number) => {
+    try {
+      await deleteProject(id);
+      if (currentProjectId === id) {
+        setCurrentProjectId(null);
+        setCurrentThreadId(null);
+        setThreadTitle(null);
+        setMessages([]);
+      }
+      refreshProjects();
+      refreshThreads();
+    } catch (e) {
+      setError(t("app.projectDeleteFailed", { msg: String(e instanceof Error ? e.message : e) }));
+    }
+  };
+
   const doToggle = async (name: string) => {
     try {
       await togglePlugin(name);
@@ -254,6 +271,10 @@ export default function App() {
             copy[copy.length - 1] = { ...last, reasoning: (last.reasoning ?? "") + chunk };
             return copy;
           }),
+        onTitle: (title) => {
+          setThreadTitle(title);
+          refreshThreads();
+        },
         onDone: (_id, _full, emotion, usage) => {
           setBusy(false);
           setMessages((m) => {
@@ -437,6 +458,7 @@ export default function App() {
           }
         }}
         onDeleteThread={(id) => void removeThread(id)}
+        onDeleteProject={(id) => void removeProject(id)}
       />
 
       {tab === "chat" && (

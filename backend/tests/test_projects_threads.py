@@ -62,6 +62,20 @@ def test_threads_crud(tmp_path):
         assert tid not in tids
 
 
+def test_delete_project_cascades_threads(tmp_path):
+    """回归：删项目必须级联删其会话（外键 PRAGMA 未启用时会话成不可见孤儿）。"""
+    app = _make_app(tmp_path)
+    with TestClient(app) as client:
+        pid = client.post("/api/projects", json={"name": "级联测试"}).json()["id"]
+        t1 = client.post("/api/threads", json={"project_id": pid, "title": "a"}).json()["id"]
+        t2 = client.post("/api/threads", json={"project_id": pid, "title": "b"}).json()["id"]
+        assert client.delete(f"/api/projects/{pid}").status_code == 200
+        threads = client.get("/api/threads").json()["threads"]
+        tids = [t["id"] for t in threads]
+        assert t1 not in tids and t2 not in tids
+        assert not any(t["project_id"] == pid for t in threads)  # 无孤儿
+
+
 def test_chat_creates_thread_and_auto_title(tmp_path):
     app = _make_app(tmp_path)
     with TestClient(app) as client:

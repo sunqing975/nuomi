@@ -59,14 +59,31 @@ def test_streaming_and_persistence(tmp_path):
         assert thread_id
         tokens = [e[1]["content"] for e in ev1 if e[0] == "token"]
         assert tokens, "应有逐字 token 事件"
-        assert "".join(tokens) == ev1[-1][1]["content"]  # done 完整回复 = token 拼接
-        assert ev1[-1][0] == "done"
+        done_ev = next(e for e in ev1 if e[0] == "done")
+        assert "".join(tokens) == done_ev[1]["content"]  # done 完整回复 = token 拼接
 
         # 第二轮：复用 thread_id，验证 checkpointer 记住了上轮
         r2 = client.post("/api/chat", json={"message": "还记得刚才吗", "thread_id": thread_id})
         ev2 = _parse_sse(r2.text)
         assert ev2[0][1]["thread_id"] == thread_id
-        assert ev2[-1][0] == "done"
+        assert any(e == "done" for e, _ in ev2)
+
+
+def test_new_thread_gets_title_event(tmp_path):
+    """新会话首轮后应收到 title 事件（无激活模型时回退首条消息截断标题）。"""
+    app = _make_app(tmp_path)
+    with TestClient(app) as client:
+        client.post("/api/plugins/team/toggle")
+        r = client.post("/api/chat", json={"message": "帮我总结一下今天的安排"})
+        assert r.status_code == 200
+        ev = _parse_sse(r.text)
+        done_idx = next(i for i, (e, _) in enumerate(ev) if e == "done")
+        title_events = [(e, d) for e, d in ev[done_idx + 1 :] if e == "title"]
+        assert title_events, "done 之后应有 title 事件"
+        _, td = title_events[0]
+        assert td["title"] == "帮我总结一下今天的安排"  # 回退截断标题
+        threads = client.get("/api/threads").json()["threads"]
+        assert threads[0]["title"] == td["title"]
 
 
 def test_health_reports_loaded_skills(tmp_path):

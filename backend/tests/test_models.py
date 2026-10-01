@@ -174,6 +174,11 @@ def test_custom_provider_activate_and_restore(tmp_path):
         assert app2.state.model_provider.startswith("custom-")
         assert app2.state.model_name == "gpt-4o"
         assert app2.state.llm_effort == "high"
+        # 回归：llm 在 composer.load() 之后注册，须手动重建 agentLoop，
+        # 否则重启后 agent=None、/api/chat 报 AttributeError（曾实测复现）
+        loop = app2.state.scope.get("agentLoop")
+        assert loop is not None and loop.agent is not None
+        assert app2.state.agent is not None
 
 
 def test_available_models_endpoint_validation(tmp_path):

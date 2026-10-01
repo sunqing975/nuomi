@@ -139,6 +139,8 @@ def build_model_llm(
     effort: str | None = None,
     custom_providers: list[dict] | None = None,
     provider_keys: dict | None = None,
+    streaming: bool = True,
+    max_tokens: int | None = None,
 ) -> ChatOpenAI:
     """按 供应商+模型 构建 ChatOpenAI（OpenAI 兼容；自定义供应商同协议）。
 
@@ -146,6 +148,7 @@ def build_model_llm(
     - effort 若在模型声明的 efforts 内，经 extra_body 透传 reasoning_effort
     - 模型声明的 max_output 绑定 max_tokens（截断单次输出）；context_window 存档备用（后续压缩/计量）
     - 内置供应商 key：设置写入优先，其次环境变量；自定义供应商用自带 api_key
+    - streaming=False 用于短任务（如会话自动命名）；显式 max_tokens 优先于模型声明的 max_output
     """
     keys = _provider_keys_map(provider_keys)
     cp = next((x for x in _merge_custom(custom_providers) if x["key"] == provider), None)
@@ -161,10 +164,12 @@ def build_model_llm(
         model=model_key,
         api_key=api_key,
         base_url=base_url,
-        streaming=True,
+        streaming=streaming,
     )
     max_output = mk.get("max_output")
-    if max_output:
+    if max_tokens is not None:
+        kwargs["max_tokens"] = int(max_tokens)
+    elif max_output:
         kwargs["max_tokens"] = int(max_output)
     if effort and effort in efforts:
         kwargs["extra_body"] = {"reasoning_effort": effort}

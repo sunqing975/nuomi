@@ -22,6 +22,9 @@ class ProjectStore:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(self.db_path))
         self._conn.row_factory = sqlite3.Row
+        # 启用外键：threads.project_id 有 ON DELETE CASCADE，
+        # 不开启的话删项目会把会话留在库里成为不可见孤儿（曾实测复现）
+        self._conn.execute("PRAGMA foreign_keys = ON")
         with self._conn:
             self._conn.executescript(
                 """
@@ -39,6 +42,11 @@ class ProjectStore:
                     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
                 );
                 """
+            )
+            # 清理历史孤儿会话（外键启用前删项目遗留的 dangling project_id）
+            self._conn.execute(
+                "DELETE FROM threads WHERE project_id IS NOT NULL "
+                "AND project_id NOT IN (SELECT id FROM projects)"
             )
 
     # ---------- 项目 ----------

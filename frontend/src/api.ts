@@ -7,6 +7,7 @@ export interface StreamHandlers {
   onMeta?: (threadId: string) => void;
   onToken?: (content: string) => void;
   onReasoning?: (content: string) => void;
+  onTitle?: (title: string) => void;
   onDone?: (threadId: string, full: string, emotion: string, usage: TokenUsage | null) => void;
   onError?: (message: string) => void;
 }
@@ -58,6 +59,9 @@ export async function streamChat(
         break;
       case "reasoning":
         handlers.onReasoning?.(String(payload.content ?? ""));
+        break;
+      case "title":
+        handlers.onTitle?.(String(payload.title ?? ""));
         break;
       case "done":
         handlers.onDone?.(

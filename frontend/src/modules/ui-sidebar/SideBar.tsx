@@ -77,6 +77,7 @@ export default function SideBar({
   onCreateProject,
   onRenameThread,
   onDeleteThread,
+  onDeleteProject,
 }: {
   tab: "chat" | "plugins";
   projects: ProjectInfo[];
@@ -96,6 +97,7 @@ export default function SideBar({
   onCreateProject: (name: string) => void;
   onRenameThread: (id: string, title: string) => void;
   onDeleteThread: (id: string) => void;
+  onDeleteProject: (id: number) => void;
 }) {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameText, setRenameText] = useState("");
@@ -344,6 +346,20 @@ export default function SideBar({
                   >
                     <PlusIcon size={12} />
                   </button>
+                  {g.projectId !== null && (
+                    <button
+                      className="group-del"
+                      title={tr("sidebar.deleteProject")}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (window.confirm(tr("sidebar.deleteProjectConfirm", { name: g.name }))) {
+                          onDeleteProject(g.projectId as number);
+                        }
+                      }}
+                    >
+                      <TrashIcon size={12} />
+                    </button>
+                  )}
                   <span className="model-caret group-caret">
                     <ChevronDownIcon />
                   </span>
