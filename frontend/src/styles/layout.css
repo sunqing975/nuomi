@@ -381,9 +381,43 @@
   flex-direction: column;
   flex: 1 1 0;
   min-height: 0;
-  overflow-y: auto;
+  overflow: hidden;
   padding: 0 var(--composer-clearance);
   scrollbar-gutter: stable;
+}
+
+/* assistant-ui 线程视口：消息列表的唯一滚动容器 */
+.thread-viewport {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 工具调用卡片（assistant-ui tool-call part） */
+.tool-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  margin: 2px 0 4px;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--accent-strong);
+  font-size: 11.5px;
+  animation: msg-in 0.3s var(--ease-out) both;
+}
+.tool-row .icon { width: 12px; height: 12px; }
+.tool-row code {
+  font-size: 11px;
+  color: var(--label-2);
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
 }
 .chat-header {
   display: flex;

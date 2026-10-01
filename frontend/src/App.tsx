@@ -1,5 +1,5 @@
 /** 糯米 V3 前端（Harness client 模块化布局）：表情层 + 聊天 + 输入栏（模型/思考强度）+ 项目/会话 + 插件 + 设置。 */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   activateModel,
   createProject,
@@ -14,7 +14,6 @@ import {
   loadThreadId,
   renameThread,
   saveThreadId,
-  streamChat,
   togglePlugin,
   type ModelProvider,
   type PluginInfo,
@@ -25,6 +24,8 @@ import {
 } from "./api";
 import { Msg } from "./modules/types";
 import type { CommandDef } from "./modules/ui-input/commands";
+import { AssistantRuntimeProvider, useLocalRuntime, useAuiState, type ThreadMessageLike } from "@assistant-ui/react";
+import { createNuomiAdapter } from "./modules/ui-chat/NuomiAdapter";
 import ChatWindow from "./modules/ui-chat/ChatWindow";
 import InputBar, { createRecognizer } from "./modules/ui-input/InputBar";
 import SideBar from "./modules/ui-sidebar/SideBar";
@@ -35,13 +36,35 @@ import { t } from "./i18n";
 
 interface ChatMsg extends Msg {
   reasoning?: string;
+  toolCalls?: string[];
   usage?: TokenUsage | null;
 }
 
+/** 后端历史消息 → assistant-ui 初始消息（reasoning/toolCalls 转成 part） */
+function toThreadMessages(msgs: ChatMsg[]): ThreadMessageLike[] {
+  type LikePart = Exclude<ThreadMessageLike["content"], string>[number];
+  return msgs.map((m): ThreadMessageLike => {
+    const content: LikePart[] = [];
+    if (m.role === "assistant") {
+      if (m.reasoning) content.push({ type: "reasoning", text: m.reasoning } as const);
+      for (const name of m.toolCalls ?? []) {
+        content.push({ type: "tool-call", toolCallId: name, toolName: name, args: {} } as const);
+      }
+    }
+    content.push({ type: "text", text: m.content } as const);
+    return { role: m.role, content };
+  });
+}
+
+/** 在 AssistantRuntimeProvider 内读取运行状态，供 InputBar/PluginManager 使用 */
+function BusyBridge({ children }: { children: (ctx: { busy: boolean; empty: boolean }) => ReactNode }) {
+  const busy = useAuiState((s) => s.thread.isRunning);
+  const empty = useAuiState((s) => s.thread.messages.length === 0);
+  return <>{children({ busy, empty })}</>;
+}
+
 export default function App() {
-  const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mood, setMood] = useState<PetMood>("idle");
   const [plugins, setPlugins] = useState<PluginInfo[]>([]);
@@ -71,6 +94,36 @@ export default function App() {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
   const recRef = useRef<ReturnType<typeof createRecognizer> | null>(null);
+
+  // assistant-ui runtime：消息状态/流式由 NuomiAdapter 桥接后端 /api/chat
+  const runtime = useLocalRuntime(
+    useMemo(
+      () =>
+        createNuomiAdapter({
+          onThreadId: (id) => {
+            saveThreadId(id);
+            setCurrentThreadId(id);
+            setThreadTitle(null);
+            refreshThreads();
+          },
+          onDone: ({ emotion }) => {
+            const e = (emotion || "neutral") as Emotion;
+            if (e !== "neutral") {
+              setMood(e);
+              window.setTimeout(() => setMood("idle"), 2600);
+            } else {
+              setMood("idle");
+            }
+            refreshThreads();
+          },
+          onTitle: (title) => {
+            setThreadTitle(title);
+            refreshThreads();
+          },
+        }),
+      []
+    )
+  );
 
   const voiceEnabled = plugins.find((p) => p.id === "voice-input")?.enabled ?? true;
   const teamMode = plugins.find((p) => p.id === "team")?.enabled ?? true;
@@ -118,7 +171,7 @@ export default function App() {
       fetch(`/api/threads/${saved}/messages`)
         .then((r) => r.json())
         .then((body) => {
-          setMessages((body.messages ?? []) as ChatMsg[]);
+          runtime.thread.reset(toThreadMessages((body.messages ?? []) as ChatMsg[]));
           fetchThreads(null).then((ts) => {
             setThreads(ts);
             const t = ts.find((x) => x.id === saved);
@@ -138,7 +191,7 @@ export default function App() {
     refreshThreads();
     setCurrentThreadId(null);
     setThreadTitle(null);
-    setMessages([]);
+    runtime.thread.reset([]);
   };
 
   const newThread = async () => {
@@ -146,7 +199,7 @@ export default function App() {
       const t = await createThread(currentProjectId);
       setCurrentThreadId(t.id);
       setThreadTitle(t.title);
-      setMessages([]);
+      runtime.thread.reset([]);
       saveThreadId(t.id);
       refreshThreads();
     } catch (e) {
@@ -161,7 +214,7 @@ export default function App() {
       const t = await createThread(projectId);
       setCurrentThreadId(t.id);
       setThreadTitle(t.title);
-      setMessages([]);
+      runtime.thread.reset([]);
       saveThreadId(t.id);
       refreshThreads();
     } catch (e) {
@@ -176,7 +229,7 @@ export default function App() {
       fetch(`/api/threads/${id}/messages`).then((r) => r.json()),
       fetchThreads(currentProjectId),
     ]);
-    setMessages((body.messages ?? []) as ChatMsg[]);
+    runtime.thread.reset(toThreadMessages((body.messages ?? []) as ChatMsg[]));
     const t = ts.find((x) => x.id === id);
     setThreadTitle(t?.title ?? null);
   };
@@ -187,7 +240,7 @@ export default function App() {
       if (id === currentThreadId) {
         setCurrentThreadId(null);
         setThreadTitle(null);
-        setMessages([]);
+        runtime.thread.reset([]);
       }
       refreshThreads();
     } catch (e) {
@@ -202,7 +255,7 @@ export default function App() {
         setCurrentProjectId(null);
         setCurrentThreadId(null);
         setThreadTitle(null);
-        setMessages([]);
+        runtime.thread.reset([]);
       }
       refreshProjects();
       refreshThreads();
@@ -222,73 +275,18 @@ export default function App() {
     }
   };
 
-  const send = async (textOverride?: string) => {
+  const send = (textOverride?: string) => {
     const text = (textOverride ?? input).trim();
-    if (!text || busy) return;
+    if (!text) return;
     setInput("");
     setError(null);
-    setMessages((m) => [...m, { role: "user", content: text }]);
-    setMessages((m) => [...m, { role: "assistant", content: "", reasoning: "" }]);
-    setBusy(true);
     setMood("typing");
-
-    const threadId = currentThreadId;
-    await streamChat(
-      text,
-      threadId,
-      {
-        onMeta: (id) => {
-          saveThreadId(id);
-          setCurrentThreadId(id);
-          if (!threadId) {
-            setThreadTitle(null);
-            refreshThreads();
-          }
-        },
-        onToken: (chunk) =>
-          setMessages((m) => {
-            const copy = [...m];
-            const last = copy[copy.length - 1];
-            copy[copy.length - 1] = { ...last, content: last.content + chunk };
-            return copy;
-          }),
-        onReasoning: (chunk) =>
-          setMessages((m) => {
-            const copy = [...m];
-            const last = copy[copy.length - 1];
-            copy[copy.length - 1] = { ...last, reasoning: (last.reasoning ?? "") + chunk };
-            return copy;
-          }),
-        onTitle: (title) => {
-          setThreadTitle(title);
-          refreshThreads();
-        },
-        onDone: (_id, _full, emotion, usage) => {
-          setBusy(false);
-          setMessages((m) => {
-            const copy = [...m];
-            const last = copy[copy.length - 1];
-            copy[copy.length - 1] = { ...last, usage: usage ?? undefined };
-            return copy;
-          });
-          const e = (emotion || "neutral") as Emotion;
-          if (e !== "neutral") {
-            setMood(e);
-            window.setTimeout(() => setMood("idle"), 2600);
-          } else {
-            setMood("idle");
-          }
-          refreshThreads();
-        },
-        onError: (msg) => {
-          setBusy(false);
-          setMood("idle");
-          setError(msg);
-          setMessages((m) => m.slice(0, -1));
-        },
-      },
-      effort
-    );
+    runtime.thread.append({
+      role: "user",
+      content: [{ type: "text", text }],
+      runConfig: { custom: { nuomiThreadId: currentThreadId } },
+      startRun: true,
+    });
   };
 
   const startVoice = () => {
@@ -356,7 +354,7 @@ export default function App() {
         name: "clear",
         description: t("app.clearThread"),
         handler: () => {
-          setMessages([]);
+          runtime.thread.reset([]);
           return t("app.threadCleared");
         },
       },
@@ -401,98 +399,105 @@ export default function App() {
   }, [theme]);
 
   return (
-    <div className="app">
-      <SideBar
-        tab={tab}
-        projects={projects}
-        threads={threads}
-        currentProjectId={currentProjectId}
-        currentThreadId={currentThreadId}
-        onTab={setTab}
-        onOpenSettings={() => setSettingsOpen(true)}
-        onNewThread={() => void newThread()}
-        onNewThreadIn={(pid) => void newThreadIn(pid)}
-        onSelectThread={(id) => void selectThread(id)}
-        onSelectProject={(id) => void selectProject(id)}
-        onCreateProject={async (name) => {
-          try {
-            const p = await createProject(name);
-            refreshProjects();
-            selectProject(p.id);
-          } catch (e) {
-            setError(t("app.newProjectFailed", { msg: String(e instanceof Error ? e.message : e) }));
-          }
-        }}
-        onRenameThread={async (id, title) => {
-          try {
-            await renameThread(id, title);
-            refreshThreads();
-            if (id === currentThreadId) setThreadTitle(title);
-          } catch (e) {
-            setError(t("app.renameFailed", { msg: String(e instanceof Error ? e.message : e) }));
-          }
-        }}
-        onDeleteThread={(id) => void removeThread(id)}
-        onDeleteProject={(id) => void removeProject(id)}
-      />
-
-      {tab === "chat" && (
-        <main className="main">
-          <ChatWindow
-            messages={messages}
-            error={error}
-            teamMode={teamMode}
-            threadTitle={threadTitle}
-            onSuggestion={(text) => void send(text)}
-            mood={mood}
-            busy={busy}
-            listening={listening}
-          />
-          <InputBar
-            input={input}
-            setInput={setInput}
-            busy={busy}
-            voiceEnabled={voiceEnabled}
-            listening={listening}
-            providers={providers}
-            activeProvider={activeProvider}
-            activeModelKey={activeModelKey}
-            effort={effort}
-            commands={commands}
-            hero={messages.length === 0}
-            onSend={() => void send()}
-            onVoice={startVoice}
-            onVoiceStop={stopVoice}
-            onSelectModel={(p, m) => void selectModel(p, m)}
-            onEffort={setEffort}
-          />
-        </main>
-      )}
-
-      {tab === "plugins" && (
-        <main className="main">
-          <PluginManager
-            plugins={plugins}
-            available={available}
-            busy={busy}
-            settings={settings}
-            onToggle={doToggle}
-            onChanged={() => void onPluginChanged()}
-          />
-        </main>
-      )}
-
-      {settingsOpen && (
-        <SettingsModal
-          settings={settings}
-          providers={providers}
-          theme={theme}
-          onThemeToggle={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
-          onClose={() => setSettingsOpen(false)}
-          onSettingsChanged={() => fetchSettings().then(setSettings).catch(() => {})}
-          onModelsChanged={() => fetchProviders().then((r) => setProviders(r.providers)).catch(() => {})}
+    <AssistantRuntimeProvider runtime={runtime}>
+      <div className="app">
+        <SideBar
+          tab={tab}
+          projects={projects}
+          threads={threads}
+          currentProjectId={currentProjectId}
+          currentThreadId={currentThreadId}
+          onTab={setTab}
+          onOpenSettings={() => setSettingsOpen(true)}
+          onNewThread={() => void newThread()}
+          onNewThreadIn={(pid) => void newThreadIn(pid)}
+          onSelectThread={(id) => void selectThread(id)}
+          onSelectProject={(id) => void selectProject(id)}
+          onCreateProject={async (name) => {
+            try {
+              const p = await createProject(name);
+              refreshProjects();
+              selectProject(p.id);
+            } catch (e) {
+              setError(t("app.newProjectFailed", { msg: String(e instanceof Error ? e.message : e) }));
+            }
+          }}
+          onRenameThread={async (id, title) => {
+            try {
+              await renameThread(id, title);
+              refreshThreads();
+              if (id === currentThreadId) setThreadTitle(title);
+            } catch (e) {
+              setError(t("app.renameFailed", { msg: String(e instanceof Error ? e.message : e) }));
+            }
+          }}
+          onDeleteThread={(id) => void removeThread(id)}
+          onDeleteProject={(id) => void removeProject(id)}
         />
-      )}
-    </div>
+
+        {tab === "chat" && (
+          <main className="main">
+            {error && <div className="error">{error}</div>}
+            <ChatWindow
+              teamMode={teamMode}
+              threadTitle={threadTitle}
+              onSuggestion={(text) => void send(text)}
+              mood={mood}
+            />
+            <BusyBridge>
+              {({ busy, empty }) => (
+                <InputBar
+                  input={input}
+                  setInput={setInput}
+                  busy={busy}
+                  voiceEnabled={voiceEnabled}
+                  listening={listening}
+                  providers={providers}
+                  activeProvider={activeProvider}
+                  activeModelKey={activeModelKey}
+                  effort={effort}
+                  commands={commands}
+                  hero={empty}
+                  onSend={() => void send()}
+                  onVoice={startVoice}
+                  onVoiceStop={stopVoice}
+                  onSelectModel={(p, m) => void selectModel(p, m)}
+                  onEffort={setEffort}
+                />
+              )}
+            </BusyBridge>
+          </main>
+        )}
+
+        {tab === "plugins" && (
+          <main className="main">
+            <BusyBridge>
+              {({ busy }) => (
+                <PluginManager
+                  plugins={plugins}
+                  available={available}
+                  busy={busy}
+                  settings={settings}
+                  onToggle={doToggle}
+                  onChanged={() => void onPluginChanged()}
+                />
+              )}
+            </BusyBridge>
+          </main>
+        )}
+
+        {settingsOpen && (
+          <SettingsModal
+            settings={settings}
+            providers={providers}
+            theme={theme}
+            onThemeToggle={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+            onClose={() => setSettingsOpen(false)}
+            onSettingsChanged={() => fetchSettings().then(setSettings).catch(() => {})}
+            onModelsChanged={() => fetchProviders().then((r) => setProviders(r.providers)).catch(() => {})}
+          />
+        )}
+      </div>
+    </AssistantRuntimeProvider>
   );
 }
