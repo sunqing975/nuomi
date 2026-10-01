@@ -27,8 +27,10 @@ DEFAULT_SYSTEM_PROMPT = (
 
 
 def build_llm(settings: Settings) -> ChatOpenAI:
+    from .models import DeepSeekChat
+
     # 无 temperature（对齐 dsh：不暴露温度，交给提供商默认）
-    return ChatOpenAI(
+    return DeepSeekChat(
         model=settings.llm_model,
         api_key=settings.llm_api_key,
         base_url=settings.llm_base_url,

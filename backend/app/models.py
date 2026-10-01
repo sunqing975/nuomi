@@ -14,6 +14,49 @@ import uuid
 
 from langchain_openai import ChatOpenAI
 
+
+class DeepSeekChat(ChatOpenAI):
+    """保留 OpenAI 兼容模型响应中的思考内容（reasoning_content）。
+
+    langchain-openai（1.6.x）的转换函数明确丢弃 reasoning_content 字段
+    （注释："reasoning_content ... are not extracted"），导致 DeepSeek 等
+    思考模型在流式/非流式输出里都拿不到思考过程。本类重写两个转换 hook，
+    把 reasoning_content 从原始响应里捞回 AIMessage.additional_kwargs，
+    供后端 SSE reasoning 事件与前端「深度思考」折叠块展示。
+    """
+
+    def _convert_chunk_to_generation_chunk(
+        self, chunk, default_chunk_class, base_generation_info=None
+    ):
+        gen = super()._convert_chunk_to_generation_chunk(
+            chunk, default_chunk_class, base_generation_info
+        )
+        if gen is not None:
+            try:
+                choices = chunk.get("choices") or (chunk.get("chunk") or {}).get("choices", [])
+                delta = (choices[0] or {}).get("delta") if choices else None
+                if isinstance(delta, dict) and delta.get("reasoning_content"):
+                    gen.message.additional_kwargs["reasoning_content"] = delta["reasoning_content"]
+            except Exception:
+                pass
+        return gen
+
+    def _create_chat_result(self, response, generation_info=None):
+        result = super()._create_chat_result(response, generation_info)
+        try:
+            choices = getattr(response, "choices", None) or []
+            msg = choices[0].message if choices else None
+            if msg is not None and result.generations:
+                rc = getattr(msg, "reasoning_content", None)
+                if not rc and hasattr(msg, "model_dump"):
+                    rc = msg.model_dump().get("reasoning_content")
+                if rc:
+                    result.generations[0].message.additional_kwargs["reasoning_content"] = rc
+        except Exception:
+            pass
+        return result
+
+
 # 思考强度展示名（effort 按模型声明）
 EFFORT_LABELS: dict[str, str] = {
     "low": "省电",
@@ -173,7 +216,7 @@ def build_model_llm(
         kwargs["max_tokens"] = int(max_output)
     if effort and effort in efforts:
         kwargs["extra_body"] = {"reasoning_effort": effort}
-    return ChatOpenAI(**kwargs)
+    return DeepSeekChat(**kwargs)
 
 
 def fetch_available_models(base_url: str, api_key: str = "") -> list[str]:
