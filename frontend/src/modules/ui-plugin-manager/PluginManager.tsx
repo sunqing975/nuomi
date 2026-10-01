@@ -3,6 +3,7 @@
  *  页头：标题 + 说明 + 刷新 + 添加插件。 */
 import { useRef, useState } from "react";
 import { t } from "../../i18n";
+import ConfirmDialog, { type ConfirmState } from "../ui-confirm/ConfirmDialog";
 import {
   PluginInfo,
   PluginSettingView,
@@ -92,6 +93,7 @@ export default function PluginManager({
   const [busyOp, setBusyOp] = useState(false);
   const [srcName, setSrcName] = useState("");
   const [srcPath, setSrcPath] = useState("");
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Record<string, unknown>>({});
@@ -126,19 +128,25 @@ export default function PluginManager({
     }
   };
 
-  const doUninstall = async (p: PluginInfo) => {
-    if (!window.confirm(t("plugin.uninstallConfirm", { name: p.name }))) return;
-    setErr(null);
-    setBusyOp(true);
-    try {
-      await uninstallPlugin(p.id);
-      setOpenId(null);
-      onChanged();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusyOp(false);
-    }
+  const doUninstall = (p: PluginInfo) => {
+    setConfirm({
+      message: t("plugin.uninstallConfirm", { name: p.name }),
+      danger: true,
+      confirmText: t("plugin.uninstall"),
+      onConfirm: async () => {
+        setErr(null);
+        setBusyOp(true);
+        try {
+          await uninstallPlugin(p.id);
+          setOpenId(null);
+          onChanged();
+        } catch (e) {
+          setErr(e instanceof Error ? e.message : String(e));
+        } finally {
+          setBusyOp(false);
+        }
+      },
+    });
   };
 
   const saveSettings = async (p: PluginInfo) => {
@@ -256,8 +264,8 @@ export default function PluginManager({
                 参数
               </button>
             )}
-            <button className="mini-btn danger" disabled={busyOp} onClick={() => void doUninstall(p)}>
-              卸载
+            <button className="mini-btn danger" disabled={busyOp} onClick={() => doUninstall(p)}>
+              {t("plugin.uninstall")}
             </button>
           </div>
         )}
@@ -351,6 +359,7 @@ export default function PluginManager({
           ))}
         </div>
       )}
+      {confirm && <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />}
     </div>
   );
 }

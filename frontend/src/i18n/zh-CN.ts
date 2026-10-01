@@ -38,6 +38,7 @@ const zhCN = {
   "sidebar.chooseProject": "选择项目",
   "sidebar.newProjectName": "新项目名：",
   "sidebar.deleteThreadConfirm": "删除会话「{title}」？",
+  "sidebar.deleteThreadDetail": "删除后不可恢复。",
   "sidebar.noThreads": "还没有会话，点「＋ 新会话」开始",
   "sidebar.workspace": "工作区",
   "sidebar.agent": "全能智能体",
@@ -129,6 +130,7 @@ const zhCN = {
   "plugin.empty": "暂无外部插件，点击上方“添加插件”安装",
   "plugin.refresh": "刷新",
   "plugin.title": "插件",
+  "plugin.uninstall": "卸载",
   "plugin.uninstallConfirm": "确定卸载插件「{name}」？将删除其在插件目录中的文件。",
 
   // ---- 设置 ----

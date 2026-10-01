@@ -382,3 +382,10 @@ models.py 删除 BUILTIN_PROVIDERS（deepseek/doubao/local）与 PROVIDERS/MODEL
 - **前端默认标题改空**：api.ts `createThread(projectId?, title = "")`（原默认 t("app.newThread") = "新建会话" —— 这是用户看到「还是新建会话」的根因之一）。
 - **主区/侧栏过滤占位**：ChatWindow `PLACEHOLDER_TITLES` 命中则不渲染标题（旧会话「新建会话」不再显示）；SideBar 同样将 新会话/新建会话 显示为「未命名」。
 - 验证：tsc ✓、12 passed ✓、dist 重建 ✓；浏览器端到端：新会话无占位标题 → 发消息 → 回复完成瞬间主区+侧栏出现「糯米是什么」，全程无「新建会话」。
+
+## 自定义确认弹窗替代 window.confirm（2026-10-01，用户反馈系统弹窗难看）
+
+- 新增 `frontend/src/modules/ui-confirm/ConfirmDialog.tsx`（通用确认弹窗：遮罩 + 居中卡片 + 危险红/主蓝按钮 + Esc 关闭 + autoFocus）。
+- 替换全部 4 处 `window.confirm`：侧栏删除会话（含 detail「删除后不可恢复」）、删除项目、插件卸载、设置-删除自定义模型供应商。
+- 样式进 layout.css（.confirm-mask/.confirm-dialog，独立 keyframes，不依赖 settings.css）。
+- **坑（已修）**：弹窗最初渲染在 SideBar 内部，`.sidebar` 有 `backdrop-filter: blur(6px)` 会捕获 `position: fixed` 子元素 → 弹窗只覆盖侧栏、被「挤在左侧菜单」。修复：`createPortal` 挂到 `document.body`。验证：mask 覆盖全视口、dialog 居中、maskParent=BODY。

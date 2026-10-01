@@ -6,6 +6,7 @@
 import { useEffect, useState } from "react";
 import type { ProjectInfo, ThreadInfo } from "../../api";
 import { t as tr } from "../../i18n";
+import ConfirmDialog, { type ConfirmState } from "../ui-confirm/ConfirmDialog";
 import {
   ChevronDownIcon,
   FolderIcon,
@@ -96,6 +97,7 @@ export default function SideBar({
 }) {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameText, setRenameText] = useState("");
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [search, setSearch] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [pinned, setPinned] = useState<Record<number, string[]>>(() => loadJson(PIN_KEY, {}));
@@ -212,7 +214,12 @@ export default function SideBar({
                       title={tr("common.delete")}
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (window.confirm(tr("sidebar.deleteThreadConfirm", { title }))) onDeleteThread(t.id);
+                        setConfirm({
+                          message: tr("sidebar.deleteThreadConfirm", { title }),
+                          detail: tr("sidebar.deleteThreadDetail"),
+                          danger: true,
+                          onConfirm: () => onDeleteThread(t.id),
+                        });
                       }}
                     >
                       <TrashIcon />
@@ -346,9 +353,11 @@ export default function SideBar({
                       title={tr("sidebar.deleteProject")}
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (window.confirm(tr("sidebar.deleteProjectConfirm", { name: g.name }))) {
-                          onDeleteProject(g.projectId as number);
-                        }
+                        setConfirm({
+                          message: tr("sidebar.deleteProjectConfirm", { name: g.name }),
+                          danger: true,
+                          onConfirm: () => onDeleteProject(g.projectId as number),
+                        });
                       }}
                     >
                       <TrashIcon size={12} />
@@ -373,6 +382,7 @@ export default function SideBar({
           {tr("sidebar.settings")}
         </button>
       </div>
+      {confirm && <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />}
     </aside>
   );
 }

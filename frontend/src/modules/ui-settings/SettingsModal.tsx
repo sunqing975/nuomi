@@ -4,6 +4,7 @@
  *  明确不做登录与多用户（用户要求）。 */
 import { useEffect, useState } from "react";
 import { t } from "../../i18n";
+import ConfirmDialog, { type ConfirmState } from "../ui-confirm/ConfirmDialog";
 import { THEMES } from "../../themes";
 import {
   CustomModelRow,
@@ -315,6 +316,7 @@ export default function SettingsModal({
   const [section, setSection] = useState<SectionId>("general");
   const [err, setErr] = useState<string | null>(null);
   const [busyOp, setBusyOp] = useState(false);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [adding, setAdding] = useState(false);
   const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
   const toggleExpand = (key: string) =>
@@ -505,19 +507,25 @@ export default function SettingsModal({
                             }
                           }}
                           onCancel={() => toggleExpand(p.key)}
-                          onDelete={async () => {
-                            if (!window.confirm(t("settings.models.deleteConfirm", { name: p.label }))) return;
-                            setErr(null);
-                            setBusyOp(true);
-                            try {
-                              await deleteCustomProvider(p.key);
-                              onModelsChanged();
-                            } catch (e) {
-                              setErr(e instanceof Error ? e.message : String(e));
-                            } finally {
-                              setBusyOp(false);
-                            }
-                          }}
+                          onDelete={() =>
+                            setConfirm({
+                              message: t("settings.models.deleteConfirm", { name: p.label }),
+                              danger: true,
+                              confirmText: t("common.delete"),
+                              onConfirm: async () => {
+                                setErr(null);
+                                setBusyOp(true);
+                                try {
+                                  await deleteCustomProvider(p.key);
+                                  onModelsChanged();
+                                } catch (e) {
+                                  setErr(e instanceof Error ? e.message : String(e));
+                                } finally {
+                                  setBusyOp(false);
+                                }
+                              },
+                            })
+                          }
                         />
                       </div>
                     )}
@@ -594,6 +602,7 @@ export default function SettingsModal({
 
         </div>
       </div>
+      {confirm && <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />}
     </div>
   );
 }
