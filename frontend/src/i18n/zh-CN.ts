@@ -32,7 +32,6 @@ const zhCN = {
   "app.themeToggled": "已切换{name}主题",
   "app.themeNameLight": "浅色",
   "app.themeNameDark": "深色",
-  "app.openSidebar": "打开侧栏",
 
   // ---- 侧边栏 ----
   "sidebar.rename": "重命名",
@@ -79,7 +78,6 @@ const zhCN = {
   "chat.charCount": "{n} 字",
   "chat.typing": "正在打字…",
   "chat.pondering": "让我想想…",
-  "chat.clickRename": "点击重命名",
   "chat.heroTitle": "我是糯米，一只果冻小猫伙伴",
   "chat.heroSub": "点一下试试，或者直接输入你的问题",
   "chat.heroFoot": "左下角可切换模型与思考强度；左侧「＋ 新会话」开启新对话。",

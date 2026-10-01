@@ -32,7 +32,6 @@ import PluginManager from "./modules/ui-plugin-manager/PluginManager";
 import SettingsModal from "./modules/ui-settings/SettingsModal";
 import { Emotion, PetMood } from "./modules/ui-avatar/PetBuddy";
 import { t } from "./i18n";
-import { MenuIcon } from "./modules/icons";
 
 interface ChatMsg extends Msg {
   reasoning?: string;
@@ -52,8 +51,6 @@ export default function App() {
   const [tab, setTab] = useState<"chat" | "plugins">("chat");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [listening, setListening] = useState(false);
-  // 移动端抽屉侧栏
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   // 项目 / 会话
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [threads, setThreads] = useState<ThreadInfo[]>([]);
@@ -114,6 +111,7 @@ export default function App() {
       }
     }).catch((e) => setError(t("app.modelsFailed", { msg: String(e) })));
     fetchSettings().then(setSettings).catch((e) => setError(t("app.settingsFailed", { msg: String(e) })));
+    refreshThreads(); // 侧栏会话列表：挂载即全量拉取（曾漏 setThreads，刷新后侧栏一直空）
     const saved = loadThreadId();
     if (saved) {
       setCurrentThreadId(saved);
@@ -122,6 +120,7 @@ export default function App() {
         .then((body) => {
           setMessages((body.messages ?? []) as ChatMsg[]);
           fetchThreads(null).then((ts) => {
+            setThreads(ts);
             const t = ts.find((x) => x.id === saved);
             if (t) {
               setThreadTitle(t.title);
@@ -180,17 +179,6 @@ export default function App() {
     setMessages((body.messages ?? []) as ChatMsg[]);
     const t = ts.find((x) => x.id === id);
     setThreadTitle(t?.title ?? null);
-  };
-
-  const renameCurrentThread = async (title: string) => {
-    if (!currentThreadId) return;
-    try {
-      await renameThread(currentThreadId, title);
-      setThreadTitle(title);
-      refreshThreads();
-    } catch (e) {
-      setError(t("app.renameFailed", { msg: String(e instanceof Error ? e.message : e) }));
-    }
   };
 
   const removeThread = async (id: string) => {
@@ -414,25 +402,12 @@ export default function App() {
 
   return (
     <div className="app">
-      {/* 移动端：汉堡按钮 + 抽屉遮罩（≤1024px 显示） */}
-      <button
-        className="menu-toggle"
-        aria-label={t("app.openSidebar")}
-        title={t("app.openSidebar")}
-        onClick={() => setSidebarOpen((v) => !v)}
-      >
-        <MenuIcon />
-      </button>
-      {sidebarOpen && <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />}
-
       <SideBar
         tab={tab}
         projects={projects}
         threads={threads}
         currentProjectId={currentProjectId}
         currentThreadId={currentThreadId}
-        open={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
         onTab={setTab}
         onOpenSettings={() => setSettingsOpen(true)}
         onNewThread={() => void newThread()}
@@ -468,7 +443,6 @@ export default function App() {
             error={error}
             teamMode={teamMode}
             threadTitle={threadTitle}
-            onRenameTitle={(title) => void renameCurrentThread(title)}
             onSuggestion={(text) => void send(text)}
             mood={mood}
             busy={busy}

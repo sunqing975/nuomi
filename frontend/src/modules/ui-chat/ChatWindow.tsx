@@ -1,10 +1,10 @@
-/** ui-chat：聊天窗——伙伴栏（表情+状态）+ 会话标题头 + 消息流 + 空态（建议芯片）+ 自动滚动。 */
+/** ui-chat：聊天窗——伙伴栏（表情+状态）+ 会话标题头（纯展示）+ 消息流 + 空态（建议芯片）+ 自动滚动。 */
 import { useEffect, useRef, useState } from "react";
 import { Msg } from "../types";
 import type { TokenUsage } from "../../api";
 import PetBuddy, { PetMood } from "../ui-avatar/PetBuddy";
 import { t } from "../../i18n";
-import { PencilIcon, SendIcon, SparkleIcon, WarnIcon, ZapIcon } from "../icons";
+import { SendIcon, SparkleIcon, WarnIcon, ZapIcon } from "../icons";
 
 interface ChatMsg extends Msg {
   reasoning?: string;
@@ -40,7 +40,6 @@ export default function ChatWindow({
   error,
   teamMode,
   threadTitle,
-  onRenameTitle,
   onSuggestion,
   mood,
   busy,
@@ -50,7 +49,6 @@ export default function ChatWindow({
   error: string | null;
   teamMode: boolean;
   threadTitle: string | null;
-  onRenameTitle: (title: string) => void;
   /** 空态建议芯片：点击直接把建议发出去 */
   onSuggestion: (text: string) => void;
   mood: PetMood;
@@ -58,8 +56,6 @@ export default function ChatWindow({
   listening: boolean;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
-  const [editingTitle, setEditingTitle] = useState(false);
-  const [titleDraft, setTitleDraft] = useState("");
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -81,30 +77,7 @@ export default function ChatWindow({
 
       {threadTitle && (
         <div className="chat-header">
-          {editingTitle ? (
-            <input
-              className="title-input"
-              autoFocus
-              value={titleDraft}
-              onChange={(e) => setTitleDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && titleDraft.trim()) {
-                  onRenameTitle(titleDraft.trim());
-                  setEditingTitle(false);
-                }
-                if (e.key === "Escape") setEditingTitle(false);
-              }}
-            />
-          ) : (
-            <button
-              className="chat-title"
-              onClick={() => { setTitleDraft(threadTitle); setEditingTitle(true); }}
-              title={t("chat.clickRename")}
-            >
-              {threadTitle}
-              <PencilIcon size={13} />
-            </button>
-          )}
+          <div className="chat-title">{threadTitle}</div>
         </div>
       )}
 

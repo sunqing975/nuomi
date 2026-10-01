@@ -114,7 +114,7 @@ class NewProjectRequest(BaseModel):
 
 class NewThreadRequest(BaseModel):
     project_id: int | None = None
-    title: str = Field(default="新会话", max_length=64)
+    title: str = Field(default="", max_length=64)
 
 
 class RenameThreadRequest(BaseModel):
@@ -784,7 +784,8 @@ def build_app(
                      "emotion": getattr(app.state, "last_emotion", "neutral"),
                      "usage": last_usage or None},
                 )
-                if is_new or (store.get_thread(thread_id) or {}).get("title") == "新会话":
+                cur_title = (store.get_thread(thread_id) or {}).get("title")
+                if is_new or not cur_title or cur_title == "新会话":
                     # 标题生成放 done 之后：不阻塞用户看到完整回复；失败回退首条消息截断
                     title = await _generate_thread_title(req.message, full)
                     if title:

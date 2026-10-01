@@ -66,8 +66,6 @@ export default function SideBar({
   threads,
   currentProjectId,
   currentThreadId,
-  open,
-  onClose,
   onTab,
   onOpenSettings,
   onNewThread,
@@ -84,9 +82,6 @@ export default function SideBar({
   threads: ThreadInfo[];
   currentProjectId: number | null;
   currentThreadId: string | null;
-  /** 移动端抽屉展开态 */
-  open: boolean;
-  onClose: () => void;
   onTab: (t: "chat" | "plugins") => void;
   onOpenSettings: () => void;
   onNewThread: () => void;
@@ -167,7 +162,6 @@ export default function SideBar({
                 onSelectProject(g.projectId);
                 onSelectThread(t.id);
                 onTab("chat");
-                onClose();
               }}
             >
               {renamingId === t.id ? (
@@ -248,7 +242,7 @@ export default function SideBar({
   const totalMatches = groups.reduce((n, g) => n + (searching ? g.threads.filter((t) => t.title.toLowerCase().includes(q)).length : g.threads.length), 0);
 
   return (
-    <aside className={`sidebar ${open ? "open" : ""}`}>
+    <aside className="sidebar">
       {/* 品牌行：纯展示，非交互 */}
       <div className="sidebar-brand">
         <span className="brand-mark">
@@ -261,7 +255,7 @@ export default function SideBar({
       </div>
 
       {/* 新会话 */}
-      <button className="new-session-btn" onClick={() => { onNewThread(); onClose(); }}>
+      <button className="new-session-btn" onClick={() => onNewThread()}>
         <PlusIcon size={14} />
         {tr("sidebar.newSession")}
       </button>
@@ -269,7 +263,7 @@ export default function SideBar({
       {/* 导航：插件 */}
       <button
         className={`nav-item ${tab === "plugins" ? "on" : ""}`}
-        onClick={() => { onTab("plugins"); onClose(); }}
+        onClick={() => onTab("plugins")}
       >
         <span className="nav-icon"><PuzzleIcon /></span>
         {tr("sidebar.navPlugins")}
@@ -341,8 +335,7 @@ export default function SideBar({
                     onClick={(e) => {
                       e.stopPropagation();
                       onNewThreadIn(g.projectId);
-                      onClose();
-                    }}
+                          }}
                   >
                     <PlusIcon size={12} />
                   </button>
@@ -374,7 +367,7 @@ export default function SideBar({
 
       {/* 底部设置 */}
       <div className="sidebar-foot">
-        <button className="foot-settings" onClick={() => { onOpenSettings(); onClose(); }}>
+        <button className="foot-settings" onClick={() => onOpenSettings()}>
           <span className="nav-icon"><GearIcon /></span>
           {tr("sidebar.settings")}
         </button>

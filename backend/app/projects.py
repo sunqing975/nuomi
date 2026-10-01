@@ -104,7 +104,7 @@ class ProjectStore:
             rows = self._conn.execute(q, args).fetchall()
         return [dict(r) for r in rows]
 
-    def create_thread(self, project_id: int | None, title: str = "新会话") -> dict:
+    def create_thread(self, project_id: int | None, title: str = "") -> dict:
         pid = project_id or self.ensure_default_project()["id"]
         thread_id = _new_thread_id()
         now = _iso()
@@ -130,7 +130,7 @@ class ProjectStore:
         with self._conn:
             self._conn.execute(
                 "INSERT OR IGNORE INTO threads (id, project_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-                (thread_id, pid, "新会话", now, now),
+                (thread_id, pid, "", now, now),
             )
         return self.get_thread(thread_id)  # type: ignore[return-value]
 

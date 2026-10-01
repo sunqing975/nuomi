@@ -365,3 +365,11 @@ models.py 删除 BUILTIN_PROVIDERS（deepseek/doubao/local）与 PROVIDERS/MODEL
 - **修复①（重启后聊天必挂）**：llm 在 composer.load() 之后才注册（依赖 settings），scope.register 不发事件 → agentLoop 首次构建拿到 None，重启后 /api/chat 报 `AttributeError: 'NoneType' object has no attribute 'astream'`（测试注入 llm 在 load 前注册所以测试不暴露）。修复：模型恢复成功后手动 rebuild_agents()；test_models 加回归断言（重启后 loop.agent 非 None）。
 - **修复②（删项目不级联删会话）**：ProjectStore 未执行 PRAGMA foreign_keys=ON，threads 的 ON DELETE CASCADE 形同虚设 → 删项目后会话留库成不可见孤儿（实测用户删「求职作品集」后 23 个会话孤儿）。修复：连接时开启 PRAGMA + 启动清理 dangling project_id 的历史孤儿；test_delete_project_cascades_threads 回归。
 - 验证：后端 132 passed（+title 事件/级联/重启恢复 3 个回归）；tsc ✓；dist 重建；真实 llama 端到端 title 事件 ✓；浏览器 DOM 验证 .group-del 存在 + hover 浮现 ✓；已提交 1fd2495。
+
+## 交互修正轮二（2026-10-01，用户反馈两处 + 顺带一个挂载 bug）
+
+- **主区标题纯展示**：聊天头部去掉点击重命名/铅笔图标/输入框（ChatWindow 的 editingTitle/titleDraft/title-input 全删，.chat-title 改 DIV 展示）；App 删 renameCurrentThread 与 onRenameTitle 链路；i18n 删 chat.clickRename。
+- **会话标题默认空**：NewThreadRequest.title 默认 ""、create_thread/upsert_thread 默认 ""（原「新会话」）；chat 未命名判断扩为 `not cur_title or == "新会话"`；新会话主区不再显示占位名，等模型命名后出现；侧栏空标题显示「未命名」（原有逻辑）。
+- **去掉抽屉，侧栏常驻左列**：删 App 的 menu-toggle 汉堡 + sidebar-backdrop + sidebarOpen 状态、SideBar 的 open/onClose；layout.css 删 .menu-toggle/.sidebar-backdrop/.sidebar.open，≤1024 不再 fixed 抽屉而是 `220px 1fr`、≤720 `200px 1fr`（同一框内左分列）；i18n 删 app.openSidebar。
+- **修复挂载侧栏空 bug**：初始 useEffect 里 fetchThreads 只用来找标题忘了 setThreads（有已存会话时刷新后侧栏一直空，直到交互才恢复）→ 挂载即 refreshThreads() + 恢复分支补 setThreads(ts)。
+- 验证：tsc ✓；浏览器实测无汉堡/无遮罩、grid 200px 502px、sidebar relative、.chat-title 为 DIV 无图标 cursor auto、刷新后 hello 组 6 会话正常列出；后端 12 passed。
