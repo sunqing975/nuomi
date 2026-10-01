@@ -1,0 +1,12 @@
+{
+  "name": "fs",
+  "version": "0.1.0",
+  "description": "工作区文件：read_file / write_file / list_dir / search_files / delete_file（路径限定工作区内，防穿越）",
+  "entry": "tool.py",
+  "load": "lazy",
+  "robust": {
+    "timeout": 10,
+    "retries": 0
+  },
+  "system_instruction": "读写文件优先用 fs 工具，路径相对工作区（backend/data/workspace）。只读操作用 read_file/list_dir/search_files，创建/修改/删除用 write_file/delete_file；不读写工作区外的敏感文件（如 .env、密钥），不读取 API key。"
+}

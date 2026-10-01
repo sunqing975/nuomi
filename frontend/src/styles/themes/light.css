@@ -1,0 +1,31 @@
+/* 主题包：浅色（data-theme="light" 覆盖语义 token；见 themes.ts 清单）
+   蓝调 bluish 白底：中性白带微蓝，保留 DeepSeek 蓝强调。 */
+[data-theme="light"] {
+  --dsw-bg-base: rgb(247, 248, 250);
+  --dsw-bg-layer-2: rgb(255, 255, 255);
+  --dsw-sidebar-fill: rgb(241, 243, 247);
+  --surface-2: rgb(233, 236, 241);
+  --dsw-label: rgb(24, 28, 34);
+  --dsw-label-2: rgb(92, 100, 112);
+  --dsw-label-3: rgb(140, 148, 160);
+  --dsw-border-1: rgba(20, 28, 46, 0.08);
+  --dsw-border-2: rgba(20, 28, 46, 0.13);
+  --dsw-border-3: rgba(20, 28, 46, 0.19);
+  --dsw-hover: rgba(20, 28, 46, 0.055);
+  --dsw-active: rgba(20, 28, 46, 0.11);
+  --dsw-blue-soft: rgba(86, 134, 254, 0.12);
+  --accent-glow: rgba(86, 134, 254, 0.26);
+  --accent-strong: rgb(64, 112, 238);
+  --danger: #dc3545;
+
+  --aurora-a: rgba(86, 134, 254, 0.1);
+  --aurora-b: rgba(122, 170, 255, 0.07);
+  --aurora-c: rgba(86, 134, 254, 0.05);
+  --noise-opacity: 0.02;
+
+  --shadow-pop: 0 12px 40px rgba(15, 23, 42, 0.14);
+  --shadow-float: 0 8px 24px rgba(15, 23, 42, 0.1);
+  --shadow-glow: 0 6px 20px var(--accent-glow);
+
+  color-scheme: light;
+}

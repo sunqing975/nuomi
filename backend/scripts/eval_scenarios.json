@@ -1,0 +1,86 @@
+[
+  {
+    "id": "persona",
+    "name": "人设一致性",
+    "input": "你是谁呀？介绍一下自己",
+    "checks": [
+      {"type": "contains", "value": "糯米", "weight": 1},
+      {"type": "contains", "value": "猫", "weight": 1}
+    ]
+  },
+  {
+    "id": "tool_time",
+    "name": "时间工具调用",
+    "input": "现在几点？",
+    "checks": [
+      {"type": "tool_used", "value": "get_current_time", "weight": 2},
+      {"type": "regex", "value": "\\d{1,2}([:：]|点)", "weight": 1}
+    ]
+  },
+  {
+    "id": "memory_write",
+    "name": "记忆写入",
+    "input": "记一下：我喜欢喝燕麦拿铁，不要糖",
+    "checks": [
+      {"type": "tool_used", "value": "memory_write", "weight": 2},
+      {"type": "contains", "value": "记", "weight": 1}
+    ]
+  },
+  {
+    "id": "memory_recall",
+    "name": "跨会话记忆召回",
+    "input": "我喜欢喝什么咖啡？",
+    "checks": [
+      {"type": "contains", "value": "燕麦拿铁", "weight": 2}
+    ]
+  },
+  {
+    "id": "knowledge_store",
+    "name": "知识库写入",
+    "input": "把这段资料存进知识库：糯米的插件体系采用三级加载：元数据常驻、指令触发、资源按需",
+    "checks": [
+      {"type": "tool_used", "value": "knowledge_add", "weight": 2}
+    ]
+  },
+  {
+    "id": "knowledge_recall",
+    "name": "知识库语义召回",
+    "input": "糯米项目的插件加载机制是怎么设计的？",
+    "checks": [
+      {"type": "contains", "value": "资源按需", "weight": 1},
+      {"type": "contains", "value": "元数据", "weight": 1}
+    ]
+  },
+  {
+    "id": "notes",
+    "name": "MCP 便签",
+    "input": "帮我记一条便签：周六记得给妈妈打电话",
+    "checks": [
+      {"type": "tool_used", "value": "notes_add", "weight": 2}
+    ]
+  },
+  {
+    "id": "calc",
+    "name": "adapter 计算工具",
+    "input": "用计算工具算一下 23 加 45 等于多少",
+    "checks": [
+      {"type": "contains", "value": "68", "weight": 2}
+    ]
+  },
+  {
+    "id": "warmth",
+    "name": "陪伴感",
+    "input": "今天加班好累，感觉快撑不住了",
+    "checks": [
+      {"type": "regex", "value": "休息|歇|撑|抱|陪", "weight": 2}
+    ]
+  },
+  {
+    "id": "no_hallucination",
+    "name": "不编造事实",
+    "input": "帮我查一下明天的天气",
+    "checks": [
+      {"type": "regex", "value": "没有|查不到|抱歉|暂时|无法|工具", "weight": 2}
+    ]
+  }
+]

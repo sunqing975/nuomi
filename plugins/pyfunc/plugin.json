@@ -1,0 +1,7 @@
+{
+  "name": "pyfunc",
+  "version": "0.1.0",
+  "description": "adapter 演示：把外部格式插件（普通函数+register）适配成 LangChain 工具",
+  "entry": "adapter.py",
+  "load": "eager"
+}

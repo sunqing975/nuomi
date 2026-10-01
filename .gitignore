@@ -1,0 +1,16 @@
+# 依赖与产物
+node_modules/
+dist/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.tsbuildinfo
+desktop/src-tauri/target/
+
+# 运行时数据（含密钥掩码、用户与会话数据，不进版本库）
+backend/data/
+
+# 本地配置
+.env
+.DS_Store

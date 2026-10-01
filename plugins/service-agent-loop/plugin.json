@@ -1,0 +1,1 @@
+{"name": "service-agent-loop", "version": "1.0.0", "description": "ctx.agents + ctx.agentLoop：Agent 注册表与 LangGraph 驱动器（单 Agent / Supervisor 路由，每轮记忆注入+摘要）"}

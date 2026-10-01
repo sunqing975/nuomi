@@ -1,0 +1,27 @@
+{
+  "productName": "糯米桌面端",
+  "version": "0.1.0",
+  "identifier": "com.nuomi.desktop",
+  "build": {
+    "frontendDist": "../../frontend/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "糯米 · 陪伴型个人智能体",
+        "width": 900,
+        "height": 700,
+        "minWidth": 480,
+        "minHeight": 560,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' http://localhost:8000 ws: http:; style-src 'self' 'unsafe-inline'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all"
+  }
+}

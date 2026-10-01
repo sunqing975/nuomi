@@ -1,0 +1,1 @@
+{"name": "service-memory", "version": "1.0.0", "description": "ctx.memory：记忆服务（JSON MemoryStore，偏好/说过的话跨会话可用）"}

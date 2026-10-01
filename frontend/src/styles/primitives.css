@@ -1,0 +1,103 @@
+/* ---------- 设计基元 · 全局控件（对齐 dsw：原生控件统一外观，禁裸样式） ---------- */
+input[type="text"],
+input[type="number"],
+input[type="password"],
+input[type="search"],
+textarea,
+select {
+  padding: 6px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-md);
+  font-size: var(--fs-13);
+  font-family: inherit;
+  background: var(--bg);
+  color: var(--label);
+  outline: none;
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
+}
+textarea { line-height: 1.5; resize: vertical; }
+input::placeholder,
+textarea::placeholder { color: var(--label-3); opacity: 1; }
+input[type="text"]:focus,
+input[type="number"]:focus,
+input[type="password"]:focus,
+input[type="search"]:focus,
+textarea:focus,
+select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 26px;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%239aa0a6' d='M2.2 4.2 6 8l3.8-3.8 1 1L6 10 1.2 5.2z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 12px;
+  cursor: pointer;
+}
+select option { background: var(--surface); color: var(--label); }
+input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+input[type="file"] { font-size: var(--fs-12); color: var(--label-2); }
+input:disabled,
+textarea:disabled,
+select:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* ---------- 通用图标按钮（承接内联 SVG 图标） ---------- */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--label-2);
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
+.icon-btn:hover { background: var(--dsw-hover); color: var(--label); border-color: var(--line-2); }
+.icon-btn:active { transform: scale(0.94); }
+.icon-btn .icon { width: 16px; height: 16px; }
+
+/* ---------- 迷你按钮 ---------- */
+.mini-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--label-2);
+  font-size: var(--fs-12);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+.mini-btn:hover { background: var(--dsw-hover); color: var(--label); border-color: var(--line-3); }
+.mini-btn:active { transform: scale(0.97); }
+.mini-btn.primary {
+  background: var(--dsw-blue-450);
+  border-color: var(--dsw-blue-450);
+  color: var(--label);
+}
+.mini-btn.primary:hover {
+  background: var(--dsw-blue-400);
+  border-color: var(--dsw-blue-400);
+  box-shadow: var(--shadow-glow);
+  color: var(--label);
+}
+.mini-btn.danger { color: var(--danger); border-color: rgba(245, 101, 101, 0.45); }
+.mini-btn.danger:hover { background: rgba(245, 101, 101, 0.12); border-color: var(--danger); }

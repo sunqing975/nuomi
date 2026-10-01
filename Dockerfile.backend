@@ -1,0 +1,28 @@
+# 糯米后端镜像：Python 3.12 + uv + FastAPI/LangGraph
+FROM python:3.12-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    UV_LINK_MODE=copy \
+    PATH="/root/.local/bin:$PATH"
+
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates ffmpeg libpq5 libgomp1 \
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -LsSf https://astral.sh/uv/install.sh | sh
+
+WORKDIR /app
+
+COPY backend/pyproject.toml backend/uv.lock ./
+RUN uv sync --frozen --no-dev
+
+COPY backend/app ./app
+COPY backend/scripts ./scripts
+COPY skills ./skills
+COPY partners ./partners
+
+ENV NUOMI_CHECKPOINTER=sqlite \
+    NUOMI_AUTH_ENABLED=false \
+    HF_ENDPOINT=https://hf-mirror.com
+
+EXPOSE 8000
+
+CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

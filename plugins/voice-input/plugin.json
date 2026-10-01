@@ -1,0 +1,7 @@
+{
+  "name": "voice-input",
+  "version": "1.0.0",
+  "description": "浏览器语音输入开关（Web Speech API）：开=显示麦克风按钮，可语音转文字发消息",
+  "entry": "hook.py",
+  "settings_key": "voice_input"
+}

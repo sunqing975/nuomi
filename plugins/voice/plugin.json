@@ -1,0 +1,8 @@
+{
+  "name": "voice",
+  "version": "0.1.0",
+  "description": "语音能力：macOS say TTS 合成音频 + STT 接口化占位（可换成 Whisper/豆包语音 API）",
+  "entry": "tool.py",
+  "load": "lazy",
+  "system_instruction": "当用户要你说话、朗读、播放一段语音或转写音频时，使用 speak / transcribe 工具。"
+}

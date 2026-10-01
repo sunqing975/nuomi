@@ -1,0 +1,21 @@
+# 构建上下文精简：排除本地开发产物与数据
+.git
+.vscode
+*.md
+.env
+.env.*
+!Dockerfile.*
+!docker-compose.yml
+!nginx.conf
+backend/.venv
+backend/data
+backend/data/logs
+backend/data/audio
+backend/data/memories
+backend/data/knowledge
+backend/data/nuomi.sqlite
+backend/data/users.json
+frontend/node_modules
+frontend/dist
+desktop/target
+.vite

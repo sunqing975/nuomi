@@ -1,0 +1,7 @@
+{
+  "name": "datetime",
+  "version": "0.2.0",
+  "description": "获取当前日期、时间、星期（能力型示例插件：加一个目录 = 多一种能力）",
+  "system_instruction": "当用户询问当前日期、时间或星期时，必须调用 get_current_time 工具获取真实时间，禁止自行猜测或编造。",
+  "entry": "tool.py"
+}
