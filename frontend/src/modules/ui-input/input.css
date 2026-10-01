@@ -73,6 +73,13 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* 聚焦时只保留卡片辉光：压制全局 textarea:focus 阴影与 :focus-visible outline，
+   避免输入框自身出现多余下边框/光圈 */
+.composer-input:focus,
+.composer-input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
 
 /* hero（空会话）：双行 52px floor + 可换行占位 */
 .composer-card.hero .composer-input { min-height: 52px; }
