@@ -394,3 +394,10 @@ models.py 删除 BUILTIN_PROVIDERS（deepseek/doubao/local）与 PROVIDERS/MODEL
 
 - **PromptDialog**：`ui-confirm/PromptDialog.tsx`（复用 confirm 样式，输入框 + 取消/确认 + Enter 提交 + Esc 关闭 + 空值禁用确认，createPortal 到 body）；SideBar 新建项目改用它；i18n 新增 sidebar.newProjectPlaceholder。
 - **⚠️ 数据丢失事故与恢复**：用户浏览器测试删除功能时执行了 `DELETE /api/threads/c54cd303a5ae`、`/a4375a74b6db`、`/c9ecb978be4f` + `DELETE /api/projects/3`（hello）→ 级联删光全部会话，threads.db 全空。**恢复方法（可复用）**：会话消息都在 LangGraph checkpointer（`data/nuomi.sqlite` 的 checkpoints 表，msgpack 序列化，通过 `AsyncSqliteSaver.aget_tuple` 读取）；从 checkpoints 提取 12-hex thread_id + 首条 user 消息（截断 24 字作标题）+ checkpoint_id 时间（uuidv7 前 48bit 是时间戳但实测有偏差，采用**归一化**：以最新会话为「刚刚」统一平移）；重建 projects(id=3 hello)+threads 15 条。**教训：删除项目是级联高危操作，测试删除功能会真删数据；threads.db 未被 git 跟踪（backend/data 在 .gitignore），无备份会真丢。**
+
+## 修复 DeepSeek 思考模式 tool_choice 400（2026-10-01，用户切 deepseek 模型后报错）
+
+- **现象**：`OpenAIInvalidRequestError: Thinking mode does not support this tool_choice`（SSE 流内 400）。
+- **根因**：团队模式（supervisor）的路由用 `llm.with_structured_output(Route, method="function_calling")` → bind_tools 时绑定 `tool_choice="any"` → DeepSeek 思考模式拒绝显式 tool_choice。
+- **修复**：supervisor.py 路由改为**纯文本 JSON 解析**（不再绑定工具/结构化输出），解析失败回退 companion；`router` 注入（测试用）路径保留。
+- **实测验证（真实 key）**：无工具 ✓ / 带工具 tool_choice=None（主聊天 create_agent 路径）✓ / function_calling ✗（修复前路径，已不再使用）。主聊天不受影响，仅团队路由修复。

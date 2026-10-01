@@ -69,17 +69,34 @@ def build_supervisor(
     researcher = create_agent(model=llm, tools=researcher_tools, system_prompt=RESEARCHER_PROMPT)
 
     if router is None:
-        # DeepSeek 不支持 response_format=json_schema，显式走 function_calling
-        router = llm.with_structured_output(Route, method="function_calling")
+        # 路由：纯文本 JSON 解析，不绑定工具。
+        # DeepSeek 思考模式不接受 tool_choice（function_calling 绑定会报
+        # "Thinking mode does not support this tool_choice"），且不支持 json_schema。
+        router = None
 
     async def router_node(state: State):
         last = state["messages"][-1]
-        res = await router.ainvoke([SystemMessage(content=ROUTER_PROMPT), last])
-        # 路由 LLM 解析失败（如 FakeChatModel/弱模型返回 None）→ 回退陪伴
-        if res is None:
+        if router is not None:
+            res = await router.ainvoke([SystemMessage(content=ROUTER_PROMPT), last])
+            # 路由 LLM 解析失败（如 FakeChatModel/弱模型返回 None）→ 回退陪伴
+            if res is None:
+                return {"next": "companion"}
+            nxt = getattr(res, "next", None) or (res.get("next") if isinstance(res, dict) else None)
+            return {"next": "researcher" if nxt == "researcher" else "companion"}
+        # 兼容路径：直接让 LLM 输出 JSON 路由（DeepSeek thinking / 任意模型）
+        try:
+            res = await llm.ainvoke(
+                [SystemMessage(content=ROUTER_PROMPT + "\n只输出 JSON：{\"next\": \"companion\" 或 \"researcher\"}"), last]
+            )
+            import json as _json
+            import re as _re
+
+            txt = str(res.content).strip()
+            m = _re.search(r"\{.*\}", txt, _re.S)
+            data = _json.loads(m.group(0)) if m else {}
+            return {"next": "researcher" if data.get("next") == "researcher" else "companion"}
+        except Exception:
             return {"next": "companion"}
-        nxt = getattr(res, "next", None) or (res.get("next") if isinstance(res, dict) else None)
-        return {"next": "researcher" if nxt == "researcher" else "companion"}
 
     g = StateGraph(State)
     g.add_node("router", router_node)
