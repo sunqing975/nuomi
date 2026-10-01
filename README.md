@@ -2,7 +2,7 @@
 
 全能型个人智能体（对齐 DeepSeek Harness 方向，打字为核心，能力全部插件化）——面向求职作品集的完整项目。
 
-主线技术栈：**LangChain / LangGraph + FastAPI + React**，前后端分离 + Cordis 风格插件内核（一切皆插件）+ 执行能力（shell/fs）+ 上下文工程 + 记忆/知识/协作。
+主线技术栈：**LangChain / LangGraph + FastAPI + React**，前后端分离 + Cordis 风格插件内核（一切皆插件）+ 执行能力（shell/fs）+ 上下文工程 + 记忆/知识/协作。聊天界面接入 **assistant-ui**（headless primitives + LocalRuntime）渲染流式回复、深度思考（推理过程折叠块）与工具调用卡片。
 
 > 定位沿革：v1/v2 曾是陪伴型智能体（伙伴人格 + 情绪表情）；2026-10-01 起转型为全能智能体，陪伴资产保留为可选"人格层"插件，不再是产品主定位。
 
@@ -65,17 +65,20 @@ nuomi/
 ## 快速开始
 
 ```bash
-# 1) 后端（首次自动建 .venv）
+# 1) 后端（uv 管理依赖，首次自动建 .venv）
 cd backend && uv sync
-uv run uvicorn app.main:app --reload --port 8000
+uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 # 2) 前端（另开终端）
 cd frontend && npm install && npm run dev
 # 打开 http://localhost:5173
 ```
 
+> 当前实际跑法（开发机）：后端 `.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000`（未开 `--reload`，改后端代码需重启进程）；前端 `npm run dev`（Vite，:5173，热更新）。
+
 LLM：默认 DeepSeek（`LLM_BASE_URL=https://api.deepseek.com`、`LLM_MODEL=deepseek-chat`）。
 密钥取 `LLM_API_KEY` → `DEEPSEEK_API_KEY` → `ARK_API_KEY` 任一即可；换豆包只需改 `.env` 里的 base_url 与 model。
+模型可在前端「设置」里运行时切换（DeepSeek / 豆包 / 本地 llama.cpp OpenAI 兼容端点）。
 
 **当前测试策略（2026-09-30）**：测试主力 DeepSeek（工具调用可靠）。
 本地 Qwen3.5-2B（llama.cpp :8080，`~/scripts/serve-qwen3.5-2b.sh start`）适合纯对话；
@@ -83,7 +86,37 @@ LLM：默认 DeepSeek（`LLM_BASE_URL=https://api.deepseek.com`、`LLM_MODEL=dee
 
 冒烟测试（后端已启动时）：`bash scripts/smoke.sh`
 
-## SSE 协议（v1）
+## 技术栈与开源项目
+
+### 后端
+
+| 层 | 选型 | 说明 |
+|---|---|---|
+| Web 框架 | **FastAPI** + uvicorn | SSE 流式（`text/event-stream`） |
+| Agent 框架 | **LangChain / LangGraph**（`langchain.agents.create_agent`） | 工具绑定、checkpointer、中间件、Supervisor 多智能体 |
+| 模型接入 | **langchain-openai** + **openai** SDK | OpenAI 兼容协议：DeepSeek / 豆包 / 本地 llama.cpp |
+| 对话状态 | **aiosqlite**（LangGraph AsyncSqliteSaver） | 每线程 checkpoint，重启不丢 |
+| 记忆 | 自研 MemoryStore（JSON 事实库） | CJK 二元组检索、去重淘汰 |
+| 知识库 | **Chroma** + **fastembed**（`BAAI/bge-small-zh-v1.5`） | RAG 语义检索，词法兜底可插拔 |
+| MCP | **langchain-mcp-adapters** | 本地便签 server（stdio）演示外部能力 |
+| 工具体系 | 自研三级加载插件内核 | @tool + 程序插件 + MCP + adapter 统一成"插件" |
+
+### 前端
+
+| 层 | 选型 | 说明 |
+|---|---|---|
+| 框架 | **React 18** + **Vite 5** + TypeScript | 前后端分离 SPA |
+| 聊天界面 | **assistant-ui**（`@assistant-ui/react`，MIT） | LocalRuntime + ChatModelAdapter 桥接自建 SSE；headless primitives 渲染文本/深度思考/工具调用，未引入 Tailwind |
+| 表情组件 | **react-ai-pet**（MIT） | WebGL 果冻身体 + 表情，思考动画 |
+| 语音输入 | Web Speech API | `voice-input` 插件控制 |
+
+### 模型
+
+- **DeepSeek**（默认，工具调用可靠）
+- **豆包 / 火山方舟**（OpenAI 兼容端点）
+- **本地 llama.cpp**（Qwen3.5-2B，纯对话）
+
+## SSE 协议（v2）
 
 `POST /api/chat`，body：`{"message": "...", "thread_id": "可选"}`，响应 `text/event-stream`：
 
@@ -91,8 +124,13 @@ LLM：默认 DeepSeek（`LLM_BASE_URL=https://api.deepseek.com`、`LLM_MODEL=dee
 |---|---|---|
 | `meta` | `{thread_id}` | 会话已确定（新建时由服务端生成） |
 | `token` | `{content}` | 回复增量片段，前端逐字追加 |
-| `done` | `{thread_id, content}` | 完整回复，流结束 |
+| `reasoning` | `{content}` | 深度思考增量（DeepSeek `reasoning_content`，经 `DeepSeekChat` 子类保留） |
+| `tool` | `{name}` | 模型正在调用某工具（单 Agent 与团队模式都会发） |
+| `done` | `{thread_id, content, emotion, usage}` | 完整回复、情绪、token 用量，流结束 |
+| `title` | `{thread_id, title}` | 模型命名会话标题（与回复流并行生成，几乎零等待） |
 | `error` | `{message}` | 出错，流提前终止 |
+
+前端 `NuomiAdapter`（assistant-ui `ChatModelAdapter`）把该协议转成 part 流：`reasoning`→深度思考折叠块、`tool`→工具调用卡片、`token`→文本气泡；`meta/title/done` 经回调回填会话与情绪。
 
 历史记忆：thread_id 相同 → LangGraph checkpointer 自动续上下文（SQLite 持久化，重启不丢）。
 
@@ -141,7 +179,7 @@ skills/<插件名>/
 - 切换：`knowledge_store=chroma|lexical`（配置/环境变量），上层接口不变——"换 RAG 方案 = 换插件"
 - embedding 模型经 `HF_ENDPOINT` 镜像下载（默认 hf-mirror.com，实测直连 huggingface 超时）
 
-## 已验证（2026-09-30）
+## 已验证（2026-09-30 起持续更新）
 
 ### Phase 0
 - 后端 4 项 pytest 全绿：流式输出、会话持久化、skills 加载、非法请求拦截
@@ -162,13 +200,11 @@ skills/<插件名>/
   - adapter 计算：137+265 → calc_add 工具返回 402 ✓
 - 工具调用链路（插件规则前置）在多工具（datetime/memory/knowledge/mcp/pyfunc 共 9 个工具）下仍稳定 ✓
 
-## 技术栈
-
-Agent: LangChain / LangGraph（`langchain.agents.create_agent`，LangGraph 1.x 迁移后的新入口）
-后端: FastAPI + SSE · 存储: SQLite(checkpointer) / JSON(记忆) / Chroma+fastembed(知识库, Phase 2)
-能力: @tool + 三级加载插件体系 + MCP(langchain-mcp-adapters) + adapter · 前端: React + Vite + TS
-工程: 流式、重试/fallback、human-in-the-loop、Eval、日志（Phase 3）
-部署: Docker、多智能体、Tauri/PWA、PG+JWT（Phase 4）
+### Phase 5（UI 集成，2026-10-01）
+- **assistant-ui 渲染层接入**：LocalRuntime + ChatModelAdapter 桥接自建 SSE；headless primitives 渲染深度思考（折叠块可展开）与工具调用（卡片）✓
+- **后端 DeepSeekChat 子类**：langchain-openai 1.6.6 丢弃 `reasoning_content`，重写转换 hook 保留（流式/非流式均实测）✓
+- 真实 DeepSeek 端到端：发送"现在几点了？请调用 get_current_time 工具查询" → 回复依次出现 深度思考 → 「调用工具 get_current_time」卡片 → 真实时间回答 ✓
+- 新会话创建、模型命名标题回显（并行生成）、发送后输入框清空、线程切换加载历史均实测通过；`tsc --noEmit` + `vite build` 通过 ✓
 
 ## 与 v1 的关系
 
