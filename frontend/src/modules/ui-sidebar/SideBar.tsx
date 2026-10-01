@@ -75,6 +75,7 @@ export default function SideBar({
   onSelectThread,
   onSelectProject,
   onCreateProject,
+  onSetProjectDirectory,
   onRenameThread,
   onDeleteThread,
   onDeleteProject,
@@ -91,7 +92,9 @@ export default function SideBar({
   onNewThreadIn: (projectId: number | null) => void;
   onSelectThread: (id: string) => void;
   onSelectProject: (id: number | null) => void;
-  onCreateProject: (name: string) => void;
+  onCreateProject: (name: string, directory?: string) => void;
+  /** 绑定 / 解绑项目目录（传 null 解绑） */
+  onSetProjectDirectory: (projectId: number, directory: string | null) => void | Promise<void>;
   onRenameThread: (id: string, title: string) => void;
   onDeleteThread: (id: string) => void;
   onDeleteProject: (id: number) => void;
@@ -297,8 +300,12 @@ export default function SideBar({
               setPrompt({
                 message: tr("sidebar.newProjectName"),
                 placeholder: tr("sidebar.newProjectPlaceholder"),
+                field2: {
+                  label: tr("sidebar.projectDirLabel"),
+                  placeholder: tr("sidebar.projectDirPlaceholder"),
+                },
                 confirmText: tr("common.confirm"),
-                onSubmit: (name) => onCreateProject(name),
+                onSubmit: (name, dir) => onCreateProject(name, dir),
               })
             }
           >
@@ -341,8 +348,38 @@ export default function SideBar({
                   title={tr("sidebar.toggleGroup")}
                 >
                   <span className="group-icon"><FolderIcon /></span>
-                  <span className="group-title">{g.name}</span>
+                  <span className="group-title">
+                    {g.name}
+                    {g.projectId !== null && projects.find((p) => p.id === g.projectId)?.directory && (
+                      <span className="group-dir" title={projects.find((p) => p.id === g.projectId)?.directory ?? ""}>
+                        {projects.find((p) => p.id === g.projectId)?.directory}
+                      </span>
+                    )}
+                  </span>
                   <span className="group-count">{count}</span>
+                  {g.projectId !== null && (
+                    <button
+                      className="group-dir-btn"
+                      title={tr("sidebar.projectDirBind")}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const cur = projects.find((p) => p.id === g.projectId)?.directory ?? "";
+                        setPrompt({
+                          message: cur
+                            ? tr("sidebar.projectDirEdit", { dir: cur })
+                            : tr("sidebar.projectDirBind"),
+                          placeholder: tr("sidebar.projectDirPlaceholder"),
+                          confirmText: tr("common.confirm"),
+                          onSubmit: (dir) => {
+                            if (dir) void onSetProjectDirectory(g.projectId as number, dir);
+                            else void onSetProjectDirectory(g.projectId as number, null);
+                          },
+                        });
+                      }}
+                    >
+                      <FolderIcon size={12} />
+                    </button>
+                  )}
                   <button
                     className="group-new"
                     title={tr("sidebar.newThreadIn")}

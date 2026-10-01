@@ -26,6 +26,7 @@ const zhCN = {
   "app.renameFailed": "重命名失败：{msg}",
   "app.newProjectFailed": "新建项目失败：{msg}",
   "app.projectDeleteFailed": "删除项目失败：{msg}",
+  "app.projectDirFailed": "绑定目录失败：{msg}",
   "app.newThreadFailed": "新建会话失败：{msg}",
   "app.pluginsFailed": "插件清单加载失败：{msg}",
   "app.modelsFailed": "模型加载失败：{msg}",
@@ -48,6 +49,10 @@ const zhCN = {
   "sidebar.navPlugins": "插件",
   "sidebar.newProject": "＋ 新建项目",
   "sidebar.newProjectPlaceholder": "输入项目名称",
+  "sidebar.projectDirLabel": "绑定目录（可选）",
+  "sidebar.projectDirPlaceholder": "本机目录绝对路径，留空不绑定",
+  "sidebar.projectDirBind": "绑定项目目录（agent 的文件工具将操作该目录）",
+  "sidebar.projectDirEdit": "已绑定：{dir}\n输入新路径改绑，留空解绑",
   "sidebar.newThreadIn": "在该项目新建会话",
   "sidebar.deleteProject": "删除项目",
   "sidebar.deleteProjectConfirm": "删除项目「{name}」及其中全部会话？此操作不可恢复。",
@@ -86,7 +91,7 @@ const zhCN = {
   "chat.suggestion3": "现在几点了",
 
   // ---- 输入栏 ----
-  "input.placeholderHero": "想问点什么，或者试试 / 命令…\n比如：用 fs 在工作区写个文件、用 bash 查系统状态",
+  "input.placeholderHero": "想问点什么，或者试试 / 命令…\n比如：用 fs 在项目目录里读写文件、用 bash 查系统状态",
   "input.placeholderChat": "和糯米聊聊，/ 呼出命令…",
   "input.send": "发送",
   "input.sendEnter": "发送 (Enter)",

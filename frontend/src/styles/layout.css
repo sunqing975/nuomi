@@ -701,7 +701,20 @@
 }
 .group-head:hover { background: var(--dsw-hover); color: var(--label); }
 .group-icon { display: inline-flex; align-items: center; width: 14px; height: 14px; opacity: 0.8; }
-.group-title { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.group-title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 项目绑定的目录路径：组标题下的小字 */
+.group-dir {
+  display: block;
+  font-size: 10px;
+  color: var(--label-3);
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+  font-family: var(--font-mono, ui-monospace, Menlo, monospace);
+}
+.group-dir::before { content: "📁 "; }
 .group-count {
   background: var(--dsw-hover);
   color: var(--label-3);
@@ -756,6 +769,29 @@
 .workspace-group.on .group-del { opacity: 1; transform: scale(1); }
 .group-del:hover { background: var(--dsw-active); color: var(--danger); }
 .group-del .icon { width: 12px; height: 12px; }
+/* 项目「绑定/解绑目录」：与 group-new 同构 hover 浮现 */
+.group-dir-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--label-3);
+  cursor: pointer;
+  opacity: 0;
+  transform: scale(0.9);
+  transition: opacity var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+.group-head:hover .group-dir-btn,
+.group-dir-btn:focus-visible,
+.workspace-group.on .group-dir-btn { opacity: 1; transform: scale(1); }
+.group-dir-btn:hover { background: var(--dsw-active); color: var(--accent-strong); }
+.group-dir-btn .icon { width: 12px; height: 12px; }
 .group-caret {
   display: inline-flex;
   align-items: center;

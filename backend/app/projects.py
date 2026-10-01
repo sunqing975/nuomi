@@ -55,33 +55,57 @@ class ProjectStore:
                 "DELETE FROM threads WHERE project_id IS NOT NULL "
                 "AND project_id NOT IN (SELECT id FROM projects)"
             )
+            # 迁移：项目绑定本机真实目录（V2 需求：agent 可操作项目目录中的文件）
+            cols = [r["name"] for r in self._conn.execute("PRAGMA table_info(projects)").fetchall()]
+            if "directory" not in cols:
+                self._conn.execute("ALTER TABLE projects ADD COLUMN directory TEXT")
 
     # ---------- 项目 ----------
     def list_projects(self) -> list[dict]:
         with self._conn:
             rows = self._conn.execute(
                 """
-                SELECT p.id, p.name, p.created_at,
+                SELECT p.id, p.name, p.created_at, p.directory,
                        (SELECT COUNT(*) FROM threads t WHERE t.project_id = p.id) AS thread_count
                 FROM projects p ORDER BY p.id
                 """
             ).fetchall()
         return [dict(r) for r in rows]
 
-    def create_project(self, name: str) -> dict:
+    def create_project(self, name: str, directory: str | None = None) -> dict:
         name = name.strip() or "默认项目"
+        directory = (directory or "").strip() or None
         with self._conn:
             try:
                 cur = self._conn.execute(
-                    "INSERT INTO projects (name, created_at) VALUES (?, ?)",
-                    (name, _iso()),
+                    "INSERT INTO projects (name, directory, created_at) VALUES (?, ?, ?)",
+                    (name, directory, _iso()),
                 )
             except sqlite3.IntegrityError:
                 cur = self._conn.execute("SELECT id FROM projects WHERE name = ?", (name,))
                 pid = cur.fetchone()["id"]
-                return {"id": pid, "name": name, "created_at": self._iso_of(pid)}
+                return {"id": pid, "name": name, "directory": directory, "created_at": self._iso_of(pid)}
             pid = cur.lastrowid
-        return {"id": pid, "name": name, "created_at": self._iso_of(pid), "thread_count": 0}
+        return {"id": pid, "name": name, "directory": directory, "created_at": self._iso_of(pid), "thread_count": 0}
+
+    def set_directory(self, project_id: int, directory: str | None) -> dict:
+        """绑定 / 解绑（传 None 或空串解绑）项目目录，返回更新后的项目。"""
+        directory = (directory or "").strip() or None
+        with self._conn:
+            self._conn.execute("UPDATE projects SET directory = ? WHERE id = ?", (directory, project_id))
+        proj = next((p for p in self.list_projects() if p["id"] == project_id), None)
+        return proj or {"id": project_id, "directory": directory}
+
+    def directory_of_thread(self, thread_id: str) -> str | None:
+        """会话所属项目的绑定目录；未绑定返回 None。"""
+        with self._conn:
+            row = self._conn.execute(
+                "SELECT p.directory FROM threads t JOIN projects p ON p.id = t.project_id "
+                "WHERE t.id = ?",
+                (thread_id,),
+            ).fetchone()
+        d = row["directory"] if row else None
+        return (d or "").strip() or None
 
     def ensure_default_project(self) -> dict:
         with self._conn:

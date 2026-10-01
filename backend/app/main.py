@@ -36,6 +36,7 @@ from .models import (
 )
 from .partner import assemble_system_prompt, load_partner
 from .projects import ProjectStore, is_placeholder_title
+from .thread_ctx import current_thread_id as thread_ctx
 from .plugin_runtime import (
     MESSAGE_RECEIVED,
     MODEL_SWITCHED,
@@ -110,6 +111,11 @@ class PluginSettingRequest(BaseModel):
 
 class NewProjectRequest(BaseModel):
     name: str = Field(min_length=1, max_length=64)
+    directory: str | None = Field(default=None, max_length=2048, description="绑定的本机目录（绝对路径，可选）")
+
+
+class SetProjectDirectoryRequest(BaseModel):
+    directory: str | None = Field(default=None, max_length=2048, description="要绑定的本机目录绝对路径；传空串/None 解绑")
 
 
 class NewThreadRequest(BaseModel):
@@ -684,7 +690,17 @@ def build_app(
 
     @app.post("/api/projects")
     async def projects_create(req: NewProjectRequest):
-        return app.state.projects.create_project(req.name)
+        return app.state.projects.create_project(req.name, req.directory)
+
+    @app.patch("/api/projects/{project_id}/directory")
+    async def projects_set_directory(project_id: int, req: SetProjectDirectoryRequest):
+        """绑定/解绑项目目录。绑定路径必须存在且是目录。"""
+        directory = (req.directory or "").strip() or None
+        if directory is not None:
+            p = Path(directory).expanduser().resolve()
+            if not p.is_dir():
+                raise HTTPException(400, f"目录不存在或不是文件夹：{directory}")
+        return app.state.projects.set_directory(project_id, directory)
 
     @app.delete("/api/projects/{project_id}")
     async def projects_delete(project_id: int):
@@ -748,6 +764,9 @@ def build_app(
         thread_id = req.thread_id
         key = f"{user}::{thread_id}" if user else thread_id
         config = {"configurable": {"thread_id": key, "user": user}}
+        # 请求级上下文：fs 等插件工具经 contextvars 读取当前会话 thread_id（langchain
+        # create_agent 的工具执行不注入 RunnableConfig，见 app/thread_ctx.py）
+        _thread_ctx = thread_ctx.set(thread_id)
         loop = app.state.scope.get("agentLoop")
         agent, stream_mode = loop.resolve() if loop else (None, "messages")
         use_team = loop is not None and loop.supervisor is not None
@@ -850,6 +869,7 @@ def build_app(
         thread_id = req.thread_id or str(uuid.uuid4())
         key = f"{user}::sup::{thread_id}" if user else f"sup::{thread_id}"
         config = {"configurable": {"thread_id": key, "user": user}}
+        _thread_ctx = thread_ctx.set(thread_id)
         if app.state.supervisor is None:
             raise HTTPException(400, "智能体团队插件未启用")
         agent: object = app.state.supervisor

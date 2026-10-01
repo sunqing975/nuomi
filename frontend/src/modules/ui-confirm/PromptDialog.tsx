@@ -9,7 +9,9 @@ export interface PromptState {
   placeholder?: string;
   confirmText?: string;
   cancelText?: string;
-  onSubmit: (value: string) => void;
+  /** 第二输入（可选）：如新建项目时的绑定目录路径 */
+  field2?: { label?: string; placeholder?: string; initial?: string };
+  onSubmit: (value: string, value2?: string) => void;
 }
 
 export default function PromptDialog({
@@ -20,6 +22,7 @@ export default function PromptDialog({
   onClose: () => void;
 }) {
   const [value, setValue] = useState(state.initial ?? "");
+  const [value2, setValue2] = useState(state.field2?.initial ?? "");
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -34,7 +37,7 @@ export default function PromptDialog({
   const submit = () => {
     const v = value.trim();
     if (v) {
-      state.onSubmit(v);
+      state.onSubmit(v, value2.trim() || undefined);
       onClose();
     }
   };
@@ -60,6 +63,17 @@ export default function PromptDialog({
             if (e.key === "Enter") submit();
           }}
         />
+        {state.field2 && (
+          <input
+            className="prompt-input"
+            value={value2}
+            placeholder={state.field2.placeholder}
+            onChange={(e) => setValue2(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") submit();
+            }}
+          />
+        )}
         <div className="confirm-actions">
           <button className="confirm-btn" onClick={onClose}>
             {state.cancelText ?? t("common.cancel")}

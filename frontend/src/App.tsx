@@ -14,6 +14,7 @@ import {
   loadThreadId,
   renameThread,
   saveThreadId,
+  setProjectDirectory,
   togglePlugin,
   type ModelProvider,
   type PluginInfo,
@@ -413,13 +414,23 @@ export default function App() {
           onNewThreadIn={(pid) => void newThreadIn(pid)}
           onSelectThread={(id) => void selectThread(id)}
           onSelectProject={(id) => void selectProject(id)}
-          onCreateProject={async (name) => {
+          onCreateProject={async (name, directory) => {
             try {
-              const p = await createProject(name);
+              const p = await createProject(name, directory);
               refreshProjects();
               selectProject(p.id);
             } catch (e) {
               setError(t("app.newProjectFailed", { msg: String(e instanceof Error ? e.message : e) }));
+            }
+          }}
+          onSetProjectDirectory={async (projectId, directory) => {
+            try {
+              await setProjectDirectory(projectId, directory);
+              setError(null);
+              refreshProjects();
+              refreshThreads();
+            } catch (e) {
+              setError(t("app.projectDirFailed", { msg: String(e instanceof Error ? e.message : e) }));
             }
           }}
           onRenameThread={async (id, title) => {

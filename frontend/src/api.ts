@@ -371,6 +371,8 @@ export interface ProjectInfo {
   name: string;
   created_at: string;
   thread_count: number;
+  /** 绑定的本机目录（绝对路径）；未绑定为 null */
+  directory: string | null;
 }
 
 export interface ThreadInfo {
@@ -388,13 +390,27 @@ export async function fetchProjects(): Promise<ProjectInfo[]> {
   return body.projects;
 }
 
-export async function createProject(name: string): Promise<ProjectInfo> {
+export async function createProject(name: string, directory?: string | null): Promise<ProjectInfo> {
   const res = await fetch("/api/projects", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ name, directory: directory ?? null }),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json() as Promise<ProjectInfo>;
+}
+
+/** 绑定 / 解绑（传 null/空串解绑）项目目录 */
+export async function setProjectDirectory(projectId: number, directory: string | null): Promise<ProjectInfo> {
+  const res = await fetch(`/api/projects/${projectId}/directory`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ directory }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.detail ?? `HTTP ${res.status}`);
+  }
   return res.json() as Promise<ProjectInfo>;
 }
 
