@@ -86,10 +86,11 @@ export default function App() {
   const [activeModelKey, setActiveModelKey] = useState<string | null>(null);
   const [effort, setEffort] = useState<string | null>(null);
   // 主题（深/浅，localStorage 持久化，默认深色对齐 dsh）
-  const [theme, setTheme] = useState<"dark" | "light">(() => {
-    const saved = localStorage.getItem("nuomi-theme");
+  const [theme, setTheme] = useState<"dark" | "light">(() => {    const saved = localStorage.getItem("nuomi-theme");
     return saved === "light" ? "light" : "dark";
   });
+  // 计划模式（对齐 dsh /plan：软约束引导「先计划后执行」，发送时注入提示）
+  const [planMode, setPlanMode] = useState(false);
   useEffect(() => {
     localStorage.setItem("nuomi-theme", theme);
     document.documentElement.dataset.theme = theme;
@@ -277,8 +278,10 @@ export default function App() {
   };
 
   const send = (textOverride?: string) => {
-    const text = (textOverride ?? input).trim();
-    if (!text) return;
+    const raw = (textOverride ?? input).trim();
+    if (!raw) return;
+    // 计划模式（对齐 dsh /plan）：软约束——引导 agent 先出计划等待确认，不直接执行修改类操作
+    const text = planMode ? t("app.planModePrefix") + "\n" + raw : raw;
     setInput("");
     setError(null);
     setMood("typing");
@@ -341,8 +344,23 @@ export default function App() {
       description: t("app.listCommands"),
       handler: () => "",
     };
+    // 技能命令（对齐 dsh「/ 选技能干活」）：由已启用插件自动生成，
+    // 选中后把输入作为消息发给模型，引导使用对应插件能力。
+    // 过滤内部运行层插件（runtime-*/service-*），只暴露用户可感知能力
+    const skillCmds: CommandDef[] = plugins
+      .filter((p) => p.enabled && !p.disabled && !p.id.startsWith("runtime-") && !p.id.startsWith("service-"))
+      .map((p) => {
+        const short = p.id.startsWith("cap-") ? p.id.slice(4) : p.id;
+        return {
+          name: short,
+          description: p.description,
+          kind: "skill" as const,
+          handler: () => "",
+        };
+      });
     const all: CommandDef[] = [
       help,
+      ...skillCmds,
       {
         name: "new",
         description: t("app.newThread"),
@@ -357,6 +375,20 @@ export default function App() {
         handler: () => {
           runtime.thread.reset([]);
           return t("app.threadCleared");
+        },
+      },
+      {
+        name: "plan",
+        description: t("cmd.planDesc"),
+        handler: (raw) => {
+          const next = !planMode;
+          setPlanMode(next);
+          // /plan 任务描述 → 直接带任务发送（对齐 dsh：/plan 任务 同时进入模式并提交任务）
+          if (raw.trim() && next) {
+            void send(raw.trim());
+            return;
+          }
+          return next ? t("cmd.planOn") : t("cmd.planOff");
         },
       },
       {
@@ -397,7 +429,19 @@ export default function App() {
       return all.map((c) => `/${c.name} — ${c.description}`).join("\n");
     };
     return all;
-  }, [theme]);
+  }, [theme, plugins, planMode, send]);
+
+  // @ 引用目标（对齐 dsh「@ 点名上下文」）：引用项目，把名字与绑定目录带进会话
+  const projectRefs = useMemo(
+    () =>
+      projects.map((p) => ({
+        key: `p${p.id}`,
+        label: p.name,
+        detail: p.directory ? `目录：${p.directory}` : t("app.projectNoDir"),
+        insert: `${p.name}（${p.directory ?? "未绑定目录"}）`,
+      })),
+    [projects],
+  );
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
@@ -468,8 +512,10 @@ export default function App() {
                   activeModelKey={activeModelKey}
                   effort={effort}
                   commands={commands}
+                  references={projectRefs}
                   hero={empty}
                   onSend={() => void send()}
+                  onSendText={(text) => void send(text)}
                   onVoice={startVoice}
                   onVoiceStop={stopVoice}
                   onSelectModel={(p, m) => void selectModel(p, m)}

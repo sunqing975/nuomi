@@ -5,6 +5,7 @@
  * - 发现视图：适配器只看到 name/description/hint（不含 handler）
  * - 执行：直接调用 handler，**不创建模型消息**；结果直接呈现 UI（此处为输入栏上方反馈条）
  * - parse：解析出的 name 小写、保留 raw（分隔符与后缀）
+ * - kind：command=内置直接执行命令；skill=技能命令（把输入作为消息发给模型，引导用对应能力）
  */
 export interface CommandDef {
   /** 无斜杠小写命令名（如 "theme"） */
@@ -13,6 +14,8 @@ export interface CommandDef {
   description: string;
   /** 可选：用户补充输入前的占位提示 */
   hint?: string;
+  /** command=直接执行（对齐 dsh）；skill=技能命令（dsh「/ 选技能干活」） */
+  kind?: "command" | "skill";
   /** 直接执行，不发给模型；返回字符串时显示为反馈 */
   handler: (raw: string) => string | void | Promise<string | void>;
 }
@@ -29,6 +32,26 @@ export function parseCommand(text: string): ParsedCommand | null {
   if (!t.startsWith("/")) return null;
   const m = /^\/([a-z][a-z0-9-]*)?(.*)$/.exec(t);
   return m ? { name: (m[1] ?? "").toLowerCase(), raw: m[2] ?? "" } : null;
+}
+
+/** @ 引用目标（对齐 dsh「@ 引用子代理/上下文」：把某对象点名带进会话） */
+export interface AtRef {
+  /** 稳定唯一键 */
+  key: string;
+  /** 显示名（如项目名） */
+  label: string;
+  /** 附加说明（如绑定目录路径） */
+  detail?: string;
+  /** 选中后注入输入框的文本（@key 之后的光标后缀） */
+  insert?: string;
+}
+
+/** 语法解析：输入以 @ 开头即视为引用（单独 @ → 空名，显示全部引用） */
+export function parseAt(text: string): { key: string } | null {
+  const t = text.trim();
+  if (!t.startsWith("@")) return null;
+  const m = /^@([a-zA-Z0-9_\-]*)/.exec(t);
+  return m ? { key: (m[1] ?? "").toLowerCase() } : null;
 }
 
 /** 发现视图（对齐 dsh CommandDescriptor：无 handler） */

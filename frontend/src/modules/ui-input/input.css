@@ -241,6 +241,16 @@
   color: var(--label-3);
   border-bottom: 1px solid var(--line-1);
 }
+/* 命令菜单分组标题（命令 / 技能） */
+.cmd-menu-group {
+  padding: 6px 12px 4px;
+  font-size: var(--fs-11);
+  color: var(--label-3);
+  background: color-mix(in srgb, var(--surface) 60%, transparent);
+  border-bottom: 1px solid var(--line-1);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
 .cmd-menu-row {
   display: flex;
   align-items: center;

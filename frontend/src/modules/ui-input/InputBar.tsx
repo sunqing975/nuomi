@@ -6,7 +6,7 @@
 import { useMemo, useRef, useState } from "react";
 import ModelSelect from "../ui-model-selection/ModelSelect";
 import type { ModelProvider } from "../../api";
-import { parseCommand, type CommandDef } from "./commands";
+import { parseCommand, parseAt, type CommandDef, type AtRef } from "./commands";
 import { t } from "../../i18n";
 import { MicIcon, SendIcon } from "../icons";
 
@@ -49,8 +49,10 @@ export default function InputBar({
   activeModelKey,
   effort,
   commands,
+  references,
   hero,
   onSend,
+  onSendText,
   onVoice,
   onVoiceStop,
   onSelectModel,
@@ -66,9 +68,13 @@ export default function InputBar({
   activeModelKey: string | null;
   effort: string | null;
   commands: CommandDef[];
+  /** @ 引用目标列表（对齐 dsh：敲 @ 弹引用面板） */
+  references?: AtRef[];
   /** 空会话（Harness hero）：输入卡双行占位 */
   hero?: boolean;
   onSend: () => void;
+  /** 技能命令：把指定文本作为消息发送（对齐 dsh「/ 选技能 → 带输入干活」） */
+  onSendText?: (text: string) => void;
   onVoice: () => void;
   onVoiceStop: () => void;
   onSelectModel: (provider: string, model: string) => void;
@@ -86,6 +92,15 @@ export default function InputBar({
   }, [parsed, commands]);
   const showMenu = matches.length > 0;
 
+  // @ 引用（对齐 dsh：敲 @ 弹引用面板，点名对象带进会话）
+  const atParsed = useMemo(() => parseAt(input), [input]);
+  const atMatches = useMemo(() => {
+    if (!atParsed || !references?.length) return [];
+    return references.filter((r) => r.key.startsWith(atParsed.key) || r.label.toLowerCase().startsWith(atParsed.key));
+  }, [atParsed, references]);
+  const showAtMenu = atMatches.length > 0;
+  const [atIdx, setAtIdx] = useState(0);
+
   const showFeedback = (text: string) => {
     setFeedback(text);
     if (feedTimer.current) clearTimeout(feedTimer.current);
@@ -95,6 +110,20 @@ export default function InputBar({
   const runCommand = async (raw: string) => {
     if (matches.length === 0) return;
     const cmd = matches[cmdIdx % matches.length];
+    // 技能命令（对齐 dsh「/ 选技能 → 补一句任务」）：把输入作为消息发给模型，引导用对应能力
+    if (cmd.kind === "skill") {
+      const task = raw.trim();
+      if (!task) {
+        showFeedback(t("input.skillNeedTask", { name: cmd.name }));
+        return;
+      }
+      if (onSendText) {
+        setInput("");
+        setCmdIdx(0);
+        onSendText(t("input.skillPrompt", { name: cmd.name, task }));
+        return;
+      }
+    }
     try {
       const r = await cmd.handler(raw);
       if (r) showFeedback(`/${cmd.name} ${r}`);
@@ -108,6 +137,17 @@ export default function InputBar({
   const openCommandMenu = () => {
     setInput("/");
     setCmdIdx(0);
+    taRef.current?.focus();
+  };
+
+  /** 选中 @ 引用：把引用文本注入输入框（替换当前 @ 前缀） */
+  const pickAt = (ref: AtRef) => {
+    const insert = ref.insert ?? ref.label;
+    const idx = input.lastIndexOf("@");
+    const prefix = idx > 0 ? input.slice(0, idx) : "";
+    const suffix = input.slice(idx + 1).replace(/^[a-zA-Z0-9_\-]*/, "");
+    setInput(`${prefix}@${insert}${suffix}`);
+    setAtIdx(0);
     taRef.current?.focus();
   };
 
@@ -127,18 +167,66 @@ export default function InputBar({
       {showMenu && (
         <div className="cmd-menu">
           <div className="cmd-menu-title">{t("input.cmdMenuHint")}</div>
-          {matches.map((c, i) => (
+          {/* 内置命令组 */}
+          {matches.some((c) => c.kind !== "skill") && (
+            <>
+              <div className="cmd-menu-group">{t("input.cmdGroupCommands")}</div>
+              {matches.map((c, i) =>
+                c.kind !== "skill" ? (
+                  <button
+                    key={c.name}
+                    className={`cmd-menu-row ${i === cmdIdx ? "on" : ""}`}
+                    onMouseEnter={() => setCmdIdx(i)}
+                    onClick={() => {
+                      setCmdIdx(i);
+                      void runCommand("");
+                    }}
+                  >
+                    <span className="cmd-name">/{c.name}</span>
+                    <span className="cmd-desc">{c.description}</span>
+                  </button>
+                ) : null,
+              )}
+            </>
+          )}
+          {/* 技能命令组（dsh「/ 选技能干活」） */}
+          {matches.some((c) => c.kind === "skill") && (
+            <>
+              <div className="cmd-menu-group">{t("input.cmdGroupSkills")}</div>
+              {matches.map((c, i) =>
+                c.kind === "skill" ? (
+                  <button
+                    key={c.name}
+                    className={`cmd-menu-row ${i === cmdIdx ? "on" : ""}`}
+                    onMouseEnter={() => setCmdIdx(i)}
+                    onClick={() => {
+                      setCmdIdx(i);
+                      void runCommand("");
+                    }}
+                  >
+                    <span className="cmd-name">/{c.name}</span>
+                    <span className="cmd-desc">{c.description}</span>
+                  </button>
+                ) : null,
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* @ 引用菜单（dsh：敲 @ 弹引用列表，点名项目/上下文） */}
+      {showAtMenu && (
+        <div className="cmd-menu at-menu">
+          <div className="cmd-menu-title">{t("input.atMenuHint")}</div>
+          {atMatches.map((r, i) => (
             <button
-              key={c.name}
-              className={`cmd-menu-row ${i === cmdIdx ? "on" : ""}`}
-              onMouseEnter={() => setCmdIdx(i)}
-              onClick={() => {
-                setCmdIdx(i);
-                void runCommand("");
-              }}
+              key={r.key}
+              className={`cmd-menu-row ${i === atIdx ? "on" : ""}`}
+              onMouseEnter={() => setAtIdx(i)}
+              onClick={() => pickAt(r)}
             >
-              <span className="cmd-name">/{c.name}</span>
-              <span className="cmd-desc">{c.description}</span>
+              <span className="cmd-name">@{r.label}</span>
+              {r.detail && <span className="cmd-desc">{r.detail}</span>}
             </button>
           ))}
         </div>
@@ -158,6 +246,27 @@ export default function InputBar({
               setCmdIdx(0);
             }}
             onKeyDown={(e) => {
+              if (showAtMenu) {
+                if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  setAtIdx((i) => (i + 1) % atMatches.length);
+                  return;
+                }
+                if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  setAtIdx((i) => (i - 1 + atMatches.length) % atMatches.length);
+                  return;
+                }
+                if (e.key === "Enter" || e.key === "Tab") {
+                  e.preventDefault();
+                  pickAt(atMatches[atIdx % atMatches.length]);
+                  return;
+                }
+                if (e.key === "Escape") {
+                  setInput(input.replace(/@[a-zA-Z0-9_\-]*$/, "@"));
+                  return;
+                }
+              }
               if (showMenu) {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();

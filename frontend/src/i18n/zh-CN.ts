@@ -99,6 +99,11 @@ const zhCN = {
   "input.openCommands": "呼出命令（/）",
   "input.cmdMenuHint": "命令（Enter 执行 · Tab 补全 · ↑↓ 选择 · Esc 关闭）",
   "input.cmdFailed": "/{name} 执行失败：{msg}",
+  "input.cmdGroupCommands": "命令",
+  "input.cmdGroupSkills": "技能（选中后补一句任务发送）",
+  "input.atMenuHint": "引用（Enter/Tab 选择 · ↑↓ 移动 · Esc 关闭）",
+  "input.skillNeedTask": "/{name} 是技能命令，请在后面补一句要它做的事，如 /{name} 帮我总结项目结构",
+  "input.skillPrompt": "请使用「{name}」能力执行任务：{task}",
 
   // ---- 模型选择 ----
   "model.selectDefault": "未选择模型",
@@ -232,6 +237,11 @@ const zhCN = {
   "cmd.pluginsDesc": "打开插件面板",
   "cmd.pluginsOpened": "已切换到插件面板",
   "cmd.model": "切换模型",
+  "cmd.planDesc": "计划模式开关（/plan 任务 = 进入模式并提交任务）",
+  "cmd.planOn": "已进入计划模式：agent 会先出计划等你确认",
+  "cmd.planOff": "已退出计划模式",
+  "app.planModePrefix": "【计划模式】请先给出执行计划并等待我确认，确认前不要执行修改类操作。任务：",
+  "app.projectNoDir": "未绑定目录",
   "cmd.notFound": "未知指令：{name}",
   "cmd.executed": "执行了 {name}",
 
