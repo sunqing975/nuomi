@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from langchain_core.messages import HumanMessage
 
 from app.main import build_app
-from app.supervisor import build_supervisor
+from app.agent.supervisor import build_supervisor
 
 from .fake_llm import FakeChatModel
 

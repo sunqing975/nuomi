@@ -6,51 +6,55 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import secrets
 import shutil
+import sys
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import Depends, FastAPI, HTTPException, UploadFile
+from fastapi import FastAPI, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessageChunk
 from pydantic import BaseModel, Field
 
-from .agent import build_graph, build_llm, create_checkpointer, create_pg_checkpointer
-from .approval import ApprovalGate, get_gate, set_gate
-from .auth import UserStore, create_token, current_user
-from .composer import NuomiComposer
+from .agent.graph import build_graph, build_llm, create_checkpointer
+from .plugins.approval import ApprovalGate, get_gate, set_gate
+from .plugins.composer import NuomiComposer
 from .config import settings
-from .context import NuomiMiddleware
-from .knowledge import build_knowledge_store, set_store as set_knowledge_store
-from .memory import MemoryStore, get_store, set_store
-from .models import (
+from .agent.middleware import NuomiMiddleware
+from .storage.knowledge import build_knowledge_store, set_store as set_knowledge_store
+from .storage.memory import MemoryStore, get_store, set_store
+from .agent.models import (
     build_model_llm,
     custom_key,
     fetch_available_models,
     find_model,
     list_providers,
 )
-from .partner import assemble_system_prompt, load_partner
-from .projects import ProjectStore, is_placeholder_title
-from .thread_ctx import current_thread_id as thread_ctx
-from .plugin_runtime import (
+from .agent.partner import assemble_system_prompt, load_partner
+from .storage.projects import ProjectStore, is_placeholder_title
+from .agent.thread_ctx import current_thread_id as thread_ctx
+from .plugins.runtime import (
     MESSAGE_RECEIVED,
     MODEL_SWITCHED,
     RESPONSE_DONE,
 )
-from .skills import (
+from .plugins.loader import (
     collect_instructions,
     collect_skill_catalog,
     collect_tools,
     scan_plugins,
 )
 from .sse import SSE_HEADERS, sse
-from .supervisor import build_supervisor
-from .trace import TraceLogger, set_logger
+from .agent.supervisor import build_supervisor
+from .storage.trace import TraceLogger, set_logger
+from .storage.db import ensure_database
+from .storage.workspace import list_tree, safe_project_dirname
 
 
 class ChatRequest(BaseModel):
@@ -90,11 +94,6 @@ class CustomProviderUpdate(BaseModel):
     models: list[CustomModelRow] | None = None
 
 
-class AuthRequest(BaseModel):
-    username: str = Field(min_length=1, max_length=64)
-    password: str = Field(min_length=1, max_length=128)
-
-
 class InstallRequest(BaseModel):
     name: str = Field(min_length=1, max_length=64)
     source: str = Field(min_length=1, max_length=2000)  # 目录 / zip / git URL
@@ -114,6 +113,10 @@ class NewProjectRequest(BaseModel):
     directory: str | None = Field(default=None, max_length=2048, description="绑定的本机目录（绝对路径，可选）")
 
 
+class BootstrapWorkspaceRequest(BaseModel):
+    workspace: str = Field(min_length=1, max_length=2048, description="工作区根目录绝对路径")
+
+
 class SetProjectDirectoryRequest(BaseModel):
     directory: str | None = Field(default=None, max_length=2048, description="要绑定的本机目录绝对路径；传空串/None 解绑")
 
@@ -130,17 +133,16 @@ class RenameThreadRequest(BaseModel):
 def make_prompt_builder(partner, instructions: list[str], memory: MemoryStore, memory_enabled: bool = True, app=None):
     """按"当前用户消息"检索记忆，组装每轮的 system prompt（闭包交给中间件）。
 
-    Phase 4a 多用户：user 非 None 时检索该用户独立的记忆库（get_store(user)）。
     Phase 4d+ 插件管理：memory_enabled=False（memory 插件被停用）时不注入记忆事实，
     模型表现为"失忆"——引擎注入与工具层一起受插件开关控制。
     skill_catalog 常驻注入（name+description 目录，正文按需读），对齐 Harness 会话目录。
     """
 
-    def builder(last_user_msg: str, user: str | None = None) -> str:
+    def builder(last_user_msg: str) -> str:
         if not memory_enabled:
             merged: list = []
         else:
-            store = get_store(user) if user else memory
+            store = memory
             facts = store.search(last_user_msg, top_k=3) + store.recent(top_k=3)
             seen: set[str] = set()
             merged = []
@@ -220,7 +222,7 @@ def _merge_usage(acc: dict, chunk) -> None:
 
 
 async def _trace_turn(
-    app: FastAPI, thread_id: str, user_msg: str, reply: str, error: str, started: float, user: str | None = None
+    app: FastAPI, thread_id: str, user_msg: str, reply: str, error: str, started: float
 ):
     """对话结束后写一行 trace：时间/会话/用户消息/工具调用/回复长度/耗时。"""
     import time as _t
@@ -245,7 +247,6 @@ async def _trace_turn(
         tools_called=tools_called,
         error=error or None,
         latency_s=round(_t.time() - started, 3),
-        user=user,
     )
 
 
@@ -260,9 +261,9 @@ def build_app(
     summarize_keep_recent: int | None = None,
     knowledge_store_type: str | None = None,
     knowledge_dir: str | None = None,
-    users_file: str | None = None,
+    workspace_dir: str | None = None,
 ) -> FastAPI:
-    # 统一插件根目录：一个插件 = 一个目录 + plugin.json，type 区分能力型/程序型
+    # 统一插件根目录：一个插件 = 一个目录 + plugin.json
     llm_cfg = llm or build_llm(settings)
     db_cfg = db_path or str(settings.db_file)
     sk_dir = skills_dir or settings.plugins_dir
@@ -273,30 +274,30 @@ def build_app(
     keep_recent = summarize_keep_recent or settings.summarize_keep_recent
     kb_type = knowledge_store_type or settings.knowledge_store
     kb_root = Path(knowledge_dir) if knowledge_dir else settings.knowledge_path
-    users_file_cfg = users_file or str(settings.users_path)
+    # 工作区覆盖（测试注入 / 向导保存等价物）：优先级低于 NUOMI_WORKSPACE env
+    if workspace_dir is not None:
+        settings._workspace_override = workspace_dir
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         db = Path(db_cfg)
-        db.parent.mkdir(parents=True, exist_ok=True)
-        # checkpointer：sqlite（默认）或 postgres（Phase 4a 多用户）
-        checkpointer_cm = (
-            create_pg_checkpointer(settings.pg_dsn)
-            if settings.checkpointer == "postgres"
-            else create_checkpointer(db_cfg)
-        )
-        async with checkpointer_cm as saver:
-            # 伙伴 + 知识库 + 可观测 + 人机回环 + 多用户库（V2 兼容读点）
+        ensure_database(db)  # 统一库：schema 版本（决策 3/5；全新环境，无遗留迁移）
+
+        # 桌面 sidecar 本地 token（阶段 C）：打包（frozen）自动生成/复用 NUOMI_HOME/.api-token；
+        # dev 源码运行默认不校验（不影响 vite 代理）；NUOMI_TOKEN env 可强制开关。
+        app.state.api_token = _ensure_api_token(db.parent)
+
+        async with create_checkpointer(db_cfg) as saver:
+            # 伙伴 + 知识库 + 可观测 + 人机回环（决策 1：单用户，无 auth/users）
             partner = load_partner(p_dir, p_name)
             knowledge = build_knowledge_store(kb_type, kb_root)
             set_knowledge_store(knowledge)
-            logger = TraceLogger(settings.trace_file)
+            logger = TraceLogger(str(settings.trace_path))
             set_logger(logger)
             gate = ApprovalGate(auto_approve=settings.auto_approve)
             set_gate(gate)
-            app.state.users = UserStore(users_file_cfg)
             app.state.db_path = db_cfg
-            app.state.projects = ProjectStore(Path(db_cfg).parent / "threads.db")
+            app.state.projects = ProjectStore(db_cfg)
             app.state.projects.ensure_default_project()
             app.state.memory_file = mem_file
             app.state.last_emotion = "neutral"
@@ -329,6 +330,10 @@ def build_app(
                     svc["store"].set("summarize_max_messages", max_msgs, persist=False)
                 if summarize_keep_recent is not None:
                     svc["store"].set("summarize_keep_recent", keep_recent, persist=False)
+                # 首启向导保存的工作区路径（settings.global.workspace_dir）→ 运行时覆盖默认
+                saved_ws = svc["store"].get("workspace_dir")
+                if isinstance(saved_ws, str) and saved_ws.strip():
+                    settings._workspace_override = saved_ws.strip()
 
             # V2 兼容读点：rebuild_agents 委托给 agentLoop 服务（插件/设置变更事件已驱动重建）
             def rebuild_agents():
@@ -368,15 +373,30 @@ def build_app(
         allow_headers=["*"],
     )
 
+    @app.middleware("http")
+    async def token_guard(request: Request, call_next):
+        """桌面 sidecar 本地 token 校验（阶段 C）：app.state.api_token 非 None 时启用，
+        /api/* 均需 X-Nuomi-Token（health 与静态页面放行）。dev 默认不启用。"""
+        if app.state.api_token and request.url.path.startswith("/api"):
+            if not request.url.path.startswith("/api/health"):
+                if request.headers.get("X-Nuomi-Token") != app.state.api_token:
+                    return JSONResponse({"detail": "未授权：缺少有效 token"}, status_code=401)
+        return await call_next(request)
+
     @app.get("/health")
     @app.get("/api/health")  # Vite /api 代理下的别名（前端设置面板探活）
     async def health():
-        memory = app.state.memory if hasattr(app.state, "memory") else None
+        from .storage.memory import get_backend
+
+        try:
+            memory_count = len(get_backend().list())
+        except Exception:
+            memory_count = 0
         return {
             "status": "ok",
             "model": app.state.model_name,
             "partner": app.state.partner.display_name,
-            "memory_facts": len(memory.facts) if memory else 0,
+            "memory_facts": memory_count,
             "knowledge": {
                 "store": kb_type,
                 "documents": app.state.knowledge.count(),
@@ -671,18 +691,6 @@ def build_app(
         merged = svc["plugin_set"](plugin_id, req.patch)
         return {"ok": True, "plugin": plugin_id, "values": merged}
 
-    @app.post("/api/auth/register")
-    async def register(req: AuthRequest):
-        app.state.users.register(req.username, req.password)
-        return {"ok": True, "user": req.username.strip().lower()}
-
-    @app.post("/api/auth/login")
-    async def login(req: AuthRequest):
-        if not app.state.users.verify(req.username, req.password):
-            raise HTTPException(401, "用户名或密码错误")
-        username = req.username.strip().lower()
-        return {"token": create_token(username), "user": username}
-
     # --- V3 增强：项目 / 会话（Harness workspace/session 轻量版） ---
     @app.get("/api/projects")
     async def projects_list():
@@ -690,7 +698,17 @@ def build_app(
 
     @app.post("/api/projects")
     async def projects_create(req: NewProjectRequest):
-        return app.state.projects.create_project(req.name, req.directory)
+        """新建项目：显式给了 directory 则按指定绑定；否则在工作区自动创建目录并绑定
+        （阶段 B：一个项目 = 工作区里的一个目录）。"""
+        if req.directory:
+            return app.state.projects.create_project(req.name, req.directory)
+        try:
+            safe = safe_project_dirname(req.name)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        d = settings.workspace_path / safe
+        d.mkdir(parents=True, exist_ok=True)
+        return app.state.projects.create_project(req.name, str(d))
 
     @app.patch("/api/projects/{project_id}/directory")
     async def projects_set_directory(project_id: int, req: SetProjectDirectoryRequest):
@@ -704,8 +722,47 @@ def build_app(
 
     @app.delete("/api/projects/{project_id}")
     async def projects_delete(project_id: int):
+        # 只删库记录与级联会话；工作区目录是用户文件，保留（不静默删数据）
         app.state.projects.delete_project(project_id)
         return {"ok": True}
+
+    # --- 阶段 B：工作区（前端项目树 = 工作区目录） ---
+    @app.get("/api/workspace/tree")
+    async def workspace_tree():
+        """安全列出工作区目录树（隐藏项/依赖目录跳过，深度与条目数有上限）。"""
+        return list_tree(settings.workspace_path)
+
+    # --- 阶段 D：首启向导 ---
+    @app.get("/api/bootstrap")
+    async def bootstrap():
+        """首启判定：未配置任何可用 LLM 供应商且未激活模型 → 需要走向导。"""
+        svc = app.state.scope.get("settings")
+        if svc is None:
+            return {"setup_required": False, "workspace": str(settings.workspace_path), "llm_configured": False}
+        s = svc["store"]
+        cps = s.get("custom_providers", []) or []
+        am = s.get("active_model")
+        llm_configured = bool(cps and isinstance(am, dict) and am.get("provider"))
+        return {
+            "setup_required": not llm_configured,
+            "workspace": str(settings.workspace_path),
+            "llm_configured": llm_configured,
+        }
+
+    @app.post("/api/bootstrap/workspace")
+    async def bootstrap_workspace(req: BootstrapWorkspaceRequest):
+        """向导保存工作区路径：写入 settings（lifespan 启动时自动恢复）。"""
+        svc = app.state.scope.get("settings")
+        if svc is None:
+            raise HTTPException(503, "settings 服务未加载")
+        p = Path(req.workspace).expanduser()
+        try:
+            p.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            raise HTTPException(400, f"无法创建工作区目录：{e}")
+        svc["store"].set("workspace_dir", str(p))
+        settings._workspace_override = str(p)
+        return {"ok": True, "workspace": str(p)}
 
     @app.get("/api/threads")
     async def threads_list(project_id: int | None = None):
@@ -726,9 +783,9 @@ def build_app(
         return {"ok": True}
 
     @app.get("/api/threads/{thread_id}/messages")
-    async def thread_messages(thread_id: str, user: str | None = Depends(current_user)):
+    async def thread_messages(thread_id: str):
         """读取会话历史（checkpointer 消息 → [{role, content}]），供切换会话时加载。"""
-        key = f"{user}::{thread_id}" if user else thread_id
+        key = thread_id
         tr = await app.state.checkpointer.aget_tuple({"configurable": {"thread_id": key}})
         if tr is None:
             return {"messages": []}
@@ -746,7 +803,7 @@ def build_app(
         return {"messages": out}
 
     @app.post("/api/chat")
-    async def chat(req: ChatRequest, user: str | None = Depends(current_user)):
+    async def chat(req: ChatRequest):
         """统一聊天入口：智能体团队（team 插件）启用时自动走 Supervisor 路由，否则单 Agent。"""
         # --- 会话元数据（V3 增强：项目/会话概念） ---
         store = app.state.projects
@@ -762,8 +819,8 @@ def build_app(
             req.thread_id = t["id"]
             is_new = True
         thread_id = req.thread_id
-        key = f"{user}::{thread_id}" if user else thread_id
-        config = {"configurable": {"thread_id": key, "user": user}}
+        key = thread_id
+        config = {"configurable": {"thread_id": key}}
         # 请求级上下文：fs 等插件工具经 contextvars 读取当前会话 thread_id（langchain
         # create_agent 的工具执行不注入 RunnableConfig，见 app/thread_ctx.py）
         _thread_ctx = thread_ctx.set(thread_id)
@@ -832,7 +889,7 @@ def build_app(
                         _merge_usage(last_usage, chunk)
                 app.state.event_bus.publish(
                     RESPONSE_DONE,
-                    {"reply": full, "thread_id": thread_id, "user": user,
+                    {"reply": full, "thread_id": thread_id,
                      "latency_s": round(__import__("time").time() - started, 3)},
                 )
                 yield sse(
@@ -852,23 +909,23 @@ def build_app(
                     else:
                         store.auto_title(thread_id, req.message)
                     yield sse("title", {"thread_id": thread_id, "title": title or (store.get_thread(thread_id) or {}).get("title", "")})
-                await _trace_turn(app, key, req.message, full, "", started, user)
+                await _trace_turn(app, key, req.message, full, "", started)
             except Exception as e:  # 流中途出错：告知前端而非挂死
                 if title_task is not None and not title_task.done():
                     title_task.cancel()
                 yield sse("error", {"message": f"{e.__class__.__name__}: {e}"})
-                await _trace_turn(app, key, req.message, "", str(e), started, user)
+                await _trace_turn(app, key, req.message, "", str(e), started)
 
         return StreamingResponse(
             event_stream(), media_type="text/event-stream", headers=SSE_HEADERS
         )
 
     @app.post("/api/supervisor/chat")
-    async def supervisor_chat(req: ChatRequest, user: str | None = Depends(current_user)):
+    async def supervisor_chat(req: ChatRequest):
         """Supervisor 多智能体入口（兼容保留）：LLM 路由 → companion/researcher 子 Agent。"""
         thread_id = req.thread_id or str(uuid.uuid4())
-        key = f"{user}::sup::{thread_id}" if user else f"sup::{thread_id}"
-        config = {"configurable": {"thread_id": key, "user": user}}
+        key = f"sup::{thread_id}"
+        config = {"configurable": {"thread_id": key}}
         _thread_ctx = thread_ctx.set(thread_id)
         if app.state.supervisor is None:
             raise HTTPException(400, "智能体团队插件未启用")
@@ -896,10 +953,10 @@ def build_app(
                                         yield sse("token", {"content": text})
                                     break
                 yield sse("done", {"thread_id": thread_id, "content": full})
-                await _trace_turn(app, key, req.message, full, "", started, user)
+                await _trace_turn(app, key, req.message, full, "", started)
             except Exception as e:
                 yield sse("error", {"message": f"{e.__class__.__name__}: {e}"})
-                await _trace_turn(app, key, req.message, "", str(e), started, user)
+                await _trace_turn(app, key, req.message, "", str(e), started)
 
         return StreamingResponse(
             event_stream(), media_type="text/event-stream", headers=SSE_HEADERS
@@ -937,6 +994,32 @@ def build_app(
         return {"result": app.state.gate.reject(pid)}
 
     return app
+
+
+def _ensure_api_token(data_root: Path) -> str | None:
+    """桌面 sidecar 本地 token（阶段 C）。
+
+    - NUOMI_TOKEN 环境变量显式指定 → 强制启用该校验值
+    - 打包（sys.frozen）→ 自动生成/复用 NUOMI_HOME/.api-token（0600）
+    - 源码运行（dev）→ 返回 None 不校验，vite 代理不受影响
+    """
+    env_token = os.environ.get("NUOMI_TOKEN", "").strip()
+    if env_token:
+        return env_token
+    if getattr(sys, "frozen", False):
+        token_path = data_root / ".api-token"
+        if token_path.exists():
+            token = token_path.read_text(encoding="utf-8").strip()
+            if token:
+                return token
+        token = secrets.token_hex(24)
+        token_path.write_text(token, encoding="utf-8")
+        try:
+            token_path.chmod(0o600)
+        except OSError:
+            pass
+        return token
+    return None
 
 
 def _sanitize_plugin_name(name: str) -> str:

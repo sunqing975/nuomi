@@ -1,46 +1,26 @@
-# 糯米 · docker compose：postgres + backend + frontend
-# 端口已避开本机开发服务（8000/5173/5432）：后端 8001、前端 8080、PG 5433
+# 糯米 · docker compose：backend + frontend（Web 部署形态）
+# 决策 1：多用户移除 → 无 postgres；SQLite 单文件挂持久卷。
+# 端口避开本机开发服务（8000/5173）：后端 8001、前端 8090
 services:
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_DB: nuomi
-      POSTGRES_USER: nuomi
-      POSTGRES_PASSWORD: nuomi
-    ports:
-      - "5433:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U nuomi -d nuomi"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
   backend:
     build:
       context: .
       dockerfile: Dockerfile.backend
     environment:
-      CHECKPOINTER: postgres
-      PG_DSN: postgresql://nuomi:nuomi@postgres:5432/nuomi
       LLM_API_KEY: ${DEEPSEEK_API_KEY:-}
       LLM_MODEL: deepseek-chat
       LLM_BASE_URL: https://api.deepseek.com
       HF_ENDPOINT: https://hf-mirror.com
-      # 容器内路径（config.py 的 REPO_ROOT 在 /app 下解析不到，显式指定）
-      SKILLS_DIR: /app/skills
+      # 容器内无仓库：资源与数据路径显式指定（config 默认值在容器内解析不到）
+      PLUGINS_DIR: /app/plugins
       PARTNERS_DIR: /app/partners
-      DB_PATH: /app/data/nuomi.sqlite
-      MEMORY_FILE: /app/data/memories/nuomi/facts.json
-      TRACE_FILE: /app/data/logs/trace.jsonl
-      USERS_FILE: /app/data/users.json
-      KNOWLEDGE_DIR: /app/data/knowledge
+      NUOMI_HOME: /app/data
+      WORKSPACE_DIR: /app/workspace
     ports:
       - "8001:8000"
-    depends_on:
-      postgres:
-        condition: service_healthy
+    volumes:
+      - nuomi-data:/app/data
+      - nuomi-workspace:/app/workspace
 
   frontend:
     build:
@@ -52,4 +32,5 @@ services:
       - backend
 
 volumes:
-  pgdata:
+  nuomi-data:
+  nuomi-workspace:

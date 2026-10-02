@@ -7,7 +7,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app.main import build_app
-from app.trace import TraceLogger
+from app.storage.trace import TraceLogger
 
 from .fake_llm import FakeChatModel
 

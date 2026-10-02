@@ -14,7 +14,7 @@ from pathlib import Path
 
 from langchain_core.tools import BaseTool, tool
 
-from .plugin_runtime import PLUGIN_TOGGLED, PluginContext
+from .runtime import PLUGIN_TOGGLED, PluginContext
 
 
 def load_plugins(app) -> None:

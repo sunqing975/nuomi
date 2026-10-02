@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from app.partner import assemble_system_prompt, load_partner
+from app.agent.partner import assemble_system_prompt, load_partner
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PARTNERS_DIR = REPO_ROOT / "partners"
@@ -19,7 +19,7 @@ def test_load_nuomi_partner():
 
 
 def test_list_partners():
-    from app.partner import list_partners
+    from app.agent.partner import list_partners
 
     names = list_partners(PARTNERS_DIR)
     assert "nuomi" in names
@@ -39,7 +39,7 @@ def test_assemble_order_rules_first():
 
 def test_assemble_includes_memory_and_profile():
     p = load_partner(PARTNERS_DIR, "nuomi")
-    from app.memory import MemoryFact
+    from app.storage.memory import MemoryFact
 
     f = MemoryFact(id="x", content="用户喜欢美式咖啡", category="preference")
     prompt = assemble_system_prompt(p, [], memory_facts=[f])

@@ -20,7 +20,6 @@ def _make_app(tmp_path):
         memory_file=str(tmp_path / "mem" / "nuomi" / "facts.json"),
         knowledge_store_type="lexical",
         knowledge_dir=str(tmp_path / "kb"),
-        users_file=str(tmp_path / "users.json"),
     )
 
 

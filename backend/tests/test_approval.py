@@ -7,7 +7,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 from langchain_core.tools import tool
 
-from app.approval import ApprovalGate
+from app.plugins.approval import ApprovalGate
 from app.main import build_app
 
 from .fake_llm import FakeChatModel

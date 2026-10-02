@@ -3,7 +3,7 @@
 apply(ctx) 注册团队运行时：确保 Supervisor（companion + researcher + LLM 路由）存在，
 订阅 PLUGIN_TOGGLED 事件挂/卸。停用后 /api/chat 自动退化为单 Agent——前端无感。
 """
-from app.plugin_runtime import PLUGIN_TOGGLED
+from app.plugins.runtime import PLUGIN_TOGGLED
 
 
 def apply(ctx) -> None:
@@ -27,7 +27,7 @@ def _ensure_supervisor(app) -> None:
     """确保 Supervisor 存在（rebuild 已按 enabled 构建时幂等跳过）。"""
     if getattr(app.state, "supervisor", None) is not None:
         return
-    from app.supervisor import build_supervisor
+    from app.agent.supervisor import build_supervisor
 
     app.state.supervisor, app.state.subagents = build_supervisor(
         llm=app.state.llm_cfg,

@@ -1,15 +1,16 @@
 """service-system-prompt · ctx.systemPrompt 服务（Seam Provider）。
 
-build(last_user_msg, user=None) → str：伙伴人设 + 插件 system_instruction +
-技能目录（name+description 常驻，正文按需）+ 记忆事实（memory 服务）。
+build(last_user_msg) → str：伙伴人设 + 插件 system_instruction +
+技能目录（name+description 常驻，正文按需）。
 对齐 Harness systemPrompt 子系统：提示词由服务组装，消费方是 agent-loop。
+
+记忆注入（记忆 v2）：已从本服务**移除**——冻结快照由 NuomiMiddleware 负责
+（会话开始取一次，含容量 header）。本服务不再依赖 memory 服务。
 """
 from __future__ import annotations
 
 from app.core import FiberState
-from app.partner import assemble_system_prompt
-
-inject = ["memory"]  # 依赖声明：memory 服务未就绪 → PENDING，就绪后自动启动
+from app.agent.partner import assemble_system_prompt
 
 
 def apply(ctx):
@@ -35,19 +36,10 @@ def apply(ctx):
         return out
 
     def build(last_user_msg: str, user: str | None = None) -> str:
-        facts = []
-        store = ctx.get("memory")  # 运行时取服务（apply 时序无关，服务消失自动降级）
-        if store is not None:
-            merged = store.search(last_user_msg, top_k=3) + store.recent(top_k=3)
-            seen: set[str] = set()
-            for f in merged:
-                if f.id not in seen:
-                    seen.add(f.id)
-                    facts.append(f)
         return assemble_system_prompt(
             partner,
             _instructions(),
-            memory_facts=facts,
+            memory_facts=[],
             skill_catalog=_skill_catalog(),
         )
 

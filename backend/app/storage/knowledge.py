@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 
 # 模型下载走国内镜像（实测直连 huggingface 超时；fastembed 读 HF_ENDPOINT）
-from .config import settings
+from ..config import settings
 
 _MODEL_NAME = "BAAI/bge-small-zh-v1.5"
 _BIGRAM_RE = re.compile(r"[\u4e00-\u9fff]{2}")

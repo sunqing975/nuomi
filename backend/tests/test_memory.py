@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 
-from app.memory import MemoryStore
+from app.storage.memory import MemoryStore
 
 
 def test_add_and_dedup(tmp_path):
@@ -40,7 +40,7 @@ def test_recent_order(tmp_path):
 def test_eviction_drops_least_used(tmp_path):
     s = MemoryStore(tmp_path / "facts.json")
     # 直接注入超过上限（300）前先小规模验证淘汰逻辑
-    from app.memory import _MAX_FACTS
+    from app.storage.memory import _MAX_FACTS
 
     s.facts = []
     for i in range(_MAX_FACTS + 10):

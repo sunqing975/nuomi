@@ -6,6 +6,7 @@ const zhCN = {
   "common.delete": "删除",
   "common.edit": "编辑",
   "common.confirm": "确认",
+  "common.back": "上一步",
   "brand.name": "糯米",
 
   // ---- App ----
@@ -73,6 +74,32 @@ const zhCN = {
   "sidebar.newProjectIcon": "新建项目",
   "sidebar.ungrouped": "未分组",
   "sidebar.selectProject": "切换到该工作区（▾/▴ 折叠）",
+  "sidebar.tabSessions": "会话",
+  "sidebar.tabFiles": "文件",
+  "sidebar.files": "工作区文件",
+  "sidebar.filesEmpty": "工作区还是空的——新建项目会自动创建目录",
+  "sidebar.filesError": "读取工作区失败",
+  "sidebar.filesRoot": "工作区根",
+  "sidebar.filesRefresh": "刷新",
+
+  // ---- 首启向导（阶段 D） ----
+  "wizard.title": "欢迎使用糯米",
+  "wizard.subtitle": "先做两步设置，马上开始",
+  "wizard.workspaceLabel": "工作区",
+  "wizard.workspaceDesc": "糯米的项目与文件都放在这里：一个项目 = 一个目录。可改用任意本机路径。",
+  "wizard.workspacePath": "工作区目录",
+  "wizard.workspacePlaceholder": "~/Documents/Nuomi",
+  "wizard.workspaceRequired": "工作区路径不能为空",
+  "wizard.next": "下一步",
+  "wizard.llmTitle": "配置对话模型",
+  "wizard.llmDesc": "填写一个 OpenAI 兼容的模型服务（默认 DeepSeek 已预填）。",
+  "wizard.providerName": "服务名称",
+  "wizard.baseUrl": "API 地址",
+  "wizard.apiKey": "API Key",
+  "wizard.apiKeyPlaceholder": "sk-…（可稍后在设置中补充）",
+  "wizard.modelId": "模型",
+  "wizard.finish": "完成，开始使用",
+  "wizard.busy": "配置中…",
 
   // ---- 聊天 ----
   "chat.teamOnline": "团队模式 · 在线",

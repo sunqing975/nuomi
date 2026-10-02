@@ -1,6 +1,40 @@
 /** V3 API 客户端：聊天 SSE + 插件管理（含导入/卸载）+ 设置系统 + 模型。 */
 import { t } from "./i18n";
 
+// ---------- API base（桌面端） ----------
+// Tauri 侧拉起后端后注入 window.__NUOMI_API__（如 http://127.0.0.1:8xxxx）
+// 与 window.__NUOMI_TOKEN__（sidecar 本地 token）；Web dev 下为空 → 走 vite proxy。
+// 每次请求动态读取：注入发生在页面加载之后，避免竞态。
+function apiBase(): string {
+  const w = globalThis as Record<string, unknown>;
+  return typeof w.__NUOMI_API__ === "string" ? (w.__NUOMI_API__ as string) : "";
+}
+
+function apiToken(): string {
+  const w = globalThis as Record<string, unknown>;
+  return typeof w.__NUOMI_TOKEN__ === "string" ? (w.__NUOMI_TOKEN__ as string) : "";
+}
+
+const _origFetch = globalThis.fetch.bind(globalThis);
+globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+  let url: string;
+  if (typeof input === "string") url = input;
+  else if (input instanceof URL) url = input.href;
+  else url = input.url;
+  let opts = init;
+  const token = apiToken();
+  if (token) {
+    const headers = new Headers(init?.headers);
+    headers.set("X-Nuomi-Token", token);
+    opts = { ...init, headers };
+  }
+  const base = apiBase();
+  if (base && url.startsWith("/api/")) {
+    return _origFetch(base + url, opts);
+  }
+  return _origFetch(input, opts);
+}) as typeof fetch;
+
 // ---------- 聊天 ----------
 
 export interface StreamHandlers {
@@ -449,4 +483,51 @@ export async function renameThread(threadId: string, title: string): Promise<voi
 export async function deleteThread(threadId: string): Promise<void> {
   const res = await fetch(`/api/threads/${threadId}`, { method: "DELETE" });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
+}
+
+// ---------- 阶段 B：工作区（前端项目树 = 工作区目录） ----------
+
+export interface WorkspaceEntry {
+  name: string;
+  type: "dir" | "file";
+  size?: number;
+  children?: WorkspaceEntry[];
+}
+
+export interface WorkspaceTree {
+  root: string;
+  entries: WorkspaceEntry[];
+}
+
+export async function fetchWorkspaceTree(): Promise<WorkspaceTree> {
+  const res = await fetch("/api/workspace/tree");
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json() as Promise<WorkspaceTree>;
+}
+
+// ---------- 阶段 D：首启向导 ----------
+
+export interface BootstrapStatus {
+  setup_required: boolean;
+  workspace: string;
+  llm_configured: boolean;
+}
+
+export async function fetchBootstrap(): Promise<BootstrapStatus> {
+  const res = await fetch("/api/bootstrap");
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json() as Promise<BootstrapStatus>;
+}
+
+export async function saveBootstrapWorkspace(workspace: string): Promise<{ ok: boolean; workspace: string }> {
+  const res = await fetch("/api/bootstrap/workspace", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ workspace }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.detail ?? `HTTP ${res.status}`);
+  }
+  return res.json() as Promise<{ ok: boolean; workspace: string }>;
 }

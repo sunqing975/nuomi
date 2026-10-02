@@ -13,7 +13,7 @@
 - **路线图**：Phase 0（打字核心）✅ → Phase 1（伙伴+记忆）✅ → Phase 2（插件化★）✅ → Phase 3（健壮+评测）✅ → Phase 4（部署扩展）✅ → **Phase 5（全能化★：执行能力 shell/fs/subagent、上下文 compaction/spill、交互 user-questions、产物 attachment/credentials）→ 当前推进**。
 - **LLM**：默认 DeepSeek（env: `LLM_API_KEY` > `DEEPSEEK_API_KEY` > `ARK_API_KEY`，base_url https://api.deepseek.com，model deepseek-chat）；换豆包 = 改 .env 的 base_url/model。本机已配 DEEPSEEK_API_KEY。
 - **LLM 现状（2026-09-30 实测后定）**：测试主力 = DeepSeek（工具调用可靠）；本地 Qwen3.5-2B（llama.cpp :8080）仅适合纯对话，工具调用不稳定。.env 里两种配置都留好，注释切换即可。
-- **存储**：对话历史用 SQLite checkpointer（backend/data/nuomi.sqlite）；记忆 JSON（backend/data/memories/<partner>/facts.json，MemoryStore）；知识库 Chroma 在 Phase 2。
+- **存储（2026-10-02 桌面化后）**：全合一 SQLite（NUOMI_HOME/nuomi.db：checkpoints + projects/threads + facts 记忆 + settings 设置）；知识库 Chroma 在 NUOMI_HOME/knowledge/<partner>/；遗留 backend/data/ 由首启迁移一次性只读导入，不删源。
 - **流式**：`POST /api/chat` → SSE（meta/token/done/error 四事件）。**只流 AI 片段**（isinstance AIMessageChunk），工具原始输出不进聊天流。
 - **上下文压缩（Phase 1 关键坑）**：LangChain `create_agent` 的 before_model 中间件返回 `{"messages": ...}` 会被 add_messages 语义**按消息 id 合并**，删掉的旧消息会被还原，模型输入不压缩（实测 21 条持续增长）。**正解：用 `awrap_model_call` 钩子**，通过 `request.override(messages=..., system_message=...)` 直接构造模型输入（system 提示 + 裁剪后的历史），模型输入有界（实测 21→4）；摘要按 thread_id 在内存增量缓存（covered 计数），进程重启后重新摘要可接受。
 - **中间件选型**：AgentMiddleware（`langchain.agents.middleware`），`abefore_model(state, runtime)` 返回状态更新（会被 reducer 合并）；`awrap_model_call(request, handler)` 直接改模型输入（当前用这个）。改 request 字段要用 `request.override(...)`（不可变模式），直接赋值已废弃（DeprecationWarning）。
@@ -25,7 +25,7 @@
   - **env 不默认继承**：子进程只拿显式传的 env；测试隔离用 `NOTES_DATA` 环境变量（server.py 支持），adapter 侧 `env=dict(os.environ)`
 - **RAG 知识库（Phase 2）**：`app/knowledge.py` 定义接口（add/search/count），ChromaStore（Chroma PersistentClient + fastembed BAAI/bge-small-zh-v1.5，512 维；客户端与模型都懒加载）与 LexicalStore（CJK 二元组，离线/测试兜底）可插拔；`knowledge_store=chroma|lexical` 配置切换；数据在 backend/data/knowledge/<partner>/。**embedding 模型下载必须走 HF 镜像**（`HF_ENDPOINT=https://hf-mirror.com`，实测直连 huggingface 超时；config.hf_endpoint 默认已设）。
 - **system prompt 组装顺序（重要设计）**：插件使用规则（最高优先级）在前，人设在后。实测 2B 模型人设在前会压掉工具调用（详见验证记录）。
-- **多用户后置**：Phase 4 才做 PG+JWT；当前无鉴权，thread_id 即会话键。
+- **多用户已移除（2026-10-02）**：桌面单用户形态，JWT/auth.py/users.json、PostgreSQL（langgraph-checkpoint-postgres）、`user::` 命名空间全部删除；本地 API 回环监听无鉴权，thread_id 即会话键。
 
 ## 环境事实（重要）
 - 后端 Python 3.12（uv 管理，`backend/.venv`）；前端 Node 22 / Vite 5 / React 18 / TS。
@@ -401,3 +401,34 @@ models.py 删除 BUILTIN_PROVIDERS（deepseek/doubao/local）与 PROVIDERS/MODEL
 - **根因**：团队模式（supervisor）的路由用 `llm.with_structured_output(Route, method="function_calling")` → bind_tools 时绑定 `tool_choice="any"` → DeepSeek 思考模式拒绝显式 tool_choice。
 - **修复**：supervisor.py 路由改为**纯文本 JSON 解析**（不再绑定工具/结构化输出），解析失败回退 companion；`router` 注入（测试用）路径保留。
 - **实测验证（真实 key）**：无工具 ✓ / 带工具 tool_choice=None（主聊天 create_agent 路径）✓ / function_calling ✗（修复前路径，已不再使用）。主聊天不受影响，仅团队路由修复。
+
+## 桌面化数据与工作区架构（2026-10-02，用户拍板三决策）
+
+用户体检结论（9 项不合理）：数据锚在仓库 backend/data、存储碎片化 10 文件、工作区语义割裂、密钥明文 .env/settings.json、桌面壳未接线、本地 API 无鉴权、多用户 JWT 与桌面冲突、插件源单一、无轮转/迁移。三决策：**① 放弃多用户 ② 工作区默认 ~/Documents/Nuomi ③ 全合一 SQLite**；并追加质疑"backend/app 散落 19 个 py"。设计文档：`docs/desktop-data-architecture.md`（权威，含决策表/目标结构/NUOMI_HOME 布局/移除项/路线 A-D）。
+
+- **单一数据根（用户否决 dev/packaged 双 profile）**：所有运行时数据锚定 `NUOMI_HOME`（env > 默认 `~/Library/Application Support/Nuomi`），dev/打包/Docker 同源，无 profile 切换；仅 `PLUGINS_DIR`/`PARTNERS_DIR` 资源目录覆盖（打包 → sys._MEIPASS）。config.py 重写：db_file/trace_path/knowledge_path/profile_path/workspace_path 全为 property 派生（默认 None），移除 checkpointer/pg/auth 字段；workspace_path 默认 `~/Documents/Nuomi` 自动创建。
+- **目录收敛（git mv 保留历史）**：`app/agent/{graph,middleware,supervisor,partner,thread_ctx,models}.py`（graph.py←agent.py、middleware.py←context.py）；`app/plugins/{loader,lifecycle,runtime,composer,approval,robust}.py`（loader←skills、lifecycle←plugins、runtime←plugin_runtime）；`app/storage/{db,projects,memory,knowledge,trace}.py`（db 新增）。批量重写 import（app/main、plugins/*、tests/*）；`app/auth.py`、tests/test_auth.py、tests/test_pg.py 已删。
+- **存储合一**：`storage/db.py` 纯 schema 版本化（`PRAGMA user_version=1`，projects 含 directory 列）——**2026-10-02 用户追加拍板：废弃 backend/data、全新环境、无任何迁移**（原"整体复制旧库 + 遗留导入"逻辑已删除，`rm -rf backend/data`；plugins/fs/tool.py 残留的旧 `threads.db` 自建连接改为 `ProjectStore(settings.db_file)` 统一库）。memory.py 重写为 SQLite facts 表（接口不变）；service-settings 重写为 SQLite settings 表；projects.py 加 WAL/busy_timeout/**check_same_thread=False**；trace.py 加 5MB 轮转（保留 3 备份）。
+- **多用户移除**：main.py 删 AuthRequest//api/auth/*/UserStore/current_user/`user::` key 前缀/chat Depends；build_app 删 users_file 参数；middleware 删 _user()；sidecar_main.py 简化（仅 frozen 时设 PLUGINS_DIR/PARTNERS_DIR + HF_ENDPOINT）；docker-compose 去 postgres（两 volume：NUOMI_HOME=/app/data、WORKSPACE_DIR=/app/workspace）；pyproject 移除 langgraph-checkpoint-postgres + python-jose；conftest 顶层设 NUOMI_HOME/NUOMI_WORKSPACE 为 mkdtemp（顶层禁 import app）。
+- **线程安全坑（关键）**：JSON 时代无线程亲和性；SQLite 连接在 lifespan（事件循环线程）创建、测试/工具线程使用 → ProgrammingError。统一 `check_same_thread=False` + RLock（MemoryStore._save/_touch、SettingsStore._load/save 戴锁；ProjectStore connect 加参数）。
+- **验证**：全量 pytest **127 passed**；迁移模拟（临时目录复制真实 backend/data）确认 projects/threads/facts/settings/checkpoints 全导入 + 幂等；隔离冒烟（NUOMI_HOME=tmp）health/projects/settings 200、数据根布局 = nuomi.db(+wal) + nuomi.json + knowledge/；前端 `tsc -b` ✓；`uv sync` 锁更新 ✓。
+- **遗留数据现状**：backend/data 已删除（2026-10-02 用户拍板：废弃、不迁移、全新环境）。README/AGENT.md/.env.example 已同步；docs 路线表阶段 A 状态已回填。
+- **阶段 B（工作区=项目打通）**：`storage/workspace.py` 新建——`list_tree` 安全列树（跳过 `.` 开头与 _SKIP 目录，MAX_DEPTH=3/MAX_ENTRIES=300 预算截断）、`safe_project_dirname`（非法字符清洗、拒绝 `..`）；`config.py` 加 `_workspace_override` + `api_token` 字段，`workspace_path` 优先级 = NUOMI_WORKSPACE/WORKSPACE_DIR env > 运行时设置 > 默认 `~/Documents/Nuomi`；`POST /api/projects` 无 directory 时自动在工作区建目录并绑定（同名幂等、恶意名 400）。前端：`api.ts` 加 `fetchWorkspaceTree`；SideBar 会话/文件双 tab，新建 `FilesPanel.tsx`（目录树、展开态持久化、空/错误态）；`filesRefreshTick` prop 驱动重拉。
+- **阶段 C（sidecar token + Tauri 壳接线）**：后端 `_ensure_api_token`（NUOMI_TOKEN env 强制 > frozen 时 `NUOMI_HOME/.api-token` 幂等复用 0600 > dev None 不校验）+ token 中间件（校验 `X-Nuomi-Token`，`/api/health` 放行、401）。Rust 壳：`rand` 生成 32 字节 hex token，以 `NUOMI_TOKEN` env 传给后端进程；注入 `window.__NUOMI_API__` + `window.__NUOMI_TOKEN__`（前端 fetch 包装动态读取）；单实例（tauri-plugin-single-instance）；复用 8000 收紧为仅 dev 源码模式；CSP 由 `http: ws:` 收紧为 loopback 白名单。
+- **阶段 D（首启向导）**：`GET /api/bootstrap`（setup_required = 无 custom_providers 或无 active_model）；`POST /api/bootstrap/workspace`（mkdir + 写 settings，lifespan 恢复 `_workspace_override`）。前端 `WelcomeWizard.tsx` 两步：工作区路径 → LLM 供应商（addCustomProvider + activateModel）；setup_required 时全屏遮罩，完成即关并刷新。
+- **验证（B/C/D）**：新增 `tests/test_workspace_bootstrap.py` 5 项；**全量 pytest 143 passed**；隔离冒烟（NUOMI_HOME=tmp + NUOMI_TOKEN）9 项全过（401/200/health/bootstrap/tree/自动建目录）；前端 `tsc -b` ✓、`vite build` ✓；Rust `cargo build` ✓（期间修两处：tauri-plugin-shell v2 `Command::env` 返回 Self 非 Result、`.command()` 非 Result）。
+- **B/C/D 遗留**：release 打包全链路（`tauri build`）与桌面端首启人工验收待做。
+- **待办**：阶段 B/C/D 已全部落地（见上文），剩 release 打包验证与桌面首启人工验收。
+
+## 记忆 v2 · Provider 化（2026-10-02，对齐 Hermes 实施）
+
+用户调研 Hermes（纯文件双档冻结快照 + 8 个外部 provider 插件并存）与 DeepSeek Harness（无内置 RAG，记忆=MCP server 默认关闭，capability seam）后拍板：记忆 Provider 化，首接 Mem0；RAG 不内置、程序运行时插件实现（Harness 同构）。方案：`docs/memory-provider-design.md`（适配桌面化架构：单用户无 user 参数、MemoryStore 已 SQLite 化）。
+
+- **契约层（app/storage/memory.py）**：`MemoryBackend` Protocol（list/add/replace/remove/search/snapshot）+ `MemoryEntry` dataclass + `FileMemoryBackend`（包装 SQLite facts 表，双档 category 映射：preference/user→USER 档、其余→MEMORY 档；快照按 char_limit MEMORY 2000/USER 1000 常用优先截取；replace/remove 唯一子串定位，返回 (1成功/0未找到/-1多条, msg)）。单例 `set_backend/get_backend`（未 set 回退包装 get_store；set_backend(None) 清空回退）。
+- **冻结快照注入（app/agent/middleware.py）**：每轮检索注入 → 会话开始取一次快照（`_snapshots[thread_key]` 缓存，会话内不变，Hermes 同款保 prefix cache）；快照格式 `【记忆快照】MEMORY（我的笔记）[62% — 1,240/2,000 字符] § 条目`；provider 失败降级无快照不阻断。注入职责从 service-system-prompt 移交 middleware（该服务删 `inject=["memory"]`，memory_facts=[]）。
+- **工具四件套（plugins/memory/tool.py）**：保留 memory_write（add）/memory_read（search）名兼容测试，新增 memory_replace/memory_remove；访问改 `get_backend()`；删多用户 `_user()`。SKILL.md 同步（冻结快照语义、双档、replace/remove 用法）。
+- **service-memory**：set_store + set_backend(FileMemoryBackend(store)) + provide("memory", backend)；app.state.memory 保留 store（health 兼容改 get_backend().list() 通用计数）。
+- **memory-mem0 插件（新建）**：Mem0Backend 实现契约（mem0ai 懒依赖：apply 探测 import，未装→插件 FAILED 提示 `uv pip install mem0ai`；模式 openmemory 默认本地自托管/cloud/local 全本地向量库；replace/remove=语义检索+子串过滤保唯一语义）；plugin.json settings schema + SKILL.md；卸载 dispose 清空 backend 回退内置。
+- **测试**：新增 `tests/test_backend_contract.py`（11 项：file 契约增删改查/双档快照/容量截取/渲染格式/Mem0Backend fake mem0 映射/依赖缺失报错）+ `test_frozen_snapshot_unchanged_within_session`（同 thread 快照冻结、新 thread 反映新写入，断言用独特内容"乌龙茶"避开人设既有"嘉兴"）。**全量 pytest 143 passed**（127+16）。
+- **切换**：profile 两行（enable memory-mem0 + disable service-memory），引擎与工具零改动。
+- **P2 待办**：设置页 provider 选择 UI、真实 Mem0 服务端到端验证（需用户配置 mem0 服务/mem0ai 安装）。

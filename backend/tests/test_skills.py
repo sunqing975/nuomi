@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from app.plugin_runtime import PluginContext
-from app.skills import (
+from app.plugins.runtime import PluginContext
+from app.plugins.loader import (
     collect_instructions,
     collect_skill_catalog,
     collect_tools,
@@ -76,7 +76,7 @@ def test_apply_surfaces_entry_error(tmp_path):
     bad.mkdir()
     (bad / "plugin.json").write_text('{"name":"bad","entry":"hook.py"}', encoding="utf-8")
     (bad / "hook.py").write_text("raise RuntimeError('boom')\n", encoding="utf-8")
-    from app.plugins import load_plugins
+    from app.plugins.lifecycle import load_plugins
 
     from .conftest import make_fake_app
 

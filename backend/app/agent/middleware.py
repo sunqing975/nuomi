@@ -1,10 +1,12 @@
-"""NuomiMiddleware · 每轮动态注入 + 长对话自动摘要。
+"""NuomiMiddleware · 冻结快照注入 + 长对话自动摘要。
 
 LangChain create_agent 的 middleware，用 `awrap_model_call` 钩子直接构造
 发给模型的请求（不改 checkpointer 状态），承担两件事：
 
-1. **每轮注入**：按"当前用户消息"检索记忆库，重建 system prompt
-   （规则→人设→用户档案→记忆事实），保证记忆跨会话可用且不依赖模型工具调用。
+1. **冻结快照注入（记忆 v2，对齐 Hermes）**：每个 thread 首次构造模型输入时，
+   从记忆后端取一次快照（含容量 header）拼入 system prompt 并缓存；会话内不变
+   （保 LLM 前缀缓存、省每轮检索）。写操作即时落盘、下个会话才反映。
+   记忆后端是 MemoryBackend 契约（内置 FileMemoryBackend / 外部 provider 插件）。
 2. **上下文压缩**：历史消息超阈值时，把较早的消息用 LLM 压成一段摘要，
    只保留最近 keep_recent 条原文——模型输入 token 有界（长对话不爆 token）。
 
@@ -14,7 +16,9 @@ LangChain create_agent 的 middleware，用 `awrap_model_call` 钩子直接构�
   wrap_model_call 直接替换 request.messages，压缩对模型输入真实生效。
 - 摘要缓存：内存 dict 按 thread_id 增量累计（covered 计数），避免每轮重复
   摘要已覆盖内容；进程重启后首次超阈值会重新摘要，可接受。
-- 自有 system 提示以 PROMPT_MARK 标记；摘要以 SUMMARY_MARK 标记。
+- 快照缓存：内存 dict 按 thread_id；middleware 重建（换模型/插件启停）即失效。
+- 自有 system 提示以 PROMPT_MARK 标记；记忆快照以 MEMORY_MARK 标记；
+  摘要以 SUMMARY_MARK 标记。
 """
 from __future__ import annotations
 
@@ -22,17 +26,40 @@ from langchain.agents.middleware import AgentMiddleware
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 
-from .memory import MemoryStore
+from ..storage.memory import MemoryBackend
 
 PROMPT_MARK = "【糯米系统提示】"
+MEMORY_MARK = "【记忆快照】"
 SUMMARY_MARK = "【历史摘要】"
+
+
+def _render_snapshot(snapshot: dict) -> str:
+    """Hermes 式快照文本：分段 header（容量百分比）+ § 分隔条目。"""
+    parts = [MEMORY_MARK]
+    for s in snapshot.get("sections", []):
+        entries = s.get("entries") or []
+        if not entries:
+            continue
+        limit = s.get("char_limit") or 1
+        pct = round(s.get("total_chars", 0) / limit * 100)
+        label = "我的笔记" if s.get("name") == "MEMORY" else "用户画像"
+        header = (
+            f"{s['name']}（{label}）[{pct}% — "
+            f"{s.get('total_chars', 0):,}/{limit:,} 字符]"
+        )
+        lines = [header]
+        for e in entries:
+            content = e.content if hasattr(e, "content") else e.get("content", "")
+            lines.append(f"§ {content}")
+        parts.append("\n".join(lines))
+    return "\n\n".join(parts)
 
 
 class NuomiMiddleware(AgentMiddleware):
     def __init__(
         self,
         prompt_builder,  # (last_user_msg: str) -> str
-        memory: MemoryStore,
+        memory: MemoryBackend | None,
         llm: BaseChatModel,
         max_messages: int = 24,
         keep_recent: int = 8,
@@ -44,6 +71,7 @@ class NuomiMiddleware(AgentMiddleware):
         self.max_messages = max_messages
         self.keep_recent = keep_recent
         self._summaries: dict[str, dict] = {}  # thread_key -> {"summary": str, "covered": int}
+        self._snapshots: dict[str, str] = {}  # thread_key -> 冻结快照文本（会话内不变）
 
     # ---------- 工具 ----------
 
@@ -57,15 +85,6 @@ class NuomiMiddleware(AgentMiddleware):
         except Exception:
             pass
         return str(request.messages[0].id) if request.messages else "none"
-
-    @staticmethod
-    def _user(request) -> str | None:
-        """Phase 4a 多用户：从 config.configurable.user 取当前用户（无鉴权时为 None）。"""
-        try:
-            cfg = getattr(request.runtime, "config", None) or {}
-            return (cfg.get("configurable") or {}).get("user")
-        except Exception:
-            return None
 
     @staticmethod
     def _last_human(messages: list[BaseMessage]) -> str:
@@ -88,14 +107,37 @@ class NuomiMiddleware(AgentMiddleware):
         res = await self.llm.ainvoke(prompt)
         return str(res.content).strip()
 
+    # ---------- 冻结快照（Hermes 式） ----------
+
+    def _memory_block(self, key: str) -> str:
+        """该 thread 的记忆快照块：首次生成并缓存，会话内不变。"""
+        if self.memory is None:
+            return ""
+        if key not in self._snapshots:
+            try:
+                self._snapshots[key] = _render_snapshot(self.memory.snapshot())
+            except Exception:
+                # provider 失败（如外部服务不可用）：降级为无快照，不阻断对话
+                self._snapshots[key] = ""
+        return self._snapshots[key]
+
     # ---------- 主钩子：直接构造模型输入 ----------
 
     async def awrap_model_call(self, request, handler):
         msgs = list(request.messages)
         last_human = self._last_human(msgs)
-        prompt = self.prompt_builder(last_human, user=self._user(request))
+        prompt = self.prompt_builder(last_human)
         key = self._thread_key(request)
+        memory_block = self._memory_block(key)
         hist = [m for m in msgs if isinstance(m, (HumanMessage, AIMessage, ToolMessage))]
+
+        def sys_message(summary: str | None = None) -> SystemMessage:
+            text = f"{PROMPT_MARK}\n{prompt}"
+            if memory_block:
+                text += f"\n\n{memory_block}"
+            if summary:
+                text += f"\n\n{SUMMARY_MARK}{summary}"
+            return SystemMessage(content=text)
 
         out_msgs: list[BaseMessage] = msgs
         if len(hist) > self.max_messages and len(hist) - self.keep_recent >= 1:
@@ -110,7 +152,7 @@ class NuomiMiddleware(AgentMiddleware):
                     # 摘要失败：保留全部历史，不阻断对话
                     req = request.override(
                         messages=msgs,
-                        system_message=SystemMessage(content=f"{PROMPT_MARK}\n{prompt}"),
+                        system_message=sys_message(),
                     )
                     return await handler(req)
             else:
@@ -119,6 +161,6 @@ class NuomiMiddleware(AgentMiddleware):
 
         req = request.override(
             messages=out_msgs,
-            system_message=SystemMessage(content=f"{PROMPT_MARK}\n{prompt}"),
+            system_message=sys_message(),
         )
         return await handler(req)

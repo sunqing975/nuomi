@@ -4,7 +4,7 @@
 并订阅 PLUGIN_TOGGLED 事件响应自身启停（开=前端显示麦克风按钮）。
 物理上与技能插件同处 plugins/ 目录 + plugin.json 清单，加载器按 type 分发。
 """
-from app.plugin_runtime import PLUGIN_TOGGLED
+from app.plugins.runtime import PLUGIN_TOGGLED
 
 SETTINGS_KEY = "voice_input"
 

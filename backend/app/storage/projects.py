@@ -2,7 +2,8 @@
 
 - projects：对话分组（Harness workspace 类比）
 - threads：会话，含自动标题（首条用户消息截断）、updated_at、消息数
-- 独立 SQLite（data/threads.db），与 LangGraph checkpointer 解耦，单用户版。
+- 存储合一（决策 3）：建在统一库 nuomi.db（与 checkpointer / facts / settings 同文件），
+  WAL + busy_timeout 保证多连接并发。
 """
 from __future__ import annotations
 
@@ -27,8 +28,11 @@ class ProjectStore:
     def __init__(self, db_path: str | Path) -> None:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(self.db_path))
+        self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
+        # 统一库并发：WAL + busy_timeout + 外键
+        self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA busy_timeout=5000")
         # 启用外键：threads.project_id 有 ON DELETE CASCADE，
         # 不开启的话删项目会把会话留在库里成为不可见孤儿（曾实测复现）
         self._conn.execute("PRAGMA foreign_keys = ON")

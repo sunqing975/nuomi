@@ -91,3 +91,38 @@ def test_summarization_bounds_model_input(tmp_path, monkeypatch):
     texts = [c for _, c in last]
     assert any("历史摘要" in t for t in texts), "压缩后模型输入应含历史摘要"
     assert any("第6轮" in t for t in texts), "最近一轮应保留原文"
+
+
+def _last_system_text(captured) -> str:
+    """最近一次含 system 的模型调用中的 system 文本（跳过 title 等单条调用）。"""
+    for msgs in reversed(captured):
+        syss = [c for t, c in msgs if t == "system"]
+        if syss:
+            return syss[0]
+    return ""
+
+
+def test_frozen_snapshot_unchanged_within_session(tmp_path, monkeypatch):
+    """记忆 v2（Hermes 式）：冻结快照——同 thread 会话内不变，新 thread 反映新写入。"""
+    captured = _spy_model(monkeypatch)
+    app = _make_app(tmp_path)
+    with TestClient(app) as client:
+        client.post("/api/plugins/team/toggle")  # 单 Agent 测试
+        app.state.memory.add("用户喜欢美式咖啡", category="preference")
+        r1 = client.post("/api/chat", json={"message": "第一轮"})
+        tid = re.search(r'"thread_id": "([^"]+)"', r1.text).group(1)
+        sys1 = _last_system_text(captured)
+        assert "美式咖啡" in sys1, "快照应注入既有记忆"
+        assert "记忆快照" in sys1, "system 提示应含记忆快照块"
+
+        # 会话内新写入：快照冻结，不在本会话出现（下个会话才反映）
+        app.state.memory.add("用户喜欢喝乌龙茶")
+        client.post("/api/chat", json={"message": "第二轮", "thread_id": tid})
+        sys2 = _last_system_text(captured)
+        assert sys2 == sys1, "同 thread 会话内快照应冻结不变"
+        assert "乌龙茶" not in sys2, "会话内新写入不应出现在当前会话快照"
+
+        # 新 thread：快照反映新写入
+        client.post("/api/chat", json={"message": "第三轮"})
+        sys3 = _last_system_text(captured)
+        assert "乌龙茶" in sys3 and "美式咖啡" in sys3

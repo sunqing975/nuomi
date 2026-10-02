@@ -8,6 +8,10 @@ __pycache__/
 *.tsbuildinfo
 desktop/src-tauri/target/
 
+# 打包产物（PyInstaller sidecar 构建物，由 scripts/build_sidecar.sh 生成）
+backend/build/
+desktop/src-tauri/binaries/
+
 # 运行时数据（含密钥掩码、用户与会话数据，不进版本库）
 backend/data/
 

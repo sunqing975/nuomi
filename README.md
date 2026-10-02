@@ -14,7 +14,7 @@
 | Phase 1 | 伙伴人设 + 记忆 + 上下文压缩 | ✅ 完成 |
 | Phase 2 | 插件化技能系统（三级加载 / @tool / MCP / RAG 可插拔 / adapter）★核心亮点 | ✅ 完成 |
 | Phase 3 | 工程健壮：重试/fallback、human-in-the-loop、Eval 评测、日志可观测 | ✅ 完成 |
-| Phase 4 | 部署 + 扩展：Docker、多智能体 Supervisor、语音、多用户 JWT、模型管理 | ✅ 完成 |
+| Phase 4 | 部署 + 扩展：Docker、多智能体 Supervisor、语音、模型管理（~~多用户 JWT / PostgreSQL~~，2026-10-02 移除：桌面单用户化） | ✅ 完成 |
 | Phase 5 | 全能化★：执行能力（shell 沙箱 / fs 文件工具 / subagent）、上下文工程（compaction/spill）、交互（user-questions）、产物（credentials/attachment） | 🔄 进行中 |
 
 Phase 0→2 是主线；Phase 3 面试必补；Phase 5 当前推进（对齐 deepseek-harness）。
@@ -26,24 +26,15 @@ nuomi/
 ├── backend/            FastAPI + LangGraph（Python 3.12，uv 管理）
 │   ├── app/
 │   │   ├── main.py     POST /api/chat（SSE 流式）+ /api/plugins /api/settings /api/projects…
-│   │   ├── agent.py    create_agent 工厂：LLM + 工具 + SQLite checkpointer
+│   │   ├── config.py   环境变量配置（NUOMI_HOME 单一数据根 / LLM 密钥）
+│   │   ├── agent/      智能体组装：graph（create_agent + checkpointer）/ middleware / supervisor / partner / thread_ctx / models
+│   │   ├── plugins/    插件内核：loader（技能扫描）/ lifecycle / runtime / composer / approval / robust
+│   │   ├── storage/    统一存储层：db（ensure_database 迁移 + 版本化）/ projects / memory / knowledge / trace
 │   │   ├── core/       V3 内核：events（5 分发）/ scope / context / fiber / composition / skill
-│   │   ├── composer.py 插件编排：load/toggle/install/uninstall（zip/目录/git）
-│   │   ├── memory.py   MemoryStore：JSON 事实库（去重/检索/淘汰/持久化）
-│   │   ├── knowledge.py RAG 存储（Chroma+fastembed 可插拔；词法兜底）
-│   │   ├── projects.py 项目/会话（SQLite threads.db，独立于 checkpointer）
-│   │   ├── skills.py   插件加载器 v0.6（scan→apply 贡献；skill 目录只给 name+description）
-│   │   ├── plugins.py  程序插件生命周期（apply/dispose；toggle 事件驱动）
-│   │   ├── supervisor.py 多智能体（LLM 路由 → companion/researcher 子 Agent）
-│   │   ├── approval.py ApprovalGate 审批门（human-in-the-loop）
-│   │   ├── robust.py   工具健壮性（重试/超时/fallback）
-│   │   ├── trace.py    每轮 trace.jsonl 可观测
-│   │   ├── auth.py     JWT 多用户（Phase 4）
-│   │   ├── models.py   模型管理（deepseek/doubao/local 运行时切换）
-│   │   ├── sse.py      SSE 事件协议封装
-│   │   └── config.py   环境变量配置（DeepSeek/豆包可切换）
-│   ├── tests/          107+ 项假模型端到端测试（不花 API 费用）
-│   └── data/           运行时 SQLite + memories/ + knowledge/ + workspace/（gitignore）
+│   │   └── sse.py      SSE 事件协议封装
+│   ├── sidecar_main.py 桌面 sidecar 入口（PyInstaller 打包后端时使用）
+│   ├── tests/          127 项假模型端到端测试（不花 API 费用）
+│   └── data/           遗留运行时数据（v0.2 时代产物；已由首启迁移一次性读入统一库，只读保留）
 ├── frontend/           Vite + React + TS（对齐 Harness 设计系统：深色主题/三栏/设置弹窗/插件管理）
 ├── plugins/            统一插件目录：加一个目录 = 多一种能力（一切皆插件）
 │   ├── service-*       V3 服务插件（agent-loop/sessions/settings/memory/system-prompt/tools）
@@ -86,6 +77,25 @@ LLM：默认 DeepSeek（`LLM_BASE_URL=https://api.deepseek.com`、`LLM_MODEL=dee
 
 冒烟测试（后端已启动时）：`bash scripts/smoke.sh`
 
+## 数据与工作区（桌面化架构，2026-10-02）
+
+**单一数据根**：所有运行时数据锚定 `NUOMI_HOME`（默认 `~/Library/Application Support/Nuomi`，可用环境变量覆盖），dev / 打包 / Docker 同源，无 profile 切换。
+
+```
+NUOMI_HOME/
+├── nuomi.db      统一 SQLite：LangGraph checkpoints + projects/threads + facts 记忆 + settings 设置（PRAGMA user_version 版本化）
+├── nuomi.json    运行时 profile（插件开关/模型选择等，与设置分离）
+├── knowledge/    Chroma 向量库（knowledge/<partner>/chroma）
+└── logs/         trace.jsonl（5MB 轮转，保留 3 备份）
+```
+
+- **工作区**：`WORKSPACE_DIR`（默认 `~/Documents/Nuomi`，首启自动创建）——shell/fs 等工具的文件操作根目录，与程序数据分离；优先级 `NUOMI_WORKSPACE`/`WORKSPACE_DIR` env > 运行时设置 > 默认路径。侧栏"文件"视图展示工作区目录树（`/api/workspace/tree`），新建项目无绑定目录时自动在工作区创建同名目录。
+- **资源目录**：`PLUGINS_DIR` / `PARTNERS_DIR` 可覆盖（打包时指向 PyInstaller 内嵌只读区；源码运行默认指向仓库 `plugins/`、`partners/`）。
+- **首启向导**：全新环境（未配置任何 LLM 供应商）启动时全屏引导：选择工作区路径 → 配置 OpenAI 兼容模型服务并激活（`/api/bootstrap` + `POST /api/bootstrap/workspace`）。
+- **本地 API 守卫（桌面形态）**：Tauri 壳每次启动生成随机 token（`NUOMI_TOKEN` env 传入后端），后端中间件校验 `X-Nuomi-Token`（`/api/health` 放行）；仅绑定 `127.0.0.1` 回环。前端 fetch 自动带 token，web dev（vite proxy）不受影响。
+- **单用户**：JWT / PostgreSQL / 多用户命名空间已移除（2026-10-02）；`backend/data/` 遗留数据已废弃（不迁移，桌面版全新环境）。
+- 设计文档：[`docs/desktop-data-architecture.md`](docs/desktop-data-architecture.md)
+
 ## 技术栈与开源项目
 
 ### 后端
@@ -95,8 +105,8 @@ LLM：默认 DeepSeek（`LLM_BASE_URL=https://api.deepseek.com`、`LLM_MODEL=dee
 | Web 框架 | **FastAPI** + uvicorn | SSE 流式（`text/event-stream`） |
 | Agent 框架 | **LangChain / LangGraph**（`langchain.agents.create_agent`） | 工具绑定、checkpointer、中间件、Supervisor 多智能体 |
 | 模型接入 | **langchain-openai** + **openai** SDK | OpenAI 兼容协议：DeepSeek / 豆包 / 本地 llama.cpp |
-| 对话状态 | **aiosqlite**（LangGraph AsyncSqliteSaver） | 每线程 checkpoint，重启不丢 |
-| 记忆 | 自研 MemoryStore（JSON 事实库） | CJK 二元组检索、去重淘汰 |
+| 对话状态 | **SQLite**（LangGraph SqliteSaver，统一库 `NUOMI_HOME/nuomi.db`） | 每线程 checkpoint，重启不丢；WAL + busy_timeout 多线程安全 |
+| 记忆 | 自研 MemoryStore（SQLite facts 表） | CJK 二元组检索、去重淘汰；换向量库 = 换 search 实现 |
 | 知识库 | **Chroma** + **fastembed**（`BAAI/bge-small-zh-v1.5`） | RAG 语义检索，词法兜底可插拔 |
 | MCP | **langchain-mcp-adapters** | 本地便签 server（stdio）演示外部能力 |
 | 工具体系 | 自研三级加载插件内核 | @tool + 程序插件 + MCP + adapter 统一成"插件" |
@@ -216,7 +226,7 @@ Phase 1 的 `partners/nuomi/` 人设素材。
 ## Phase 1 设计说明（面试表达）
 
 - **多伙伴 = 多目录**：`partners/<name>/` 一份配置（partner.json + 4 个 markdown），引擎与技能全复用——"预置可爱/御姐伙伴只是加配置文件"。
-- **记忆是插件**：`skills/memory/` 提供 memory_write/memory_read 工具，底层走 MemoryStore（JSON 事实库，CJK 二元组检索，300 条上限淘汰）。换向量库 = 换 search 实现，接口不变。
+- **记忆是插件**：`plugins/memory/` 提供 memory_write/memory_read 工具，底层走 MemoryStore（SQLite facts 表，CJK 二元组检索，300 条上限淘汰）。换向量库 = 换 search 实现，接口不变。
 - **记忆双通道**：模型主动写（记忆插件） + 系统被动注入（每轮按用户消息检索记忆重建 system prompt），跨会话也能想起。
 - **上下文压缩**：NuomiMiddleware 的 `awrap_model_call` 直接构造模型输入；历史超阈值时较早消息压成摘要、只留最近 N 条原文，token 有界，摘要增量缓存。
 
@@ -242,15 +252,13 @@ Phase 1 的 `partners/nuomi/` 人设素材。
 
 ## Phase 4 设计说明（部署 + 扩展）
 
-**多用户**（`backend/app/auth.py`）：JWT（HS256）+ 本地用户库（PBKDF2 哈希，不存明文）；`AUTH_ENABLED=1` 后 `/api/chat` 需 Bearer token，会话按 `user::thread_id` 命名空间隔离，记忆按用户分目录 `data/memories/<user>/`。checkpointer 可选 PostgreSQL（`CHECKPOINTER=postgres` + `PG_DSN`，PostgresSaver 连接池 + 自动建表）。
+**多智能体**（`backend/app/agent/supervisor.py`）：LangGraph Supervisor 模式——LLM 路由器 → companion（陪伴：记忆/时间/便签）或 researcher（研究：知识库/计算/便签）子 Agent（create_agent 作为 subgraph 节点），主图持 checkpointer。入口 `POST /api/supervisor/chat`（SSE），`GET /api/supervisor/info` 看子 Agent 工具集。
 
-**多智能体**（`backend/app/supervisor.py`）：LangGraph Supervisor 模式——LLM 路由器 → companion（陪伴：记忆/时间/便签）或 researcher（研究：知识库/计算/便签）子 Agent（create_agent 作为 subgraph 节点），主图持 checkpointer。入口 `POST /api/supervisor/chat`（SSE），`GET /api/supervisor/info` 看子 Agent 工具集。
+**语音 + Web 插件**（`plugins/voice`、`plugins/web`）：语音 = macOS say TTS 合成 mp3 + STT 接口化占位（可换 Whisper/豆包语音 API，adapter 形态）；Web = `http_get` 抓网页正文（stdlib，robust 由 plugin.json 配置；换浏览器/MCP 版=换插件）。
 
-**语音 + Web 插件**（`skills/voice`、`skills/web`）：语音 = macOS say TTS 合成 mp3 + STT 接口化占位（可换 Whisper/豆包语音 API，adapter 形态）；Web = `http_get` 抓网页正文（stdlib，robust 由 plugin.json 配置；换浏览器/MCP 版=换插件）。
+**部署**（`Dockerfile.backend / Dockerfile.frontend / docker-compose.yml`）：backend + frontend 两服务（2026-10-02 起无 postgres，SQLite 挂持久卷），端口避开本机（8001/8080）。**PWA**（`frontend/public/`）：manifest + Service Worker 离线缓存。**桌面端**（`desktop/`）：Tauri 2 薄壳 + sidecar（`backend/sidecar_main.py`，PyInstaller 打包，`--port` 由 Tauri 探测注入，数据落 NUOMI_HOME，资源落打包内嵌目录）。
 
-**部署**（`Dockerfile.backend / Dockerfile.frontend / docker-compose.yml`）：postgres + backend + frontend 三服务，端口避开本机（5433/8001/8080），SSE 关闭 nginx 缓冲。**PWA**（`frontend/public/`）：manifest + Service Worker 离线缓存。**桌面端**（`desktop/`）：Tauri 2 薄壳脚手架（窗口 + WebView 加载前端产物，业务全在后端）。
-
-**多用户/语音/浏览器/桌面取舍**：全部按路线图后置且已落地最小可用版——多用户会话与记忆隔离真实可用；语音 TTS 真实可用、STT 留 adapter 接口；桌面端为可运行脚手架（首次 `cargo tauri dev` 编译较久）。
+**多用户取舍**：原 JWT 多用户 + PostgreSQL checkpointer 已**移除**（2026-10-02）——桌面单用户形态不需要鉴权与多租户隔离，收益抵不过复杂度；本地 API 回环监听，会话与记忆不再按用户命名空间。
 
 ## 插件管理（Phase 4d+）
 

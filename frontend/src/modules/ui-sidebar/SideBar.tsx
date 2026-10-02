@@ -1,13 +1,15 @@
 /** ui-sidebar：单栏侧边栏（工作区对齐 dsh ui-workspace WorkspaceBrowser）。
- *  自上而下：品牌行 → 新会话 → 导航（插件）→ 工作区浏览器（项目分组树 + 会话列表）
+ *  自上而下：品牌行 → 新会话 → 导航（插件）→ 工作区浏览器（会话/文件双视图）
  *  → 底部设置。
- *  对齐 dsh：项目（Workspace）直接铺为可折叠分组（无下拉），未分组会话为独立组；
- *  组内会话默认 5 条 + 展开其余/收起、置顶（本地持久化）、全局搜索、空标题未命名。 */
+ *  会话视图：项目（Workspace）直接铺为可折叠分组（无下拉），未分组会话为独立组；
+ *  组内会话默认 5 条 + 展开其余/收起、置顶（本地持久化）、全局搜索、空标题未命名。
+ *  文件视图（阶段 B）：工作区目录树 = 前端项目树（FilesPanel）。 */
 import { useEffect, useState } from "react";
 import type { ProjectInfo, ThreadInfo } from "../../api";
 import { t as tr } from "../../i18n";
 import ConfirmDialog, { type ConfirmState } from "../ui-confirm/ConfirmDialog";
 import PromptDialog, { type PromptState } from "../ui-confirm/PromptDialog";
+import FilesPanel from "./FilesPanel";
 import {
   ChevronDownIcon,
   FolderIcon,
@@ -79,6 +81,7 @@ export default function SideBar({
   onRenameThread,
   onDeleteThread,
   onDeleteProject,
+  filesRefreshTick = 0,
 }: {
   tab: "chat" | "plugins";
   projects: ProjectInfo[];
@@ -98,7 +101,10 @@ export default function SideBar({
   onRenameThread: (id: string, title: string) => void;
   onDeleteThread: (id: string) => void;
   onDeleteProject: (id: number) => void;
+  /** 工作区文件树刷新触发（新建项目/删项目后 +1，FilesPanel 重拉） */
+  filesRefreshTick?: number;
 }) {
+  const [view, setView] = useState<"sessions" | "files">("sessions");
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameText, setRenameText] = useState("");
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
@@ -284,37 +290,57 @@ export default function SideBar({
 
       {/* 工作区浏览器（dsh WorkspaceBrowser：标题行右侧图标，非整行搜索框） */}
       <div className="workspace-head">
-        <span>{tr("sidebar.workspace")}</span>
+        <span className="workspace-tabs">
+          <button
+            className={`ws-tab ${view === "sessions" ? "on" : ""}`}
+            onClick={() => setView("sessions")}
+          >
+            {tr("sidebar.tabSessions")}
+          </button>
+          <button
+            className={`ws-tab ${view === "files" ? "on" : ""}`}
+            onClick={() => setView("files")}
+          >
+            {tr("sidebar.tabFiles")}
+          </button>
+        </span>
         <span className="workspace-head-actions">
-          <button
-            className={`icon-btn ${searchOpen ? "on" : ""}`}
-            title={tr("sidebar.searchPlaceholder")}
-            onClick={() => setSearchOpen((v) => !v)}
-          >
-            <SearchIcon />
-          </button>
-          <button
-            className="icon-btn"
-            title={tr("sidebar.newProjectIcon")}
-            onClick={() =>
-              setPrompt({
-                message: tr("sidebar.newProjectName"),
-                placeholder: tr("sidebar.newProjectPlaceholder"),
-                field2: {
-                  label: tr("sidebar.projectDirLabel"),
-                  placeholder: tr("sidebar.projectDirPlaceholder"),
-                },
-                confirmText: tr("common.confirm"),
-                onSubmit: (name, dir) => onCreateProject(name, dir),
-              })
-            }
-          >
-            <FolderPlusIcon />
-          </button>
+          {view === "sessions" && (
+            <>
+              <button
+                className={`icon-btn ${searchOpen ? "on" : ""}`}
+                title={tr("sidebar.searchPlaceholder")}
+                onClick={() => setSearchOpen((v) => !v)}
+              >
+                <SearchIcon />
+              </button>
+              <button
+                className="icon-btn"
+                title={tr("sidebar.newProjectIcon")}
+                onClick={() =>
+                  setPrompt({
+                    message: tr("sidebar.newProjectName"),
+                    placeholder: tr("sidebar.newProjectPlaceholder"),
+                    field2: {
+                      label: tr("sidebar.projectDirLabel"),
+                      placeholder: tr("sidebar.projectDirPlaceholder"),
+                    },
+                    confirmText: tr("common.confirm"),
+                    onSubmit: (name, dir) => onCreateProject(name, dir),
+                  })
+                }
+              >
+                <FolderPlusIcon />
+              </button>
+            </>
+          )}
         </span>
       </div>
 
-      <div className="session-tree">
+      {view === "files" ? (
+        <FilesPanel refreshTick={filesRefreshTick ?? 0} />
+      ) : (
+        <div className="session-tree">
         {searchOpen && (
           <input
             className="thread-search"
@@ -417,6 +443,7 @@ export default function SideBar({
           {searching && totalMatches === 0 && <div className="thread-empty">{tr("sidebar.noMatch")}</div>}
         </div>
       </div>
+      )}
 
       {/* 底部设置 */}
       <div className="sidebar-foot">

@@ -11,7 +11,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app.main import build_app
-from app.skills import scan_plugins
+from app.plugins.loader import scan_plugins
 
 from .fake_llm import FakeChatModel
 

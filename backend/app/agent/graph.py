@@ -1,7 +1,7 @@
 """LangGraph Agent 工厂：LLM + 插件工具 + SQLite checkpointer → create_agent。
 
 Phase 0 打字核心；Phase 1 由 NuomiMiddleware 每轮注入人设+记忆+摘要，system_prompt 传 None；
-Phase 2 挂插件调度。
+Phase 2 挂插件调度。决策 1：多用户移除，仅 SQLite checkpointer（统一库 nuomi.db）。
 """
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from langchain_core.tools import BaseTool
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
-from .config import Settings
+from ..config import Settings
 
 # Phase 1：多伙伴人设由 partner.py 组装；中间件每轮注入。
 # 注意（本地 2B 实测）：工具规则必须放在人设之前，否则小模型会进入"闲聊模式"
@@ -39,39 +39,13 @@ def build_llm(settings: Settings) -> ChatOpenAI:
 
 
 def create_checkpointer(db_file):
-    """SQLite 持久化检查点（对话历史断点续跑）。
+    """SQLite 持久化检查点（对话历史断点续跑，统一库 nuomi.db）。
 
     返回 async 上下文管理器：`async with create_checkpointer(...) as saver:`，
     退出时自动关闭连接。db_file 为普通文件路径（本版本 from_conn_string
     直接透传给 aiosqlite，不接受 sqlite:/// URI 前缀），父目录须已存在。
     """
     return AsyncSqliteSaver.from_conn_string(str(Path(db_file)))
-
-
-def create_pg_checkpointer(dsn: str):
-    """PostgreSQL 检查点（Phase 4a 多用户）：AsyncPostgresSaver + 连接池。
-
-    返回 async 上下文管理器，退出时关闭连接池。首次使用自动建表（setup）。
-    """
-    from contextlib import asynccontextmanager
-
-    from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-    from psycopg_pool import AsyncConnectionPool
-
-    @asynccontextmanager
-    async def _cm():
-        pool = AsyncConnectionPool(
-            conninfo=dsn, max_size=10, open=False, kwargs={"autocommit": True}
-        )
-        await pool.open()
-        try:
-            saver = AsyncPostgresSaver(pool)
-            await saver.setup()
-            yield saver
-        finally:
-            await pool.close()
-
-    return _cm()
 
 
 def build_graph(

@@ -14,16 +14,16 @@ from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 
 from app.config import settings
-from app.projects import ProjectStore
+from app.storage.projects import ProjectStore
 
 _MAX_READ = 8000
 
 
 def _projects() -> ProjectStore:
-    """模块级缓存 ProjectStore（同一 SQLite，读取为主，低频写）。"""
+    """模块级缓存 ProjectStore（统一库 nuomi.db，读取为主，低频写）。"""
     store = getattr(_projects, "_store", None)
     if store is None:
-        store = ProjectStore(Path(settings.db_file).parent / "threads.db")
+        store = ProjectStore(settings.db_file)
         _projects._store = store  # type: ignore[attr-defined]
     return store
 
@@ -33,7 +33,7 @@ def _thread_id(config: RunnableConfig | None) -> str | None:
     执行不注入 config），回退 config.configurable.thread_id（直接 invoke 场景）。"""
     # 注意：此处不直接 import app.thread_ctx（避免 plugins 与 app 循环），用延迟导入
     try:
-        from app.thread_ctx import get_thread_id
+        from app.agent.thread_ctx import get_thread_id
 
         tid = get_thread_id()
         if tid:
@@ -47,8 +47,6 @@ def _thread_id(config: RunnableConfig | None) -> str | None:
     if not tid:
         return None
     tid = str(tid)
-    # 后端 checkpointer key 为 "{user}::{thread_id}"（无 user 时纯 thread_id），
-    # 而 threads 表主键是纯 thread_id——剥离前缀后查询
     return tid.rsplit("::", 1)[-1] if "::" in tid else tid
 
 

@@ -6,7 +6,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app.main import build_app
-from app.plugin_runtime import PLUGIN_TOGGLED, RESPONSE_DONE, EventBus, PluginContext
+from app.plugins.runtime import PLUGIN_TOGGLED, RESPONSE_DONE, EventBus, PluginContext
 
 from .fake_llm import FakeChatModel
 
@@ -21,7 +21,6 @@ def _make_app(tmp_path):
         memory_file=str(tmp_path / "mem" / "nuomi" / "facts.json"),
         knowledge_store_type="lexical",
         knowledge_dir=str(tmp_path / "kb"),
-        users_file=str(tmp_path / "users.json"),
     )
 
 
@@ -136,7 +135,7 @@ def test_skill_doc_reads_body(tmp_path):
 def test_skill_catalog_only_metadata(tmp_path):
     app = _make_app(tmp_path)
     with TestClient(app) as client:
-        from app.skills import collect_skill_catalog
+        from app.plugins.loader import collect_skill_catalog
 
         catalog = collect_skill_catalog(app.state.plugins, app.state.enabled_plugins)
         assert "memory_write" not in catalog  # 正文不进常驻目录

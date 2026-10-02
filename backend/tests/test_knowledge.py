@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from app.knowledge import LexicalStore, build_knowledge_store
+from app.storage.knowledge import LexicalStore, build_knowledge_store
 from app.main import build_app
 
 from .fake_llm import FakeChatModel
@@ -42,7 +42,7 @@ def test_lexical_store_persist(tmp_path):
 def test_factory_pluggable(tmp_path):
     assert isinstance(build_knowledge_store("lexical", tmp_path), LexicalStore)
     # chroma 工厂返回 ChromaStore（构造不下载模型，只有首次调用才初始化）
-    from app.knowledge import ChromaStore
+    from app.storage.knowledge import ChromaStore
 
     assert isinstance(build_knowledge_store("chroma", tmp_path), ChromaStore)
 

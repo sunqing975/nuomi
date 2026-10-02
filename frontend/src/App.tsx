@@ -6,6 +6,7 @@ import {
   createThread,
   deleteProject,
   deleteThread,
+  fetchBootstrap,
   fetchPlugins,
   fetchProjects,
   fetchProviders,
@@ -16,6 +17,7 @@ import {
   saveThreadId,
   setProjectDirectory,
   togglePlugin,
+  type BootstrapStatus,
   type ModelProvider,
   type PluginInfo,
   type ProjectInfo,
@@ -30,6 +32,7 @@ import { createNuomiAdapter } from "./modules/ui-chat/NuomiAdapter";
 import ChatWindow from "./modules/ui-chat/ChatWindow";
 import InputBar, { createRecognizer } from "./modules/ui-input/InputBar";
 import SideBar from "./modules/ui-sidebar/SideBar";
+import WelcomeWizard from "./modules/ui-wizard/WelcomeWizard";
 import PluginManager from "./modules/ui-plugin-manager/PluginManager";
 import SettingsModal from "./modules/ui-settings/SettingsModal";
 import { Emotion, PetMood } from "./modules/ui-avatar/PetBuddy";
@@ -91,6 +94,11 @@ export default function App() {
   });
   // 计划模式（对齐 dsh /plan：软约束引导「先计划后执行」，发送时注入提示）
   const [planMode, setPlanMode] = useState(false);
+  // 阶段 B：工作区文件树刷新计数（新建/删除项目后 +1，FilesPanel 重拉）
+  const [filesTick, setFilesTick] = useState(0);
+  // 阶段 D：首启向导（全新环境未配置 LLM 时展示）
+  const [setup, setSetup] = useState<BootstrapStatus | null>(null);
+  const [wizardError, setWizardError] = useState<string | null>(null);
   useEffect(() => {
     localStorage.setItem("nuomi-theme", theme);
     document.documentElement.dataset.theme = theme;
@@ -166,6 +174,12 @@ export default function App() {
       }
     }).catch((e) => setError(t("app.modelsFailed", { msg: String(e) })));
     fetchSettings().then(setSettings).catch((e) => setError(t("app.settingsFailed", { msg: String(e) })));
+    fetchBootstrap()
+      .then((s) => {
+        setSetup(s);
+        if (s.setup_required) setWizardError(null);
+      })
+      .catch(() => setSetup(null));
     refreshThreads(); // 侧栏会话列表：挂载即全量拉取（曾漏 setThreads，刷新后侧栏一直空）
     const saved = loadThreadId();
     if (saved) {
@@ -261,6 +275,7 @@ export default function App() {
       }
       refreshProjects();
       refreshThreads();
+      setFilesTick((n) => n + 1);
     } catch (e) {
       setError(t("app.projectDeleteFailed", { msg: String(e instanceof Error ? e.message : e) }));
     }
@@ -452,6 +467,7 @@ export default function App() {
           threads={threads}
           currentProjectId={currentProjectId}
           currentThreadId={currentThreadId}
+          filesRefreshTick={filesTick}
           onTab={setTab}
           onOpenSettings={() => setSettingsOpen(true)}
           onNewThread={() => void newThread()}
@@ -462,6 +478,7 @@ export default function App() {
             try {
               const p = await createProject(name, directory);
               refreshProjects();
+              setFilesTick((n) => n + 1);
               selectProject(p.id);
             } catch (e) {
               setError(t("app.newProjectFailed", { msg: String(e instanceof Error ? e.message : e) }));
@@ -554,6 +571,21 @@ export default function App() {
             onModelsChanged={() => fetchProviders().then((r) => setProviders(r.providers)).catch(() => {})}
           />
         )}
+
+        {setup?.setup_required && (
+          <WelcomeWizard
+            workspace={setup.workspace}
+            onError={(msg) => setWizardError(msg)}
+            onFinished={() => {
+              setSetup((s) => (s ? { ...s, setup_required: false, llm_configured: true } : s));
+              setWizardError(null);
+              refreshPlugins();
+              refreshProjects();
+              setFilesTick((n) => n + 1);
+            }}
+          />
+        )}
+        {wizardError && <div className="error wizard-error">{wizardError}</div>}
       </div>
     </AssistantRuntimeProvider>
   );

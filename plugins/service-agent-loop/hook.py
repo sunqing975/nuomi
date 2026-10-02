@@ -6,12 +6,12 @@ settings/changed 或插件启停变化 → rebuild_all()（幂等，热更新）
 """
 from __future__ import annotations
 
-from app.agent import build_graph
-from app.approval import get_gate
-from app.context import NuomiMiddleware
-from app.plugins import build_skill_tool
-from app.robust import apply_robust
-from app.supervisor import build_supervisor
+from app.agent.graph import build_graph
+from app.plugins.approval import get_gate
+from app.agent.middleware import NuomiMiddleware
+from app.plugins.lifecycle import build_skill_tool
+from app.plugins.robust import apply_robust
+from app.agent.supervisor import build_supervisor
 
 
 def _collect_tools_from_fibers(ctx):

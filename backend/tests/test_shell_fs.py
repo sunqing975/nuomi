@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from app.config import settings
-from app.skills import collect_tools
+from app.plugins.loader import collect_tools
 from .conftest import applied_app
 
 REPO_ROOT = Path(__file__).resolve().parents[2]

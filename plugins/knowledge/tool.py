@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from langchain_core.tools import tool
 
-from app.knowledge import get_store
+from app.storage.knowledge import get_store
 
 
 @tool

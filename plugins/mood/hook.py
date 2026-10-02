@@ -4,7 +4,7 @@
 / api/chat 的 done 事件携带 emotion，前端 PetBuddy 播放对应表情后回 idle。
 规则可扩展（关键词/标点/语气）；停用插件 = 表情回到 idle（无情绪分析）。
 """
-from app.plugin_runtime import RESPONSE_DONE
+from app.plugins.runtime import RESPONSE_DONE
 
 # 简单规则：命中优先在前。每个规则 = (情绪名, 触发词元组)
 RULES: list[tuple[str, tuple[str, ...]]] = [

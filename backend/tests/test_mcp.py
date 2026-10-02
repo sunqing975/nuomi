@@ -5,7 +5,7 @@ import asyncio
 import os
 from pathlib import Path
 
-from app.skills import scan_plugins
+from app.plugins.loader import scan_plugins
 
 from .conftest import applied_tools
 

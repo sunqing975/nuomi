@@ -16,7 +16,7 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-from .core import (
+from ..core import (
     EventBus,
     Fiber,
     FiberState,
