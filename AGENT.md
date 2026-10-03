@@ -601,3 +601,12 @@ models.py 删除 BUILTIN_PROVIDERS（deepseek/doubao/local）与 PROVIDERS/MODEL
 - **验证（2026-10-03 全绿）**：make check = layers → lint → format-check → typecheck → test，143 passed；前端 npm run build 通过（chunk 大小 warning 原有）。
 - **依赖规则（机器阻断，勿违背）**：transport 禁 import main；domain 禁 import transport；engine 机制库（顶层 13 文件）禁 import domain/transport/storage；storage 禁 import domain/transport/infrastructure；engine/services 允许消费 domain；除 main.py 外禁 import main。composer 签名 `domain_roots: Sequence[str|Path]|None`（mypy 方差，Sequence 从 collections.abc import）。
 - **未 commit**：v0.8 全部改动 + 用户自己的改动在工作区，commit 前与用户确认范围。
+
+## 前端全量迁移 Ant Design（2026-10-03，v0.9：用户"前端界面和 Octop 对齐"+拍板全量 antd 迁移）
+- **决策**：给三档方案（布局+视觉对齐/全量 antd 迁移/纯视觉微调），用户拍板**全量迁移 Ant Design**（对齐 Octop dashboard：React18+antd+antd-style+lucide+i18next+router，接受重写回归风险）；领域语言（专家/能力/技能）继续沿用 v0.8。
+- **架构**：`App.tsx` 保留集中状态 + assistant-ui runtime + 命令/快捷键/WelcomeWizard，渲染改 `HashRouter`（Tauri/静态托管都稳，避免 BrowserRouter 刷新 404）→ `MainLayout`(antd Layout：Sider 领域导航 220↔56 可折叠 + Header[当前专家/色板/明暗/机器人入口] + Outlet) → 6 页面。**页面收 props 模式**（不做状态下沉），ChatPage 30+ props 由 App 根传。
+- **页面**：`pages/ChatPage`(三栏+BusyBridge，机器人模式仍 App 外层全屏)、`ExpertsPage`(fetchExperts 卡片网格+切换，对齐 Octop Agents 页)、`CapabilitiesPage`(插件+内核模块启停)、`SkillsPage`(新 GET /api/skills 技能资产清单)、`WorkspacePage`(项目卡片+新建 Modal+文件树)、`SettingsPage`(SettingsModal 新增 `embedded` 模式=rail+内容铺页面，原弹窗保留给 SideBar/命令入口)。
+- **主题 F4**：`themes.ts` 8 品牌色板（对齐 Octop rose #E85D75/tech #4B74FA/indigo #6366F1/teal #0D9488/violet #7C3AED/emerald #10B981/amber #F59E0B/slate #64748B，默认 rose）+ `brandTokens(palette,dark)` → ConfigProvider token（colorPrimary/colorBgBase 深色 #101216）；palette 持久化 `nuomi-palette`，切换时同步 CSS 变量 `--accent` 族（自有模块）+ token（antd 组件）。明暗 `nuomi-theme` 既有。
+- **踩坑**：lucide-react 无 `Robot` 导出→`Bot`；antd 装的是 **v6**（Octop 是 v5，Menu/Sider theme prop 运行时已验证可用）；doToggle/available 等旧引用随插件面板迁出 App 时清理（TS6133 链）；`createRecognizer` 是 App 语音逻辑依赖，删 InputBar import 时只删组件保留函数。
+- **验证（2026-10-03）**：tsc --noEmit 全绿 + vite build 通过（manualChunks 拆 antd/assistant 消 chunk 警告）；浏览器冒烟：/#/chat 三栏 + 会话树 + 模型菜单 + 机器人入口、/#/experts 专家卡片（当前专家/默认标签+切换）、/#/capabilities 插件启停、/#/skills 9 技能、/#/workspace 项目卡片+新建+删除、/#/settings embedded 设置页、色板 8 项持久化（localStorage nuomi-palette=tech）、明暗 Switch 生效（--accent=#4B74FA）。
+- **commit**：`0f2f1fe`（v0.9 前端迁移，16 files +2689/−240）。后端 /api/skills 一并入此 commit。

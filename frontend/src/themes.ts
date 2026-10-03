@@ -47,3 +47,17 @@ export const PALETTE_STORAGE_KEY = "nuomi-palette";
 export function isPaletteId(v: string): v is PaletteId {
   return PALETTES.some((p) => p.id === v);
 }
+
+/** 色板 → antd token（对齐 Octop：色板 × 模式生成完整 token）。
+ *  深色下 colorBgBase 用暖黑系，让 antd 组件与自有 CSS 深色观感一致。 */
+export function brandTokens(palette: PaletteId, dark: boolean): Record<string, unknown> {
+  const color = PALETTES.find((p) => p.id === palette)?.color ?? "#4B74FA";
+  return {
+    colorPrimary: color,
+    colorInfo: color,
+    colorLink: color,
+    colorBgBase: dark ? "#101216" : "#ffffff",
+    colorTextBase: dark ? "#e8e8ea" : "#16181d",
+    borderRadius: 8,
+  };
+}

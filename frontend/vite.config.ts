@@ -3,6 +3,17 @@ import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react()],
+  build: {
+    chunkSizeWarningLimit: 900,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          antd: ["antd", "@ant-design/icons"],
+          assistant: ["@assistant-ui/react"],
+        },
+      },
+    },
+  },
   server: {
     port: 5173,
     strictPort: true, // 与 tauri devUrl 固定匹配；端口被占时直接报错，避免漂移

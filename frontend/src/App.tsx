@@ -10,7 +10,7 @@ import SkillsPage from "./pages/SkillsPage";
 import WorkspacePage from "./pages/WorkspacePage";
 import ExpertsPage from "./pages/ExpertsPage";
 import SettingsPage from "./pages/SettingsPage";
-import { DEFAULT_PALETTE, isPaletteId, PALETTES, PALETTE_STORAGE_KEY, type PaletteId } from "./themes";
+import { brandTokens, DEFAULT_PALETTE, isPaletteId, PALETTES, PALETTE_STORAGE_KEY, type PaletteId } from "./themes";
 import {
   activateModel,
   createProject,
@@ -110,6 +110,15 @@ export default function App() {
     setPalette(p);
     localStorage.setItem(PALETTE_STORAGE_KEY, p);
   };
+  // 品牌色 → CSS 变量族（自有模块用 --accent；antd 组件走 ConfigProvider token）
+  const paletteColor = PALETTES.find((p) => p.id === palette)?.color ?? "#4B74FA";
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty("--accent", paletteColor);
+    root.style.setProperty("--accent-strong", paletteColor);
+    root.style.setProperty("--accent-soft", paletteColor + "2e");
+  }, [paletteColor]);
+
   // 当前专家（领域语言：专家 = 人格 + 能力模板资产）
   const [currentExpert, setCurrentExpert] = useState<string | null>(null);
   const refreshExpert = useCallback(() => {
@@ -539,10 +548,7 @@ export default function App() {
   // antd 主题：明暗算法 + 品牌色板注入 token（对齐 Octop：色板 × 模式）
   const antdThemeObj = {
     algorithm: theme === "dark" ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
-    token: {
-      colorPrimary: PALETTES.find((p) => p.id === palette)?.color ?? "#4B74FA",
-      borderRadius: 8,
-    },
+    token: brandTokens(palette, theme === "dark"),
   };
 
   return (
