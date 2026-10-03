@@ -69,3 +69,15 @@ export interface WorkspaceOverview {
   data_root: string;
   counts: Record<string, number>;
 }
+
+export interface PetModel {
+  id: string;
+  path: string;
+  motions: string[];
+  expressions: string[];
+}
+
+export interface PetModelsResponse {
+  models: PetModel[];
+  active: string | null;
+}

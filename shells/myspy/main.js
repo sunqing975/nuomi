@@ -138,6 +138,35 @@ app.whenReady().then(() => {
     petWindow = createWindow()
     controlPanel = createControlPanel()
 
+    // 转发渲染进程日志到主进程 stdout（便于排查切换/加载问题）
+    if (petWindow && petWindow.webContents) {
+        petWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+            console.log('[renderer:' + level + '] ' + message + ' (' + line + ')')
+        })
+    }
+
+    // 监听 config.json 的 ui.model 变化 → 自动切换模型（后端 /api/pet/models/switch 写入 config）
+    let lastModelId = null
+    try {
+        lastModelId = (JSON.parse(fs.readFileSync(configPath, 'utf8'))?.ui || {}).model || null
+    } catch (e) {}
+    fs.watch(configPath, () => {
+        setTimeout(() => {
+            try {
+                const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'))
+                const modelId = (cfg?.ui || {}).model || null
+                const modelPath = (cfg?.ui || {}).model_path || null
+                if (modelId && modelId !== lastModelId && petWindow && !petWindow.isDestroyed()) {
+                    lastModelId = modelId
+                    if (modelPath) {
+                        petWindow.webContents.send('switch-model', modelPath)
+                        console.log('检测到模型切换: ' + modelId + ' -> ' + modelPath)
+                    }
+                }
+            } catch (e) {}
+        }, 200) // 防抖：等配置文件写完
+    })
+
     // 关闭控制面板时退出整个应用
     controlPanel.on('closed', () => {
         app.quit()

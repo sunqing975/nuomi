@@ -38,7 +38,7 @@ class SkillService:
             out.append(self._read_skill(item))
         return out
 
-    def list(self) -> list[dict]:
+    def list_all(self) -> list[dict]:
         """合并目录扫描 + DB 启停状态。"""
         enabled_map = {r["skill_name"]: bool(r["enabled"]) for r in self._db_rows()}
         out = []

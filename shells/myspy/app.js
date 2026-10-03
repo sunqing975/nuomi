@@ -1070,6 +1070,20 @@ function playPetAction(action) {
 function handleNuomiToolResult(name, content) {
     let data = {}
     try { data = JSON.parse(content || '{}') } catch (e) { return }
+    // 模型插件（工具名=动作/表情名）：返回 {motion} 或 {expression}，直接播放
+    if (data.motion) {
+        log('桌宠动作: ' + data.motion, 'info')
+        try { if (model) model.motion(data.motion) } catch (e) { log('动作播放失败: ' + e.message, 'warn') }
+        return
+    }
+    if (data.expression) {
+        log('桌宠表情: ' + data.expression, 'info')
+        try {
+            if (model) model.expression(data.expression)
+        } catch (e) { log('表情播放失败: ' + e.message, 'warn') }
+        return
+    }
+    // 兼容旧插件（pet_action / set_emotion）
     if (name === 'pet_action' && data.action) {
         playPetAction(data.action)
     } else if (name === 'set_emotion' && data.emotion) {

@@ -2,12 +2,14 @@ import { useEffect, useState } from 'react';
 import { Layout, Menu, Tag, Typography } from 'antd';
 import {
   RobotOutlined, ApiOutlined, ReadOutlined, GlobalOutlined, DatabaseOutlined,
+  SmileOutlined,
 } from '@ant-design/icons';
 import ExpertsPage from './pages/Experts';
 import PluginsPage from './pages/Plugins';
 import SkillsPage from './pages/Skills';
 import McpPage from './pages/Mcp';
 import StoragePage from './pages/Storage';
+import ModelsPage from './pages/Models';
 
 const { Sider, Content, Header } = Layout;
 
@@ -16,6 +18,7 @@ const NAV = [
   { key: 'plugins', icon: <ApiOutlined />, label: '插件', title: '插件' },
   { key: 'skills', icon: <ReadOutlined />, label: '技能', title: '技能' },
   { key: 'mcp', icon: <GlobalOutlined />, label: 'MCP', title: 'MCP 服务器' },
+  { key: 'models', icon: <SmileOutlined />, label: '模型', title: '桌宠模型资产' },
   { key: 'storage', icon: <DatabaseOutlined />, label: '存储', title: '存储 / 总览' },
 ];
 
@@ -76,6 +79,7 @@ export default function App() {
           {page === 'plugins' && <PluginsPage />}
           {page === 'skills' && <SkillsPage />}
           {page === 'mcp' && <McpPage />}
+          {page === 'models' && <ModelsPage />}
           {page === 'storage' && <StoragePage />}
         </Content>
       </Layout>

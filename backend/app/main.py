@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,7 +22,7 @@ from app.transport.openai_compat import router as openai_router
 
 def seed_default_agent() -> None:
     """agents 表为空时创建默认专家（糯米，小猫伙伴人格）。"""
-    if agent_service.list():
+    if agent_service.list_all():
         return
     agent_service.create(
         {

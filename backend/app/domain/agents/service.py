@@ -47,7 +47,7 @@ def _row_to_agent(row: sqlite3.Row) -> dict:
 
 
 class AgentService:
-    def list(self) -> list[dict]:
+    def list_all(self) -> list[dict]:
         with db.connect() as conn:
             rows = conn.execute("SELECT * FROM agents ORDER BY id").fetchall()
         return [_row_to_agent(r) for r in rows]

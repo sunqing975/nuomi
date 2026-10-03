@@ -101,7 +101,7 @@ class AgentPatchBody(BaseModel):
 
 @router.get("/agents")
 async def list_agents() -> list[dict]:
-    return agent_service.list()
+    return agent_service.list_all()
 
 
 @router.post("/agents")
@@ -182,7 +182,7 @@ class PluginPatchBody(BaseModel):
 
 @router.get("/plugins")
 async def list_plugins() -> list[dict]:
-    return plugin_service.list()
+    return plugin_service.list_all()
 
 
 @router.post("/plugins/sync")
@@ -215,7 +215,7 @@ async def bind_agent_plugins(agent_id: str, body: AgentPluginsBody) -> list[dict
     """覆盖式绑定：只保留列表中的插件（绑定即启用）。"""
     if agent_service.get(agent_id) is None:
         raise HTTPException(status_code=404, detail="Agent 不存在")
-    for existing in plugin_service.agent_bindings(agent_id):
+    for existing in plugin_service.agent_bindings(agent_id) or []:
         if existing["plugin_id"] not in body.plugin_ids:
             plugin_service.unbind(agent_id, existing["plugin_id"])
     for plugin_id in body.plugin_ids:
@@ -234,7 +234,7 @@ class SkillPatchBody(BaseModel):
 
 @router.get("/skills")
 async def list_skills() -> list[dict]:
-    return skill_service.list()
+    return skill_service.list_all()
 
 
 @router.patch("/skills/{skill_name}")
@@ -242,7 +242,7 @@ async def patch_skill(skill_name: str, body: SkillPatchBody) -> dict:
     if body.enabled is not None:
         row = skill_service.set_enabled(skill_name, body.enabled)
     else:
-        row = next((s for s in skill_service.list() if s["name"] == skill_name), None)
+        row = next((s for s in skill_service.list_all() if s["name"] == skill_name), None)
     if row is None:
         raise HTTPException(status_code=404, detail="技能不存在")
     return row
@@ -277,9 +277,45 @@ async def workspace_overview() -> dict:
         "workspace": str(settings.workspace_path),
         "data_root": str(settings.data_root),
         "counts": {
-            "experts": len(agent_service.list()),
-            "plugins": len(plugin_service.list()),
-            "skills": len(skill_service.list()),
+            "experts": len(agent_service.list_all()),
+            "plugins": len(plugin_service.list_all()),
+            "skills": len(skill_service.list_all()),
             "mcp_servers": len(settings.mcp_servers),
         },
     }
+
+
+# ---------- 桌宠模型（表现层资产） ----------
+
+
+class PetModelSwitchBody(BaseModel):
+    model_id: str = Field(description="模型 id（shells/myspy/2D/ 下的目录名）")
+
+
+@router.get("/pet/models")
+async def list_pet_models() -> dict:
+    """模型资产列表：每个模型的动作/表情清单 + 当前激活模型。"""
+    from app.domain.pet.service import get_active_model, list_models
+
+    return {"models": list_models(), "active": get_active_model()}
+
+
+@router.post("/pet/models/switch")
+async def switch_pet_model(body: PetModelSwitchBody) -> dict:
+    """切换桌宠模型：更新壳 config.json + 联动插件（激活该模型插件、解绑其他模型插件）。"""
+    from app.domain.pet.service import get_shell_agent_id, list_models, switch_model
+
+    try:
+        model = switch_model(body.model_id)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+    # 联动：模型插件 id = 生成过插件的模型；更新壳对话 agent 的绑定（一次只激活一个模型插件）
+    model_plugin_ids = {m["id"] for m in list_models() if m["motions"] or m["expressions"]}
+    agent_id = get_shell_agent_id()
+    if agent_id:
+        for pid in model_plugin_ids:
+            plugin_service.unbind(agent_id, pid)
+        plugin_service.bind(agent_id, model["id"])
+
+    return {"ok": True, "model": model, "agent_id": agent_id, "activated_plugin": model["id"]}

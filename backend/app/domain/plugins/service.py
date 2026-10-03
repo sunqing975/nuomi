@@ -54,7 +54,7 @@ class PluginService:
 
     # ---------- 查询 ----------
 
-    def list(self) -> list[dict]:
+    def list_all(self) -> list[dict]:
         with db.connect() as conn:
             rows = conn.execute("SELECT * FROM plugins ORDER BY name").fetchall()
         registry = PluginRegistry()
@@ -119,7 +119,7 @@ class PluginService:
         工具名做 slug 防御：非 ASCII 名（如中文）改名为 tool_{n}，
         中文原名拼进 description，保证 OpenAI 兼容接口不 400。
         """
-        global_enabled = {r["plugin_id"]: bool(r["enabled"]) for r in self.list()}
+        global_enabled = {r["plugin_id"]: bool(r["enabled"]) for r in self.list_all()}
         agent_cfg = {
             b["plugin_id"]: {"enabled": bool(b["enabled"]), "tools": b["tool_configs"]}
             for b in self.agent_bindings(agent_id)
