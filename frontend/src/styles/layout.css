@@ -5,20 +5,16 @@
 .app {
   position: relative;
   isolation: isolate;
-  /* 三栏（对齐 dsh AppFrame）：左会话 | 中聊天 | 右「其他」面板。
-     右栏默认收起（--right-w: 0），右上角按钮展开为常驻布局列，非浮层弹窗。 */
-  --right-w: 0px;
+  /* 两栏（会话 rail + 聊天主区）；右侧「文件」面板为浮层抽屉（overlay），
+     打开时盖在聊天区上而非挤压布局列，窄视口下聊天区保持完整。 */
   display: grid;
-  grid-template-columns: var(--sidebar-w) 1fr var(--right-w);
+  grid-template-columns: var(--sidebar-w) 1fr;
   grid-template-rows: 100%;
   height: 100%;
   background: var(--bg);
   /* clip 而非 hidden：极光伪元素（inset:-12%）不产生滚动溢出，
      否则 scrollIntoView 会把整个 .app 滚偏 */
   overflow: clip;
-}
-.app.right-open {
-  --right-w: 320px;
 }
 
 /* 环境背景：极光漂移（::before）+ 噪点颗粒（::after） */
@@ -460,18 +456,49 @@
 }
 .files-toggle .icon { width: 15px; height: 15px; }
 
-/* 右侧「其他」面板（三栏第三列，对齐 dsh AppFrame 右栏）：常驻布局列，非浮层弹窗。
-   列宽由 .app 的 --right-w 控制（默认 0 收起，.right-open 展开），grid 过渡滑入。 */
+/* 右侧「文件」抽屉（overlay 浮层）：盖在聊天区之上，不参与 grid 布局列，
+   避免窄视口挤压聊天区。默认 translateX(100%) 隐藏，.right-open 滑入。 */
+.right-mask {
+  position: absolute;
+  inset: 0;
+  left: var(--sidebar-w);
+  z-index: 40;
+  background: rgba(20, 22, 26, 0.24);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease;
+}
+.app.right-open .right-mask {
+  opacity: 1;
+  pointer-events: auto;
+}
 .right-panel {
-  grid-column: 3;
-  grid-row: 1;
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 41;
   display: flex;
   flex-direction: column;
-  min-width: 0;
-  min-height: 0;
+  width: 320px;
+  max-width: 78vw;
   background: var(--bg-container, #17181c);
   border-left: 1px solid rgba(128, 128, 128, 0.12);
+  box-shadow: -12px 0 32px rgba(15, 17, 21, 0.14);
   overflow: hidden;
+  transform: translateX(100%);
+  transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1);
+}
+.app.right-open .right-panel {
+  transform: translateX(0);
+}
+
+/* 窄视口：会话 rail 自动收窄，把宽度让给聊天主区（抽屉为 overlay 不再挤列） */
+@media (max-width: 1180px) {
+  .app { --sidebar-w: 212px; }
+}
+@media (max-width: 900px) {
+  .app { --sidebar-w: 168px; }
 }
 .right-panel-head {
   display: flex;
@@ -1036,20 +1063,8 @@
 .group-menu-item .icon { width: 13px; height: 13px; }
 
 /* ---------- 响应式 ---------- */
-/* 中等屏：窄侧栏 + 聊天列放宽 */
-@media (max-width: 1180px) {
-  .app { grid-template-columns: 228px 1fr var(--right-w); }
-}
-
-/* 窄屏：侧栏仍是同一框内的左列（不分出抽屉），仅收窄列宽 */
-@media (max-width: 1024px) {
-  .app { grid-template-columns: 220px 1fr var(--right-w); }
-}
-
-/* 手机：间距与字号收敛 */
+/* 窄屏（<720px）：间距与字号收敛（rail 收窄逻辑在 .app 顶部 media query，见 grid 定义处） */
 @media (max-width: 720px) {
-  .app { grid-template-columns: 200px 1fr var(--right-w); }
-  .app.right-open { --right-w: 260px; }
   .chat { padding: 0 12px; }
   .hint { padding: 28px 8px 20px; }
   .bubble { max-width: 94%; }

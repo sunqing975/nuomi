@@ -130,6 +130,11 @@ export default function ChatPage(p: ChatPageProps) {
         </BusyBridge>
       </main>
 
+      <div
+        className="right-mask"
+        onClick={() => p.setFilesOpen(false)}
+        aria-hidden="true"
+      />
       <aside className="right-panel">
         <div className="right-panel-head">
           <span className="right-panel-title">
