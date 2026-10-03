@@ -18,9 +18,16 @@ from octop_harness.protocols.langgraph import AgentEventType
 from app.infra.harness.manager import manager
 
 
-async def stream_chat(messages: str, thread_id: str) -> AsyncIterator[dict]:
+async def stream_chat(
+    messages: str,
+    thread_id: str,
+    *,
+    agent_id: str,
+    name: str,
+    system_prompt: str,
+) -> AsyncIterator[dict]:
     """流式对话：把 harness 事件翻译成 nuomi 标准化事件。"""
-    agent = manager.get_agent()
+    agent = manager.get_agent(agent_id, name=name, system_prompt=system_prompt)
     request = ChatRequest(messages=messages, thread_id=thread_id)
 
     text_parts: list[str] = []

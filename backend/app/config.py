@@ -5,7 +5,6 @@ v0.13 起配置大幅精简：自研 engine 已删除，LLM 提供商交给 octo
 """
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 

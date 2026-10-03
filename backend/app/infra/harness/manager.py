@@ -1,11 +1,14 @@
-"""Agent 生命周期：HarnessManager 单例，负责创建/复用/关闭 HarnessAgent。
+"""Agent 运行时生命周期：HarnessManager 单例，按 agent_id 管理实例。
 
-对齐 Octop 的 HarnessAgentManager 语义（单例 + DB↔runtime 同步），nuomi 最小版
-为单 Agent 常驻（个人助理场景），后续多专家时扩展为按 expert_id 管理实例。
+对齐 Octop 的 HarnessAgentManager 语义（单例 + DB↔runtime 同步）。nuomi 版：
+按 agent_id 缓存 HarnessAgent 实例，start=首次构造并置 running，stop=释放实例。
+
+依赖规则：infra 禁 import domain/transport——manager 只接收构造参数
+（name/system_prompt 由调用方从 agents 表取出传入），不做领域查询。
 """
 from __future__ import annotations
 
-import asyncio
+from contextlib import suppress
 from typing import TYPE_CHECKING
 
 from octop_harness import HarnessAgent
@@ -18,31 +21,36 @@ if TYPE_CHECKING:
 
 
 class HarnessManager:
-    """单例：持有当前 Agent 实例，串行化对话（单用户桌面场景足够）。"""
+    """单例：持有各 Agent 的运行时实例。"""
 
     def __init__(self) -> None:
-        self._agent: HarnessAgent | None = None
-        self._lock = asyncio.Lock()
+        self._agents: dict[str, HarnessAgent] = {}
 
     @property
     def workspace(self) -> Path:
         return settings.workspace_path
 
-    def get_agent(self) -> HarnessAgent:
-        """懒创建 Agent（工作区按 harness 约定初始化）。"""
-        if self._agent is None:
-            cfg = build_agent_config(self.workspace)
-            self._agent = HarnessAgent(cfg)
-        return self._agent
+    def get_agent(self, agent_id: str, *, name: str, system_prompt: str) -> HarnessAgent:
+        """按 agent_id 取实例；不存在则构造并缓存（start 语义）。"""
+        if agent_id not in self._agents:
+            cfg = build_agent_config(self.workspace, name=name, system_prompt=system_prompt)
+            self._agents[agent_id] = HarnessAgent(cfg)
+        return self._agents[agent_id]
+
+    def has(self, agent_id: str) -> bool:
+        return agent_id in self._agents
+
+    def release(self, agent_id: str) -> None:
+        """停止并释放实例（stop 语义）。"""
+        agent = self._agents.pop(agent_id, None)
+        if agent is not None:
+            with suppress(Exception):
+                agent.close()
 
     def close(self) -> None:
-        """关闭 Agent（进程退出时调用）。"""
-        if self._agent is not None:
-            try:
-                self._agent.close()
-            except Exception:
-                pass  # 关闭阶段异常可忽略
-            self._agent = None
+        """关闭全部实例（进程退出时调用）。"""
+        for agent_id in list(self._agents):
+            self.release(agent_id)
 
 
 manager = HarnessManager()

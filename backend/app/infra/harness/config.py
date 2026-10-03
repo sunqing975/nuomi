@@ -24,16 +24,16 @@ def build_provider() -> ProviderConfig:
     )
 
 
-def build_agent_config(workspace_dir: Path) -> HarnessAgentConfig:
+def build_agent_config(workspace_dir: Path, *, name: str = "nuomi", system_prompt: str = "") -> HarnessAgentConfig:
     """构造单个 Agent 的运行时配置（工作区按 harness init_workspace 布局）。
 
     model_ref 使用 "provider/model" 复合串（Octop resolve_explicit_default_model 形态）。
     """
     init_workspace(workspace_dir, language="zh", include_md_files=False, include_skills=False)
     return HarnessAgentConfig(
-        name="nuomi",
+        name=name,
         workspace_dir=workspace_dir,
         providers=[build_provider()],
         default_model=f"llm/{settings.llm_model}",
-        system_prompt="你是糯米，一个住在用户电脑里的桌面 AI 人格。中文回答，简洁友好。",
+        system_prompt=system_prompt or "你是糯米，一个住在用户电脑里的桌面 AI 人格。中文回答，简洁友好。",
     )
