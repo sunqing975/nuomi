@@ -582,3 +582,17 @@ export async function activateExpert(name: string): Promise<{ ok: boolean; name:
   }
   return res.json() as Promise<{ ok: boolean; name: string; restart_required: boolean }>;
 }
+
+// ---------- 技能（独立文档资产，领域语义对齐 Octop skill） ----------
+
+export interface SkillInfo {
+  name: string;
+  description: string;
+}
+
+export async function fetchSkills(): Promise<SkillInfo[]> {
+  const res = await fetch("/api/skills");
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const body = (await res.json()) as { skills: SkillInfo[] };
+  return body.skills ?? [];
+}

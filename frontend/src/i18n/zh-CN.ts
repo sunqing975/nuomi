@@ -9,6 +9,37 @@ const zhCN = {
   "common.back": "上一步",
   "common.close": "关闭",
   "brand.name": "糯米",
+  // ---- 导航（对齐 Octop 领域页面体系） ----
+  "nav.chat": "聊天",
+  "nav.experts": "专家",
+  "nav.capabilities": "能力",
+  "nav.skills": "技能",
+  "nav.workspace": "工作区",
+  "nav.settings": "设置",
+  "nav.expertLabel": "当前专家",
+  "nav.palette": "品牌色",
+  "nav.themeToggle": "明暗模式",
+  "nav.themeDark": "切到深色",
+  "nav.themeLight": "切到浅色",
+  "nav.paletteChange": "切换品牌色",
+  // ---- 品牌色板（对齐 Octop 8 色板） ----
+  "palette.rose": "玫瑰",
+  "palette.tech": "科技蓝",
+  "palette.indigo": "靛蓝",
+  "palette.teal": "青绿",
+  "palette.violet": "紫罗兰",
+  "palette.emerald": "翡翠",
+  "palette.amber": "琥珀",
+  "palette.slate": "石板灰",
+  // ---- 工作区（项目） ----
+  "workspace.title": "工作区",
+  "sidebar.noProjects": "还没有项目，创建一个开始吧",
+  "sidebar.projectName": "项目名称",
+  "sidebar.projectDir": "项目目录（可选）",
+  "app.newProjectOk": "项目已创建",
+  "app.deleteProject": "删除项目",
+  // ---- 技能 ----
+  "skills.empty": "暂无技能资产",
 
   // ---- App ----
   "app.errorBoundary.title": "界面渲染出错",

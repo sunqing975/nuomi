@@ -786,6 +786,13 @@ def build_router(app: FastAPI) -> APIRouter:
         )
         return {"ok": True, "name": name, "restart_required": True}
 
+    @router.get("/api/skills")
+    async def skills_list():
+        """技能清单（领域语义：独立文档资产 SKILL.md，全量注入 system prompt）。"""
+        return {
+            "skills": [{"name": s.name, "description": s.description} for s in app.state.skills]
+        }
+
     @router.get("/api/experts")
     async def experts_list():
         """专家库清单（领域语义：专家 = 人格 + 能力模板资产，对齐 Octop 专家库）。"""

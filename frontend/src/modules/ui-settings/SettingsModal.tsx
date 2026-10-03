@@ -307,6 +307,7 @@ export default function SettingsModal({
   onClose,
   onSettingsChanged,
   onModelsChanged,
+  embedded = false,
 }: {
   settings: SettingsSnapshot;
   providers: ModelProvider[];
@@ -315,6 +316,8 @@ export default function SettingsModal({
   onClose: () => void;
   onSettingsChanged: () => void;
   onModelsChanged: () => void;
+  /** 嵌入模式：渲染为页面内容（设置页），不显示模态遮罩与关闭按钮 */
+  embedded?: boolean;
 }) {
   const [section, setSection] = useState<SectionId>("general");
   const [err, setErr] = useState<string | null>(null);
@@ -395,34 +398,8 @@ export default function SettingsModal({
 
   const allProviders = providers;
 
-  return (
-    <div className="modal-mask" onClick={onClose}>
-      <div
-        className="settings-modal"
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-label={t("settings.title")}
-      >
-        {/* 左侧分节导航 rail（Harness section nav） */}
-        <nav className="settings-nav">
-          <div className="settings-nav-title">{t("settings.title")}</div>
-          {SECTIONS.map((s) => (
-            <button
-              key={s.id}
-              className={`settings-nav-row ${section === s.id ? "on" : ""}`}
-              onClick={() => setSection(s.id)}
-            >
-              <span className="settings-nav-icon">{s.icon}</span>
-              {s.label}
-            </button>
-          ))}
-          <button className="settings-nav-close" onClick={onClose} title={t("settings.closeEsc")}>
-            <XIcon />
-          </button>
-        </nav>
-
-        {/* 右侧内容区 */}
-        <div className="settings-body">
+  const renderBody = () => (
+    <>
           {err && (
             <div className="error">
               <WarnIcon size={13} />
@@ -660,6 +637,55 @@ export default function SettingsModal({
             </div>
           )}
 
+    </>
+  );
+
+  return embedded ? (
+    <div className="settings-embedded">
+      <nav className="settings-nav">
+        <div className="settings-nav-title">{t("settings.title")}</div>
+        {SECTIONS.map((s) => (
+          <button
+            key={s.id}
+            className={`settings-nav-row ${section === s.id ? "on" : ""}`}
+            onClick={() => setSection(s.id)}
+          >
+            <span className="settings-nav-icon">{s.icon}</span>
+            {s.label}
+          </button>
+        ))}
+      </nav>
+      <div className="settings-body">{renderBody()}</div>
+    </div>
+  ) : (
+    <div className="modal-mask" onClick={onClose}>
+      <div
+        className="settings-modal"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-label={t("settings.title")}
+      >
+        {/* 左侧分节导航 rail（Harness section nav） */}
+        <nav className="settings-nav">
+          <div className="settings-nav-title">{t("settings.title")}</div>
+          {SECTIONS.map((s) => (
+            <button
+              key={s.id}
+              className={`settings-nav-row ${section === s.id ? "on" : ""}`}
+              onClick={() => setSection(s.id)}
+            >
+              <span className="settings-nav-icon">{s.icon}</span>
+              {s.label}
+            </button>
+          ))}
+          <button className="settings-nav-close" onClick={onClose} title={t("settings.closeEsc")}>
+            <XIcon />
+          </button>
+        </nav>
+
+        {/* 右侧内容区 */}
+        <div className="settings-body">
+          {renderBody()}
         </div>
       </div>
       {confirm && <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />}

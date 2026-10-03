@@ -1,5 +1,16 @@
 /** 糯米 V3 前端（Harness client 模块化布局）：表情层 + 聊天 + 输入栏（模型/思考强度）+ 项目/会话 + 插件 + 设置。 */
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
+import { ConfigProvider, theme as antdTheme } from "antd";
+import zhCN from "antd/locale/zh_CN";
+import MainLayout from "./layouts/MainLayout";
+import ChatPage from "./pages/ChatPage";
+import CapabilitiesPage from "./pages/CapabilitiesPage";
+import SkillsPage from "./pages/SkillsPage";
+import WorkspacePage from "./pages/WorkspacePage";
+import ExpertsPage from "./pages/ExpertsPage";
+import SettingsPage from "./pages/SettingsPage";
+import { DEFAULT_PALETTE, isPaletteId, PALETTES, PALETTE_STORAGE_KEY, type PaletteId } from "./themes";
 import {
   activateModel,
   createProject,
@@ -16,7 +27,7 @@ import {
   renameThread,
   saveThreadId,
   setGlobalSetting,
-  togglePlugin,
+  fetchExperts,
   type BootstrapStatus,
   type ModelProvider,
   type PluginInfo,
@@ -27,17 +38,12 @@ import {
 } from "./api";
 import { Msg } from "./modules/types";
 import type { CommandDef } from "./modules/ui-input/commands";
-import { AssistantRuntimeProvider, useLocalRuntime, useAuiState, type ThreadMessageLike } from "@assistant-ui/react";
+import { AssistantRuntimeProvider, useLocalRuntime, type ThreadMessageLike } from "@assistant-ui/react";
 import { createNuomiAdapter } from "./modules/ui-chat/NuomiAdapter";
-import ChatWindow from "./modules/ui-chat/ChatWindow";
-import InputBar, { createRecognizer } from "./modules/ui-input/InputBar";
-import SideBar from "./modules/ui-sidebar/SideBar";
-import FilesPanel from "./modules/ui-sidebar/FilesPanel";
 import WelcomeWizard from "./modules/ui-wizard/WelcomeWizard";
-import PluginManager from "./modules/ui-plugin-manager/PluginManager";
 import SettingsModal from "./modules/ui-settings/SettingsModal";
 import RobotMode from "./modules/ui-robot/RobotMode";
-import { FolderIcon, RobotIcon, XIcon } from "./modules/icons";
+import { createRecognizer } from "./modules/ui-input/InputBar";
 import { t } from "./i18n";
 
 interface ChatMsg extends Msg {
@@ -69,18 +75,10 @@ function toThreadMessages(msgs: ChatMsg[]): ThreadMessageLike[] {
   });
 }
 
-/** 在 AssistantRuntimeProvider 内读取运行状态，供 InputBar/PluginManager 使用 */
-function BusyBridge({ children }: { children: (ctx: { busy: boolean; empty: boolean }) => ReactNode }) {
-  const busy = useAuiState((s) => s.thread.isRunning);
-  const empty = useAuiState((s) => s.thread.messages.length === 0);
-  return <>{children({ busy, empty })}</>;
-}
-
 export default function App() {
   const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [plugins, setPlugins] = useState<PluginInfo[]>([]);
-  const [available, setAvailable] = useState<{ name: string; description: string }[]>([]);
   const [providers, setProviders] = useState<ModelProvider[]>([]);
   const [settings, setSettings] = useState<SettingsSnapshot>({ global: {}, plugins: [] });
   const [tab, setTab] = useState<"chat" | "plugins">("chat");
@@ -99,9 +97,26 @@ export default function App() {
   const [activeModelKey, setActiveModelKey] = useState<string | null>(null);
   const [effort, setEffort] = useState<string | null>(null);
   // 主题（深/浅，localStorage 持久化，默认深色对齐 dsh）
-  const [theme, setTheme] = useState<"dark" | "light">(() => {    const saved = localStorage.getItem("nuomi-theme");
+  const [theme, setTheme] = useState<"dark" | "light">(() => {
+    const saved = localStorage.getItem("nuomi-theme");
     return saved === "light" ? "light" : "dark";
   });
+  // 品牌色板（对齐 Octop 8 色板，localStorage 持久化，默认 rose）
+  const [palette, setPalette] = useState<PaletteId>(() => {
+    const saved = localStorage.getItem(PALETTE_STORAGE_KEY);
+    return saved && isPaletteId(saved) ? saved : DEFAULT_PALETTE;
+  });
+  const setPalettePersist = (p: PaletteId) => {
+    setPalette(p);
+    localStorage.setItem(PALETTE_STORAGE_KEY, p);
+  };
+  // 当前专家（领域语言：专家 = 人格 + 能力模板资产）
+  const [currentExpert, setCurrentExpert] = useState<string | null>(null);
+  const refreshExpert = useCallback(() => {
+    fetchExperts()
+      .then((r) => setCurrentExpert(r.current))
+      .catch(() => {});
+  }, []);
   // 计划模式（对齐 dsh /plan：软约束引导「先计划后执行」，发送时注入提示）
   const [planMode, setPlanMode] = useState(false);
   // 阶段 B：工作区文件树刷新计数（新建/删除项目/绑定目录后 +1，FilesPanel 重拉）
@@ -110,6 +125,9 @@ export default function App() {
   const [filesOpen, setFilesOpen] = useState(false);
   // 最近一次回复运行统计（输入框状态行：token 用量 · 耗时）
   const [runStats, setRunStats] = useState<{ tokens: number; latency_s: number } | null>(null);
+  useEffect(() => {
+    refreshExpert();
+  }, [refreshExpert]);
   // 范围（shell 沙箱模式，对齐 Harness 范围切换）：read-only / workspace-write / full-access
   const scope = (settings.global.shell_default_mode as string | undefined) ?? "workspace-write";
   const cycleScope = () => {
@@ -194,8 +212,7 @@ export default function App() {
     fetchPlugins()
       .then((r) => {
         setPlugins(r.plugins);
-        setAvailable(r.available ?? []);
-      })
+        })
       .catch((e) => setError(t("app.pluginsFailed", { msg: String(e instanceof Error ? e.message : e) })));
   }, []);
 
@@ -330,17 +347,6 @@ export default function App() {
       setFilesTick((n) => n + 1);
     } catch (e) {
       setError(t("app.projectDeleteFailed", { msg: String(e instanceof Error ? e.message : e) }));
-    }
-  };
-
-  const doToggle = async (name: string) => {
-    try {
-      await togglePlugin(name);
-      setError(null);
-      await refreshPlugins();
-      fetchSettings().then(setSettings).catch(() => {});
-    } catch (e) {
-      setError(t("app.pluginToggleFailed", { msg: String(e instanceof Error ? e.message : e) }));
     }
   };
 
@@ -530,152 +536,163 @@ export default function App() {
     [projects],
   );
 
+  // antd 主题：明暗算法 + 品牌色板注入 token（对齐 Octop：色板 × 模式）
+  const antdThemeObj = {
+    algorithm: theme === "dark" ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
+    token: {
+      colorPrimary: PALETTES.find((p) => p.id === palette)?.color ?? "#4B74FA",
+      borderRadius: 8,
+    },
+  };
+
   return (
     <AssistantRuntimeProvider runtime={runtime}>
-      {mode === "robot" ? (
-        <RobotMode
-          error={error}
-          onSend={(text) => void send(text)}
-          onBack={() => setMode("general")}
-        />
-      ) : (
-      <div className={`app ${filesOpen ? "right-open" : ""}`}>
-        <SideBar
-          tab={tab}
-          projects={projects}
-          threads={threads}
-          currentProjectId={currentProjectId}
-          currentThreadId={currentThreadId}
-          onTab={setTab}
-          onOpenSettings={() => setSettingsOpen(true)}
-          onNewThread={() => void newThread()}
-          onNewThreadIn={(pid) => void newThreadIn(pid)}
-          onSelectThread={(id) => void selectThread(id)}
-          onSelectProject={(id) => void selectProject(id)}
-          onCreateProject={async (name, directory) => {
-            try {
-              const p = await createProject(name, directory);
-              refreshProjects();
-              setFilesTick((n) => n + 1);
-              selectProject(p.id);
-            } catch (e) {
-              setError(t("app.newProjectFailed", { msg: String(e instanceof Error ? e.message : e) }));
-            }
-          }}
-          onRenameThread={async (id, title) => {
-            try {
-              await renameThread(id, title);
-              refreshThreads();
-              if (id === currentThreadId) setThreadTitle(title);
-            } catch (e) {
-              setError(t("app.renameFailed", { msg: String(e instanceof Error ? e.message : e) }));
-            }
-          }}
-          onDeleteThread={(id) => void removeThread(id)}
-          onDeleteProject={(id) => void removeProject(id)}
-        />
-
-        {tab === "chat" && (
-          <main className="main">
-            {/* 顶栏：会话标题 + 右栏开关（按钮在顶栏，不再浮在对话消息流上） */}
-            <div className="topbar">
-              <div className="topbar-title" title={threadTitle ?? undefined}>
-                {threadTitle || projects.find((p) => p.id === currentProjectId)?.name || t("sidebar.newSession")}
-              </div>
-              <div className="topbar-actions">
-                {robotEnabled && (
-                  <button
-                    className="mode-toggle"
-                    onClick={() => setMode("robot")}
-                    title={t("app.robotSwitch")}
-                  >
-                    <RobotIcon size={14} />
-                  </button>
-                )}
-                {projects.find((p) => p.id === currentProjectId)?.directory && (
-                  <button
-                    className={`icon-btn files-toggle ${filesOpen ? "on" : ""}`}
-                    onClick={() => setFilesOpen((v) => !v)}
-                    title={t("right.filesTab") + " · ⌘P"}
-                  >
-                    <FolderIcon size={15} />
-                  </button>
-                )}
-              </div>
-            </div>
-            {error && <div className="error">{error}</div>}
-            <ChatWindow
-              teamMode={teamMode}
-              onSuggestion={(text) => void send(text)}
+      <ConfigProvider locale={zhCN} theme={antdThemeObj}>
+        {mode === "robot" ? (
+          <RobotMode error={error} onSend={(text) => void send(text)} onBack={() => setMode("general")} />
+        ) : setup?.setup_required ? (
+          <>
+            <WelcomeWizard
+              workspace={setup.workspace}
+              onError={(msg) => setWizardError(msg)}
+              onFinished={() => {
+                setSetup((s) => (s ? { ...s, setup_required: false, llm_configured: true } : s));
+                setWizardError(null);
+                refreshPlugins();
+                refreshProjects();
+                setFilesTick((n) => n + 1);
+              }}
             />
-            <BusyBridge>
-              {({ busy, empty }) => (
-                <InputBar
-                  input={input}
-                  setInput={setInput}
-                  busy={busy}
-                  voiceEnabled={voiceEnabled}
-                  listening={listening}
-                  providers={providers}
-                  activeProvider={activeProvider}
-                  activeModelKey={activeModelKey}
-                  effort={effort}
-                  commands={commands}
-                  references={projectRefs}
-                  hero={empty}
-                  onSend={() => void send()}
-                  onSendText={(text) => void send(text)}
-                  onVoice={startVoice}
-                  onVoiceStop={stopVoice}
-                  onSelectModel={(p, m) => void selectModel(p, m)}
-                  onEffort={setEffort}
-                  scope={scope}
-                  onScopeCycle={cycleScope}
-                  runStats={runStats}
-                />
-              )}
-            </BusyBridge>
-          </main>
-        )}
-
-        {/* 右侧「其他」面板（三栏第三列，对齐 dsh AppFrame 右栏）：文件树，
-            常驻布局列（非弹窗），右上角按钮开合，宽度由 .app.right-open 过渡 */}
-        {tab === "chat" && (
-          <aside className="right-panel">
-            <div className="right-panel-head">
-              <span className="right-panel-title">
-                <FolderIcon size={14} />
-                <span className="name">{projects.find((p) => p.id === currentProjectId)?.name ?? t("chat.files")}</span>
-              </span>
-              <button
-                className="icon-btn rp-close"
-                title={t("common.close")}
-                onClick={() => setFilesOpen(false)}
+            {wizardError && <div className="error wizard-error">{wizardError}</div>}
+          </>
+        ) : (
+          <HashRouter>
+            <Routes>
+              <Route
+                path="/"
+                element={
+                  <MainLayout
+                    expertDisplayName={currentExpert ?? "—"}
+                    theme={theme}
+                    palette={palette}
+                    robotEnabled={robotEnabled}
+                    onThemeToggle={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+                    onPalette={setPalettePersist}
+                    onOpenRobot={() => setMode("robot")}
+                  />
+                }
               >
-                <XIcon />
-              </button>
-            </div>
-            {currentProjectId != null && <FilesPanel projectId={currentProjectId} refreshTick={filesTick} />}
-          </aside>
-        )}
-
-        {tab === "plugins" && (
-          <main className="main">
-            <BusyBridge>
-              {({ busy }) => (
-                <PluginManager
-                  plugins={plugins}
-                  available={available}
-                  busy={busy}
-                  settings={settings}
-                  onToggle={doToggle}
-                  onChanged={() => void onPluginChanged()}
+                <Route index element={<Navigate to="/chat" replace />} />
+                <Route
+                  path="chat"
+                  element={
+                    <ChatPage
+                      onOpenRobot={() => setMode("robot")}
+                      projects={projects}
+                      threads={threads}
+                      currentProjectId={currentProjectId}
+                      currentThreadId={currentThreadId}
+                      threadTitle={threadTitle}
+                      onNewThread={() => void newThread()}
+                      onNewThreadIn={(pid) => void newThreadIn(pid)}
+                      onSelectThread={(id) => void selectThread(id)}
+                      onSelectProject={(id) => void selectProject(id)}
+                      onCreateProject={async (name, directory) => {
+                        try {
+                          const p = await createProject(name, directory);
+                          refreshProjects();
+                          setFilesTick((n) => n + 1);
+                          selectProject(p.id);
+                        } catch (e) {
+                          setError(t("app.newProjectFailed", { msg: String(e instanceof Error ? e.message : e) }));
+                        }
+                      }}
+                      onRenameThread={async (id, title) => {
+                        try {
+                          await renameThread(id, title);
+                          refreshThreads();
+                          if (id === currentThreadId) setThreadTitle(title);
+                        } catch (e) {
+                          setError(t("app.renameFailed", { msg: String(e instanceof Error ? e.message : e) }));
+                        }
+                      }}
+                      onDeleteThread={(id) => void removeThread(id)}
+                      onDeleteProject={(id) => void removeProject(id)}
+                      robotEnabled={robotEnabled}
+                      teamMode={teamMode}
+                      voiceEnabled={voiceEnabled}
+                      providers={providers}
+                      activeProvider={activeProvider}
+                      activeModelKey={activeModelKey}
+                      effort={effort}
+                      input={input}
+                      setInput={setInput}
+                      listening={listening}
+                      commands={commands}
+                      references={projectRefs}
+                      error={error}
+                      scope={scope}
+                      onScopeCycle={cycleScope}
+                      runStats={runStats}
+                      onSend={() => void send()}
+                      onSendText={(text) => void send(text)}
+                      onSuggestion={(text) => void send(text)}
+                      onVoice={startVoice}
+                      onVoiceStop={stopVoice}
+                      onSelectModel={(p, m) => void selectModel(p, m)}
+                      onEffort={setEffort}
+                      filesOpen={filesOpen}
+                      setFilesOpen={setFilesOpen}
+                      filesTick={filesTick}
+                    />
+                  }
                 />
-              )}
-            </BusyBridge>
-          </main>
+                <Route
+                  path="capabilities"
+                  element={
+                    <CapabilitiesPage
+                      plugins={plugins}
+                      busy={error !== null}
+                      onChanged={onPluginChanged}
+                    />
+                  }
+                />
+                <Route path="skills" element={<SkillsPage />} />
+                <Route
+                  path="workspace"
+                  element={
+                    <WorkspacePage
+                      projects={projects}
+                      threads={threads}
+                      currentProjectId={currentProjectId}
+                      onSelectProject={(id) => void selectProject(id)}
+                      onProjectCreated={refreshProjects}
+                      onDeleteProject={(id) => void removeProject(id)}
+                    />
+                  }
+                />
+                <Route path="experts" element={<ExpertsPage />} />
+                <Route
+                  path="settings"
+                  element={
+                    <SettingsPage
+                      settings={settings}
+                      providers={providers}
+                      theme={theme}
+                      onThemeToggle={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+                      onSettingsChanged={() => {
+                        fetchSettings().then(setSettings).catch(() => {});
+                        refreshExpert();
+                      }}
+                      onModelsChanged={() => fetchProviders().then((r) => setProviders(r.providers)).catch(() => {})}
+                    />
+                  }
+                />
+                <Route path="*" element={<Navigate to="/chat" replace />} />
+              </Route>
+            </Routes>
+          </HashRouter>
         )}
-
         {settingsOpen && (
           <SettingsModal
             settings={settings}
@@ -683,27 +700,14 @@ export default function App() {
             theme={theme}
             onThemeToggle={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
             onClose={() => setSettingsOpen(false)}
-            onSettingsChanged={() => fetchSettings().then(setSettings).catch(() => {})}
+            onSettingsChanged={() => {
+              fetchSettings().then(setSettings).catch(() => {});
+              refreshExpert();
+            }}
             onModelsChanged={() => fetchProviders().then((r) => setProviders(r.providers)).catch(() => {})}
           />
         )}
-
-        {setup?.setup_required && (
-          <WelcomeWizard
-            workspace={setup.workspace}
-            onError={(msg) => setWizardError(msg)}
-            onFinished={() => {
-              setSetup((s) => (s ? { ...s, setup_required: false, llm_configured: true } : s));
-              setWizardError(null);
-              refreshPlugins();
-              refreshProjects();
-              setFilesTick((n) => n + 1);
-            }}
-          />
-        )}
-        {wizardError && <div className="error wizard-error">{wizardError}</div>}
-      </div>
-      )}
+      </ConfigProvider>
     </AssistantRuntimeProvider>
   );
 }
