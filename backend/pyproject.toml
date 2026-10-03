@@ -1,25 +1,17 @@
 [project]
 name = "nuomi-backend"
-version = "0.2.0"
-description = "糯米 V2 · 全能型个人智能体（桌面优先，单一数据根）"
+version = "0.13.0"
+description = "糯米 · 桌面 AI 人格工作台（octop-harness 为机制基础库，业务层自己写）"
 readme = "README.md"
 requires-python = ">=3.11,<3.13"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
-    "langchain>=0.3",
-    "langgraph>=0.2.60",
-    "langgraph-checkpoint-sqlite>=2.0",
-    "langchain-openai>=0.2",
-    "langchain-core>=0.3",
+    # Agent 运行时：octop-harness（机制基础库，v0.13 起不再自研 engine）。
+    # harness 依赖 langchain>=1.5 / langgraph<2 / deepagents / octop-memory，版本由它约束。
+    "octop-harness>=1.0.0",
     "pydantic-settings>=2.4",
     "python-dotenv>=1.0",
-    "mcp>=1.30.0",
-    "langchain-mcp-adapters>=0.3.2",
-    "chromadb>=0.5",
-    "fastembed>=0.4",
-    "faster-whisper>=1.2,<2",
-    "av>=11,<14",  # faster-whisper 兼容：PyAV 14+ 移除 metadata_errors，实测转写报错
 ]
 
 [dependency-groups]
@@ -30,17 +22,14 @@ dev = [
     "mypy>=1.10",
 ]
 
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-
-[[tool.uv.index]]
+[tool.uv.index]
 url = "https://mirrors.aliyun.com/pypi/simple/"
 default = true
 
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-src = ["app", "tests", "scripts"]
+src = ["app", "tests", "."]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "C4"]
@@ -51,5 +40,5 @@ ignore = ["E501"]
 
 [tool.mypy]
 python_version = "3.12"
-files = ["app", "scripts", "sidecar_main.py"]
+files = ["app"]
 ignore_missing_imports = true
