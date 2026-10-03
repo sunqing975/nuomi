@@ -1,0 +1,63 @@
+{
+  "llm": {
+    "api_url": "http://127.0.0.1:8000/api/v1",
+    "api_key": "local",
+    "model": "nuomi",
+    "system_prompt": "你是糯米，一只住在用户电脑里的小猫伙伴。",
+    "temperature": 0.6,
+    "temperature_enabled": false
+  },
+  "tts": {
+    "enabled": false,
+    "url": "http://127.0.0.1:5006",
+    "language": "zh"
+  },
+  "ui": {
+    "intro_text": "你好，我是糯米。",
+    "model_type": "live2d",
+    "model_path": "2D/hiyori/Hiyori.model3.json",
+    "show_chat_box": true,
+    "show_model": true,
+    "model_x": 1200.9863603945507,
+    "model_y": 614.6615249418455,
+    "model": "hiyori"
+  },
+  "subtitle_labels": {
+    "enabled": true,
+    "user": "akarui",
+    "ai": "糯米"
+  },
+  "context": {
+    "enable_limit": false,
+    "max_messages": 17,
+    "persistent_history": true,
+    "history_file": "AI记录室/对话历史.jsonl"
+  },
+  "asr": {
+    "enabled": false,
+    "ptt_enabled": false,
+    "voice_barge_in": true,
+    "vad_url": "ws://127.0.0.1:1000/v1/ws/vad",
+    "asr_url": "http://127.0.0.1:1000/v1/upload_audio",
+    "ptt_max_timeout": 9
+  },
+  "vision": {
+    "use_vision_model": false,
+    "auto_screenshot": false,
+    "vision_model": {
+      "api_key": "",
+      "api_url": "",
+      "model": ""
+    }
+  },
+  "bert": {
+    "enabled": true,
+    "url": "http://127.0.0.1:6007/classify"
+  },
+  "mcp": {
+    "enabled": true,
+    "config_path": "./mcp/mcp_config.json",
+    "startup_timeout": 20000,
+    "auto_start_servers": true
+  }
+}

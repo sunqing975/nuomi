@@ -16,6 +16,7 @@ from app.domain.agents.service import agent_service
 from app.infra.harness.manager import manager
 from app.storage.db import init_db
 from app.transport.api import router
+from app.transport.openai_compat import router as openai_router
 
 
 def seed_default_agent() -> None:
@@ -51,3 +52,4 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(router)
+app.include_router(openai_router)
