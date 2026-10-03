@@ -3,32 +3,31 @@
 启动即：打开 SQLite checkpointer → 加载伙伴人设 → 初始化记忆库 → 扫描 skills/
 → 组装 NuomiMiddleware（每轮注入人设+记忆+摘要）→ 构建 LangGraph agent。
 """
+
 from __future__ import annotations
 
 import asyncio
+import importlib.util
+import json
 import os
 import secrets
 import shutil
 import sys
+import tempfile
 import uuid
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessageChunk
 from pydantic import BaseModel, Field
 
-from .agent.graph import build_graph, build_llm, create_checkpointer
-from .plugins.approval import ApprovalGate, get_gate, set_gate
-from .plugins.composer import NuomiComposer
-from .config import settings
-from .agent.middleware import NuomiMiddleware
-from .storage.knowledge import build_knowledge_store, set_store as set_knowledge_store
-from .storage.memory import MemoryStore, get_store, set_store
+from .agent.graph import build_llm, create_checkpointer
 from .agent.models import (
     build_model_llm,
     custom_key,
@@ -37,23 +36,27 @@ from .agent.models import (
     list_providers,
 )
 from .agent.partner import assemble_system_prompt, load_partner
-from .storage.projects import ProjectStore, is_placeholder_title
 from .agent.thread_ctx import current_thread_id as thread_ctx
+from .config import settings
+from .plugins.approval import ApprovalGate, set_gate
+from .plugins.composer import NuomiComposer
+from .plugins.loader import (
+    collect_skill_catalog,
+    scan_plugins,
+    scan_skills,
+)
 from .plugins.runtime import (
     MESSAGE_RECEIVED,
     MODEL_SWITCHED,
     RESPONSE_DONE,
 )
-from .plugins.loader import (
-    collect_instructions,
-    collect_skill_catalog,
-    collect_tools,
-    scan_plugins,
-)
 from .sse import SSE_HEADERS, sse
-from .agent.supervisor import build_supervisor
-from .storage.trace import TraceLogger, set_logger
 from .storage.db import ensure_database
+from .storage.knowledge import build_knowledge_store
+from .storage.knowledge import set_store as set_knowledge_store
+from .storage.memory import MemoryStore
+from .storage.projects import ProjectStore, is_placeholder_title
+from .storage.trace import TraceLogger, set_logger
 from .storage.workspace import list_tree, safe_project_dirname
 
 
@@ -62,6 +65,10 @@ class ChatRequest(BaseModel):
     thread_id: str | None = None
     project_id: int | None = None
     effort: str | None = None  # 思考强度（Harness ModelSelect effort 的轻量版）
+
+
+class SpeakRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=400)
 
 
 class ActivateRequest(BaseModel):
@@ -110,15 +117,23 @@ class PluginSettingRequest(BaseModel):
 
 class NewProjectRequest(BaseModel):
     name: str = Field(min_length=1, max_length=64)
-    directory: str | None = Field(default=None, max_length=2048, description="绑定的本机目录（绝对路径，可选）")
+    directory: str | None = Field(
+        default=None, max_length=2048, description="绑定的本机目录（绝对路径，可选）"
+    )
 
 
 class BootstrapWorkspaceRequest(BaseModel):
     workspace: str = Field(min_length=1, max_length=2048, description="工作区根目录绝对路径")
 
 
+class ShellExecRequest(BaseModel):
+    command: str = Field(min_length=1, max_length=4000, description="要执行的命令（沙箱保护）")
+
+
 class SetProjectDirectoryRequest(BaseModel):
-    directory: str | None = Field(default=None, max_length=2048, description="要绑定的本机目录绝对路径；传空串/None 解绑")
+    directory: str | None = Field(
+        default=None, max_length=2048, description="要绑定的本机目录绝对路径；传空串/None 解绑"
+    )
 
 
 class NewThreadRequest(BaseModel):
@@ -130,7 +145,9 @@ class RenameThreadRequest(BaseModel):
     title: str = Field(min_length=1, max_length=64)
 
 
-def make_prompt_builder(partner, instructions: list[str], memory: MemoryStore, memory_enabled: bool = True, app=None):
+def make_prompt_builder(
+    partner, instructions: list[str], memory: MemoryStore, memory_enabled: bool = True, app=None
+):
     """按"当前用户消息"检索记忆，组装每轮的 system prompt（闭包交给中间件）。
 
     Phase 4d+ 插件管理：memory_enabled=False（memory 插件被停用）时不注入记忆事实，
@@ -154,7 +171,7 @@ def make_prompt_builder(partner, instructions: list[str], memory: MemoryStore, m
             partner,
             instructions,
             memory_facts=merged,
-            skill_catalog=collect_skill_catalog(app.state.plugins, app.state.enabled_plugins) if app else None,
+            skill_catalog=collect_skill_catalog(app.state.skills) if app else None,
         )
 
     return builder
@@ -204,11 +221,51 @@ def _chunk_tools(chunk) -> list[str]:
     tcs = getattr(chunk, "tool_calls", None)
     if tcs:
         for c in tcs:
-            if isinstance(c, dict) and c.get("name"):
-                names.append(c["name"])
-            elif isinstance(c, object) and hasattr(c, "name") and getattr(c, "name", None):
-                names.append(c["name"])
+            name = c.get("name") if isinstance(c, dict) else getattr(c, "name", None)
+            if name:
+                names.append(name)
     return names
+
+
+def _chunk_tool_events(chunk, acc: dict) -> list[tuple[str, str]]:
+    """返回本 chunk 中「首次出现」的工具调用 [(name, args_json)]。
+
+    - messages 模式：AIMessageChunk.tool_call_chunks 是跨 chunk 的累积视图，
+      每个 index 的 args_fragment 是「自上次以来新增的部分」，需按 index 累积；
+      sent 标记保证同一调用只在首次出现时发事件。
+    - updates 模式：完整 AIMessage.tool_calls 一次到位，直接取完整 args。
+    """
+    import json as _json
+
+    events: list[tuple[str, str]] = []
+    tcc = getattr(chunk, "tool_call_chunks", None)
+    if tcc:
+        for i, c in enumerate(tcc):
+            if not isinstance(c, dict):
+                continue
+            entry = acc.setdefault(i, {"name": "", "args": "", "sent": False})
+            frag = c.get("args_fragment")
+            if frag:
+                entry["args"] += frag
+            nm = c.get("name")
+            if nm and not entry["sent"]:
+                entry["sent"] = True
+                entry["name"] = nm
+                args = entry["args"].strip()
+                events.append((nm, args if args else "{}"))
+    tcs = getattr(chunk, "tool_calls", None)
+    if tcs:
+        for c in tcs:
+            nm = c.get("name") if isinstance(c, dict) else getattr(c, "name", None)
+            if not nm:
+                continue
+            args = {}
+            if isinstance(c, dict):
+                args = c.get("args") or {}
+            elif hasattr(c, "args") and c.args is not None:
+                args = c.args
+            events.append((nm, _json.dumps(args, ensure_ascii=False)))
+    return events
 
 
 def _merge_usage(acc: dict, chunk) -> None:
@@ -231,9 +288,7 @@ async def _trace_turn(
 
     tools_called: list[str] = []
     try:
-        tuple_ = await app.state.checkpointer.aget_tuple(
-            {"configurable": {"thread_id": thread_id}}
-        )
+        tuple_ = await app.state.checkpointer.aget_tuple({"configurable": {"thread_id": thread_id}})
         msgs = tuple_.checkpoint["channel_values"].get("messages", [])
         for m in msgs:
             if isinstance(m, AIMessage) and m.tool_calls:
@@ -262,11 +317,15 @@ def build_app(
     knowledge_store_type: str | None = None,
     knowledge_dir: str | None = None,
     workspace_dir: str | None = None,
+    plugins_dir: str | None = None,
+    modules_dir: str | None = None,
 ) -> FastAPI:
-    # 统一插件根目录：一个插件 = 一个目录 + plugin.json
+    # 扩展体系三区（v0.7 对齐 Octop）：插件=能力分发单元，技能=文档资产，模块=内核组成
     llm_cfg = llm or build_llm(settings)
     db_cfg = db_path or str(settings.db_file)
-    sk_dir = skills_dir or settings.plugins_dir
+    pl_dir = plugins_dir or settings.plugins_dir
+    md_dir = modules_dir or settings.modules_dir
+    skl_dir = skills_dir or settings.skills_dir
     p_name = partner_name or settings.partner_name
     p_dir = partners_dir or settings.partners_dir
     mem_file = memory_file or str(settings.memory_file)
@@ -305,15 +364,18 @@ def build_app(
             app.state.knowledge = knowledge
             app.state.trace_logger = logger
             app.state.gate = gate
-            app.state.checkpointer = saver  # 提前：服务插件（sessions）依赖
+            app.state.checkpointer = saver  # 提前：内核模块（sessions）依赖
             app.state.llm_cfg = llm_cfg
             app.state.model_name = "none" if llm is None else "custom"
             app.state.model_provider = "custom" if llm is None else "custom"
-            app.state.plugins = scan_plugins(sk_dir)  # V2 扫描（工具/技能/mcp 构建用）
+            app.state.plugins = scan_plugins(pl_dir) + scan_plugins(
+                md_dir, category="module"
+            )  # 统一清单：插件 + 模块（来源见 category）
+            app.state.skills = scan_skills(skl_dir)  # 独立技能区（SKILL.md 文档资产）
 
             # --- V3：组合驱动（应用 = 插件树，nuomi.json） ---
             profile_path = Path(db_cfg).parent / "nuomi.json"
-            composer = NuomiComposer(app, sk_dir, profile_path=profile_path)
+            composer = NuomiComposer(app, pl_dir, profile_path=profile_path, modules_dir=md_dir)
             app.state.composer = composer
             # 测试/兼容注入：build_app(llm=...) 优先于 llm 提供方插件（Seam 覆盖语义）
             if llm is not None:
@@ -349,7 +411,9 @@ def build_app(
                         m = find_model(am["provider"], am["model"], cps, keys)
                         if m is not None:
                             effort = am.get("effort") if am.get("effort") in m["efforts"] else None
-                            app.state.llm_cfg = build_model_llm(am["provider"], am["model"], effort, cps, keys)
+                            app.state.llm_cfg = build_model_llm(
+                                am["provider"], am["model"], effort, cps, keys
+                            )
                             app.state.scope.register("llm", app.state.llm_cfg)
                             app.state.model_provider = am["provider"]
                             app.state.model_name = am["model"]
@@ -361,7 +425,9 @@ def build_app(
                         pass
 
             app.state.rebuild_agents = rebuild_agents
-            if svc is not None and (summarize_max_messages is not None or summarize_keep_recent is not None):
+            if svc is not None and (
+                summarize_max_messages is not None or summarize_keep_recent is not None
+            ):
                 rebuild_agents()
             yield
 
@@ -377,10 +443,13 @@ def build_app(
     async def token_guard(request: Request, call_next):
         """桌面 sidecar 本地 token 校验（阶段 C）：app.state.api_token 非 None 时启用，
         /api/* 均需 X-Nuomi-Token（health 与静态页面放行）。dev 默认不启用。"""
-        if app.state.api_token and request.url.path.startswith("/api"):
-            if not request.url.path.startswith("/api/health"):
-                if request.headers.get("X-Nuomi-Token") != app.state.api_token:
-                    return JSONResponse({"detail": "未授权：缺少有效 token"}, status_code=401)
+        if (
+            app.state.api_token
+            and request.url.path.startswith("/api")
+            and not request.url.path.startswith("/api/health")
+            and request.headers.get("X-Nuomi-Token") != app.state.api_token
+        ):
+            return JSONResponse({"detail": "未授权：缺少有效 token"}, status_code=401)
         return await call_next(request)
 
     @app.get("/health")
@@ -402,18 +471,115 @@ def build_app(
                 "documents": app.state.knowledge.count(),
             },
             "plugins": [
-                {"id": p["id"], "name": p["name"], "state": p["state"], "error": p["error"],
-                 "tools": len(p["tools"]), "services": p["services"]}
-                for p in app.state.composer.list()
+                {
+                    "id": p["id"],
+                    "name": p["name"],
+                    "state": p["state"],
+                    "error": p["error"],
+                    "tools": len(p["tools"]),
+                    "services": p["services"],
+                }
+                for p in app.state.composer.list_plugins()
             ],
             "team": getattr(app.state, "supervisor", None) is not None,
         }
 
+    # ---------- 机器人模式语音端点（复用 voice 插件的本地 STT/TTS） ----------
+
+    @lru_cache(maxsize=1)
+    def _voice_tool_module():
+        """加载 plugins/voice/tool.py 为独立模块（缓存，保证 faster-whisper 模型只加载一次）。"""
+        mod_path = Path(settings.plugins_dir) / "voice" / "tool.py"
+        spec = importlib.util.spec_from_file_location("nuomi_voice_runtime", mod_path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+    @app.post("/api/transcribe")
+    async def transcribe_audio(audio: UploadFile):
+        """上传音频（webm/mp3/wav…）→ 本地 faster-whisper 转写 → {"text": ...}。"""
+        if not audio.filename:
+            raise HTTPException(400, "缺少音频文件")
+        suffix = Path(audio.filename).suffix or ".webm"
+        if suffix.lower() not in {".webm", ".mp3", ".wav", ".m4a", ".ogg", ".aac", ".flac"}:
+            raise HTTPException(400, f"不支持的音频格式: {suffix}")
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            tmp_path = tmp.name
+            shutil.copyfileobj(audio.file, tmp)
+        try:
+            model = _voice_tool_module()._get_model()
+            segments, info = model.transcribe(
+                tmp_path,
+                language="zh",
+                vad_filter=True,
+                beam_size=5,
+            )
+            text = "".join(s.text for s in segments).strip()
+            if not text:
+                raise HTTPException(400, "未识别到语音内容，请再说一次")
+            return {
+                "text": text,
+                "language": info.language,
+                "language_probability": round(float(info.language_probability), 3),
+            }
+        finally:
+            with suppress(OSError):
+                os.remove(tmp_path)
+
+    @app.post("/api/speak")
+    async def speak_audio(req: SpeakRequest):
+        """文本 → macOS say 合成 → 返回 audio/mpeg 音频流（前端 Audio 直接播放）。
+
+        与 plugins/voice/tool.py 的 speak 同源实现（say + ffmpeg），独立于插件格式包装。
+        """
+        import subprocess
+
+        tmp_dir = Path(tempfile.mkdtemp(prefix="nuomi_speak_"))
+        aiff = tmp_dir / "speak.aiff"
+        mp3 = tmp_dir / "speak.mp3"
+        try:
+            r = subprocess.run(
+                ["say", "-v", "Ting-Ting", "-o", str(aiff), req.text],
+                timeout=30,
+                capture_output=True,
+            )
+            if r.returncode != 0:
+                raise HTTPException(
+                    502,
+                    f"语音合成失败（say 返回 {r.returncode}）：{r.stderr.decode('utf-8', errors='replace').strip()[:200] or '未知错误'}",
+                )
+            r2 = subprocess.run(
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-i",
+                    str(aiff),
+                    "-codec:a",
+                    "libmp3lame",
+                    "-qscale:a",
+                    "2",
+                    str(mp3),
+                ],
+                timeout=60,
+                capture_output=True,
+            )
+            if r2.returncode != 0 or not mp3.exists():
+                raise HTTPException(
+                    502, "音频转码失败（需要 ffmpeg，可用 brew install ffmpeg 安装）"
+                )
+            return Response(content=mp3.read_bytes(), media_type="audio/mpeg")
+        except HTTPException:
+            raise
+        except subprocess.TimeoutExpired as e:
+            raise HTTPException(502, f"语音合成超时: {e}") from e
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
     @app.get("/api/plugins")
     async def plugins():
-        """插件管理清单（V3：fiber 状态 + 贡献 + plugin.json 元数据）+ 可导入候选。"""
+        """插件管理清单（V3：fiber 状态 + 贡献 + 清单元数据）+ 可导入候选。"""
         composer = app.state.composer
-        return {"plugins": composer.list(), "available": composer.available()}
+        return {"plugins": composer.list_plugins(), "available": composer.available()}
 
     @app.post("/api/plugins/{name}/toggle")
     async def toggle_plugin_ep(name: str):
@@ -429,7 +595,7 @@ def build_app(
         try:
             return composer.toggle(name, entry.disabled)  # disabled=True → 启用
         except KeyError:
-            raise HTTPException(404, f"未知插件：{name}")
+            raise HTTPException(404, f"未知插件：{name}") from None
 
     # --- 模型管理（Phase 6：内置 + 自定义供应商；API Key；激活持久化） ---
     def _keys_of(svc) -> dict:
@@ -472,9 +638,7 @@ def build_app(
                 + (f"回复摘要：{sample_reply}\n" if sample_reply else "")
                 + "标题："
             )
-            resp = await asyncio.wait_for(
-                llm.ainvoke([("user", prompt)]), timeout=10
-            )
+            resp = await asyncio.wait_for(llm.ainvoke([("user", prompt)]), timeout=10)
             title = (getattr(resp, "content", "") or "").strip()
             title = title.strip("\"'“”《》").splitlines()[0].strip()[:20]
             return title or None
@@ -485,9 +649,7 @@ def build_app(
     async def models():
         svc = app.state.scope.get("settings")
         cps, keys = _model_ctx(svc)
-        return list_providers(
-            app.state.model_provider, app.state.model_name, cps, keys
-        )
+        return list_providers(app.state.model_provider, app.state.model_name, cps, keys)
 
     @app.post("/api/models/activate")
     async def activate_model(req: ActivateRequest):
@@ -512,8 +674,12 @@ def build_app(
             )
         app.state.event_bus.publish(
             MODEL_SWITCHED,
-            {"provider": req.provider, "model": req.model, "effort": effort,
-             "tools": [t.name for t in app.state.tools]},
+            {
+                "provider": req.provider,
+                "model": req.model,
+                "effort": effort,
+                "tools": [t.name for t in app.state.tools],
+            },
         )
         return {
             "active_provider": req.provider,
@@ -609,7 +775,7 @@ def build_app(
         try:
             ids = fetch_available_models(base_url, api_key)
         except Exception as e:  # noqa: BLE001
-            raise HTTPException(502, f"拉取失败：{e}")
+            raise HTTPException(502, f"拉取失败：{e}") from e
         return {"models": ids}
 
     # --- V3 插件导入（参考 Harness dsh plugin：install / uninstall） ---
@@ -621,11 +787,11 @@ def build_app(
         try:
             return composer.install(name, req.source)
         except FileExistsError as e:
-            raise HTTPException(409, str(e))
+            raise HTTPException(409, str(e)) from e
         except ValueError as e:
-            raise HTTPException(400, str(e))
+            raise HTTPException(400, str(e)) from e
         except Exception as e:
-            raise HTTPException(500, f"{e.__class__.__name__}: {e}")
+            raise HTTPException(500, f"{e.__class__.__name__}: {e}") from e
 
     @app.post("/api/plugins/install-upload")
     async def install_upload(file: UploadFile):
@@ -663,10 +829,9 @@ def build_app(
         try:
             return composer.uninstall(plugin_id)
         except KeyError:
-            raise HTTPException(404, f"未知插件：{plugin_id}")
+            raise HTTPException(404, f"未知插件：{plugin_id}") from None
 
     # --- V3 设置系统（参考 Harness ui-settings） ---
-
 
     @app.get("/api/settings")
     async def settings_get():
@@ -705,7 +870,7 @@ def build_app(
         try:
             safe = safe_project_dirname(req.name)
         except ValueError as e:
-            raise HTTPException(400, str(e))
+            raise HTTPException(400, str(e)) from e
         d = settings.workspace_path / safe
         d.mkdir(parents=True, exist_ok=True)
         return app.state.projects.create_project(req.name, str(d))
@@ -732,13 +897,68 @@ def build_app(
         """安全列出工作区目录树（隐藏项/依赖目录跳过，深度与条目数有上限）。"""
         return list_tree(settings.workspace_path)
 
+    @app.get("/api/projects/{project_id}/tree")
+    async def project_tree(project_id: int):
+        """项目绑定的本地目录文件树（一个项目 = 一个目录）。
+        未绑定目录或路径失效 → 404；树规则复用 list_tree（隐藏/依赖跳过、深度条数上限）。"""
+        proj = app.state.projects.get_project(project_id)
+        if proj is None:
+            raise HTTPException(404, "项目不存在")
+        directory = (proj.get("directory") or "").strip()
+        if not directory:
+            raise HTTPException(404, "项目未绑定目录")
+        d = Path(directory).expanduser()
+        if not d.is_dir():
+            raise HTTPException(404, f"目录不存在或不是文件夹：{directory}")
+        return list_tree(d)
+
+    _shell_tool_mod: Any | None = None
+
+    def _load_shell_tool() -> Any:
+        """动态加载 shell 插件（仓库 plugins/shell/tool.py），复用其沙箱执行。"""
+        nonlocal _shell_tool_mod
+        if _shell_tool_mod is None:
+            from importlib.util import module_from_spec, spec_from_file_location
+
+            path = Path(settings.plugins_dir) / "shell" / "tool.py"
+            spec = spec_from_file_location("nuomi_shell_tool", path)
+            if spec is None or spec.loader is None:
+                raise RuntimeError(f"无法加载 shell 工具模块：{path}")
+            mod = module_from_spec(spec)
+            sys.modules[spec.name] = mod
+            spec.loader.exec_module(mod)
+            _shell_tool_mod = mod
+        return _shell_tool_mod
+
+    @app.post("/api/projects/{project_id}/shell/exec")
+    async def project_shell_exec(project_id: int, req: ShellExecRequest):
+        """在项目目录执行一条命令（复用 shell 插件沙箱：workspace-write 锚定工作区，
+        黑名单/超时/截断与 agent 的 bash 工具一致；项目目录在工作区外时返回沙箱提示）。"""
+        proj = app.state.projects.get_project(project_id)
+        if proj is None:
+            raise HTTPException(404, "项目不存在")
+        directory = (proj.get("directory") or "").strip()
+        if not directory:
+            raise HTTPException(404, "项目未绑定目录")
+        d = Path(directory).expanduser()
+        if not d.is_dir():
+            raise HTTPException(404, f"目录不存在或不是文件夹：{directory}")
+        out = await asyncio.to_thread(
+            _load_shell_tool()._run, req.command, str(d), "workspace-write"
+        )
+        return {"output": out, "cwd": str(d)}
+
     # --- 阶段 D：首启向导 ---
     @app.get("/api/bootstrap")
     async def bootstrap():
         """首启判定：未配置任何可用 LLM 供应商且未激活模型 → 需要走向导。"""
         svc = app.state.scope.get("settings")
         if svc is None:
-            return {"setup_required": False, "workspace": str(settings.workspace_path), "llm_configured": False}
+            return {
+                "setup_required": False,
+                "workspace": str(settings.workspace_path),
+                "llm_configured": False,
+            }
         s = svc["store"]
         cps = s.get("custom_providers", []) or []
         am = s.get("active_model")
@@ -759,7 +979,7 @@ def build_app(
         try:
             p.mkdir(parents=True, exist_ok=True)
         except OSError as e:
-            raise HTTPException(400, f"无法创建工作区目录：{e}")
+            raise HTTPException(400, f"无法创建工作区目录：{e}") from e
         svc["store"].set("workspace_dir", str(p))
         settings._workspace_override = str(p)
         return {"ok": True, "workspace": str(p)}
@@ -784,22 +1004,60 @@ def build_app(
 
     @app.get("/api/threads/{thread_id}/messages")
     async def thread_messages(thread_id: str):
-        """读取会话历史（checkpointer 消息 → [{role, content}]），供切换会话时加载。"""
+        """读取会话历史（checkpointer 消息 → [{role, content, reasoning?, toolCalls?}]），
+        供切换会话时加载。reasoning = DeepSeek 深度思考原文；toolCalls = 工具调用
+        （name + args + result，result 按 tool_call_id 与 ToolMessage 配对）。"""
         key = thread_id
         tr = await app.state.checkpointer.aget_tuple({"configurable": {"thread_id": key}})
         if tr is None:
             return {"messages": []}
+        msgs = tr.checkpoint.get("channel_values", {}).get("messages") or tr.checkpoint.get(
+            "messages", []
+        )
+        # 预收集 ToolMessage：tool_call_id → 结果文本
+        tool_results: dict = {}
+        for m in msgs:
+            if type(m).__name__ == "ToolMessage":
+                tid = getattr(m, "tool_call_id", None)
+                if tid:
+                    tool_results[tid] = _chunk_text(m)
         out = []
-        msgs = tr.checkpoint.get("channel_values", {}).get("messages") or tr.checkpoint.get("messages", [])
+        pending: dict | None = None  # 工具调用轮（无正文）暂存，等下一个正文轮合并
         for m in msgs:
             c = _chunk_text(m)
-            if not c:
-                continue
             name = type(m).__name__
             if name == "HumanMessage":
                 out.append({"role": "user", "content": c})
-            elif name == "AIMessage":
-                out.append({"role": "assistant", "content": c})
+            elif name in ("AIMessage", "AIMessageChunk"):
+                item: dict[str, Any] = {"role": "assistant", "content": c}
+                r = _chunk_reasoning(m)
+                if r:
+                    item["reasoning"] = r
+                tcs = []
+                for tc in getattr(m, "tool_calls", None) or []:
+                    tid = tc.get("id")
+                    tcs.append(
+                        {
+                            "name": tc.get("name", ""),
+                            "args": json.dumps(tc.get("args", {}), ensure_ascii=False),
+                            "result": tool_results.get(tid),
+                        }
+                    )
+                if tcs:
+                    item["toolCalls"] = tcs
+                if tcs and not c:
+                    # 工具调用轮（正文为空）：暂存，与后续回复轮合并为一条
+                    pending = item
+                    continue
+                if pending is not None and c and not tcs:
+                    # 回复轮：合并工具卡片（豆包式：卡片 + 正文同一条消息）
+                    item["toolCalls"] = pending.get("toolCalls")
+                    if not item.get("reasoning") and pending.get("reasoning"):
+                        item["reasoning"] = pending["reasoning"]
+                    pending = None
+                out.append(item)
+        if pending is not None:
+            out.append(pending)
         return {"messages": out}
 
     @app.post("/api/chat")
@@ -832,15 +1090,20 @@ def build_app(
 
         async def event_stream():
             yield sse("meta", {"thread_id": thread_id})
-            app.state.event_bus.publish(MESSAGE_RECEIVED, {"message": req.message, "thread_id": thread_id})
+            app.state.event_bus.publish(
+                MESSAGE_RECEIVED, {"message": req.message, "thread_id": thread_id}
+            )
             # 需要模型命名的会话：回复流开始前并行启动标题生成（只基于用户消息），
             # 回复完成（done）后取结果回传 title 事件，标题几乎零等待回显
             cur_title = (store.get_thread(thread_id) or {}).get("title")
             need_title = is_new or is_placeholder_title(cur_title)
-            title_task = asyncio.create_task(_generate_thread_title(req.message, "")) if need_title else None
+            title_task = (
+                asyncio.create_task(_generate_thread_title(req.message, "")) if need_title else None
+            )
             full = ""
             reasoning = ""
             tool_names: set[str] = set()
+            tool_tracker: dict = {}
             try:
                 async for ev in agent.astream(
                     {"messages": [{"role": "user", "content": req.message}]},
@@ -848,30 +1111,46 @@ def build_app(
                     stream_mode=stream_mode,
                 ):
                     if use_team:
-                        # updates 模式：每个节点一轮 {"node": {...}}；子 Agent 输出含 AIMessage
-                        # （修复：不要 break——第一条 AI 消息常是工具调用（text 空），
-                        #   后续回复消息必须继续透传，否则 done.content 为空）
-                        for node, payload in ev.items():
-                            if node in ("companion", "researcher"):
-                                msgs = (payload or {}).get("messages", [])
-                                for m in msgs:
-                                    if isinstance(m, AIMessageChunk) or type(m).__name__ == "AIMessage":
-                                        for tname in _chunk_tools(m):
-                                            if tname and tname not in tool_names:
-                                                tool_names.add(tname)
-                                                yield sse("tool", {"name": tname})
-                                        text = _chunk_text(m)
-                                        if text:
-                                            full += text
-                                            yield sse("token", {"content": text})
-                                        r = _chunk_reasoning(m)
-                                        if r:
-                                            reasoning += r
-                                            yield sse("reasoning", {"content": r})
-                                        _merge_usage(last_usage, m)
+                        # 团队模式也用 "messages" 流：ev=(chunk, meta)。主图 router 的
+                        # 路由决策（{"next": "..."}）不是最终回复，按 langgraph_node 过滤；
+                        # 子 Agent 的 LLM chunk 与 ToolMessage 与单 Agent 同一套逻辑
+                        chunk, meta = ev
+                        node = (meta or {}).get("langgraph_node", "")
+                        if node == "router":
+                            continue
+                        if type(chunk).__name__ == "ToolMessage":
+                            yield sse(
+                                "tool_result",
+                                {"name": getattr(chunk, "name", ""), "result": _chunk_text(chunk)},
+                            )
+                            continue
+                        # subgraph（子 Agent）在旧版 LangGraph 的 messages 模式下产出
+                        # 完整 AIMessage（每节点一轮一块），单 Agent 产出 AIMessageChunk
+                        # 流式增量——两者统一处理：正文/思考/工具调用都透传
+                        if type(chunk).__name__ not in ("AIMessage", "AIMessageChunk"):
+                            continue
+                        text = _chunk_text(chunk)
+                        if text:
+                            full += text
+                            yield sse("token", {"content": text})
+                        r = _chunk_reasoning(chunk)
+                        if r:
+                            reasoning += r
+                            yield sse("reasoning", {"content": r})
+                        for tname, targs in _chunk_tool_events(chunk, tool_tracker):
+                            if tname and tname not in tool_names:
+                                tool_names.add(tname)
+                                yield sse("tool", {"name": tname, "args": targs})
+                        _merge_usage(last_usage, chunk)
                     else:
                         # messages 模式：astream 产出 (chunk, metadata) 元组；只流模型回复（AI 片段）
                         chunk = ev[0] if isinstance(ev, tuple) else ev
+                        if type(chunk).__name__ == "ToolMessage":
+                            yield sse(
+                                "tool_result",
+                                {"name": getattr(chunk, "name", ""), "result": _chunk_text(chunk)},
+                            )
+                            continue
                         if not isinstance(chunk, AIMessageChunk):
                             continue
                         text = _chunk_text(chunk)
@@ -882,21 +1161,28 @@ def build_app(
                         if r:
                             reasoning += r
                             yield sse("reasoning", {"content": r})
-                        for tname in _chunk_tools(chunk):
+                        for tname, targs in _chunk_tool_events(chunk, tool_tracker):
                             if tname and tname not in tool_names:
                                 tool_names.add(tname)
-                                yield sse("tool", {"name": tname})
+                                yield sse("tool", {"name": tname, "args": targs})
                         _merge_usage(last_usage, chunk)
                 app.state.event_bus.publish(
                     RESPONSE_DONE,
-                    {"reply": full, "thread_id": thread_id,
-                     "latency_s": round(__import__("time").time() - started, 3)},
+                    {
+                        "reply": full,
+                        "thread_id": thread_id,
+                        "latency_s": round(__import__("time").time() - started, 3),
+                    },
                 )
                 yield sse(
                     "done",
-                    {"thread_id": thread_id, "content": full,
-                     "emotion": getattr(app.state, "last_emotion", "neutral"),
-                     "usage": last_usage or None},
+                    {
+                        "thread_id": thread_id,
+                        "content": full,
+                        "emotion": getattr(app.state, "last_emotion", "neutral"),
+                        "usage": last_usage or None,
+                        "latency_s": round(__import__("time").time() - started, 3),
+                    },
                 )
                 if title_task is not None:
                     # 并行任务结果：通常已完成（回复期间已算好），失败回退首条消息截断
@@ -908,7 +1194,13 @@ def build_app(
                         store.rename_thread(thread_id, title)
                     else:
                         store.auto_title(thread_id, req.message)
-                    yield sse("title", {"thread_id": thread_id, "title": title or (store.get_thread(thread_id) or {}).get("title", "")})
+                    yield sse(
+                        "title",
+                        {
+                            "thread_id": thread_id,
+                            "title": title or (store.get_thread(thread_id) or {}).get("title", ""),
+                        },
+                    )
                 await _trace_turn(app, key, req.message, full, "", started)
             except Exception as e:  # 流中途出错：告知前端而非挂死
                 if title_task is not None and not title_task.done():
@@ -979,7 +1271,10 @@ def build_app(
     @app.get("/logs")
     async def logs(n: int = 20):
         """最近 n 条调用 trace（本地开发用，无鉴权）。"""
-        return {"count": len(app.state.trace_logger.tail(n)), "entries": app.state.trace_logger.tail(n)}
+        return {
+            "count": len(app.state.trace_logger.tail(n)),
+            "entries": app.state.trace_logger.tail(n),
+        }
 
     @app.get("/api/approvals")
     async def approvals():
@@ -1014,10 +1309,8 @@ def _ensure_api_token(data_root: Path) -> str | None:
                 return token
         token = secrets.token_hex(24)
         token_path.write_text(token, encoding="utf-8")
-        try:
+        with suppress(OSError):
             token_path.chmod(0o600)
-        except OSError:
-            pass
         return token
     return None
 

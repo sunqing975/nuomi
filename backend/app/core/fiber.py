@@ -12,21 +12,21 @@ Fiber 状态机：
 - load 前检查依赖；缺失 → PENDING（记录缺失清单，前端可见）
 - 服务提供方被卸载 → 依赖它的插件自动卸载；服务恢复 → 重载
 """
+
 from __future__ import annotations
 
 import importlib.util
 import logging
-import sys
-from enum import Enum
+from collections.abc import Callable
+from enum import StrEnum
 from pathlib import Path
-from typing import Any, Callable
 
 from .context import PluginContext
 
 logger = logging.getLogger("nuomi.core.fiber")
 
 
-class FiberState(str, Enum):
+class FiberState(StrEnum):
     PENDING = "pending"
     LOADING = "loading"
     ACTIVE = "active"
@@ -38,8 +38,17 @@ class FiberState(str, Enum):
 class Fiber:
     """一个已加载插件实例的运行时句柄。"""
 
-    def __init__(self, entry_id: str, name: str, plugin_dir: Path | None, meta: dict,
-                 app, bus, scope, entry: str = "hook.py") -> None:
+    def __init__(
+        self,
+        entry_id: str,
+        name: str,
+        plugin_dir: Path | None,
+        meta: dict,
+        app,
+        bus,
+        scope,
+        entry: str = "hook.py",
+    ) -> None:
         self.id = entry_id
         self.name = name
         self.plugin_dir = plugin_dir
@@ -55,15 +64,19 @@ class Fiber:
         self._merge_plugin_meta()
 
     def _merge_plugin_meta(self) -> None:
-        """合并 plugin.json 元数据（name/description/system_instruction/robust/approval…），
+        """合并清单元数据（v0.7.1 双 manifest：插件 plugin.json / 模块 module.json）。
+
+        name/description/system_instruction/robust/approval/provides/hooks/settings…
         entry 的 config 保留在 meta["config"]。"""
         if self.plugin_dir is None:
             return
-        pj = self.plugin_dir / "plugin.json"
-        if not pj.exists():
-            return
         import json
 
+        pj = self.plugin_dir / "module.json"
+        if not pj.exists():
+            pj = self.plugin_dir / "plugin.json"
+        if not pj.exists():
+            return
         try:
             pm = json.loads(pj.read_text(encoding="utf-8"))
         except Exception:
@@ -178,7 +191,9 @@ class Fiber:
 class Registry:
     """插件注册表：持有全部 fiber，负责依赖驱动的加载/卸载/重试。"""
 
-    def __init__(self, app, bus, scope, ctx_factory: Callable[..., PluginContext] | None = None) -> None:
+    def __init__(
+        self, app, bus, scope, ctx_factory: Callable[..., PluginContext] | None = None
+    ) -> None:
         self.app = app
         self.bus = bus
         self.scope = scope

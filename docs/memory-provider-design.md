@@ -1,7 +1,7 @@
 # Nuomi 记忆 v2 · Provider 化设计（对齐 Hermes）
 
-> 目标：记忆对齐 Hermes 设计（纯文件核心 + 冻结快照注入 + 可切换 provider 插件），
-> 保持 Nuomi "一切皆插件" 内核不变——**换记忆方案 = 改一行 profile，不动引擎与工具**。
+> 目标：记忆对齐 Hermes 设计（纯文件核心 + 冻结快照注入 + 可切换 provider 模块），
+> 保持 Nuomi 扩展内核（v0.7 三区：插件/模块/技能）不变——**换记忆方案 = 改一行 profile，不动引擎与工具**。
 > 首个外部 provider：Mem0。
 > 状态：**P0 + P1 已实施（2026-10-02，后端 143 项测试全绿）**。
 > 适配 2026-10-02 桌面化数据架构：单用户（契约无 user 参数）、MemoryStore 已 SQLite 化
@@ -91,7 +91,7 @@ USER（用户画像）[35% — 480/1,000 字符]
 ```
 - 注入职责从 service-system-prompt 移交 middleware（该服务不再 inject memory）；
   provider 失败降级为"无快照"（不阻断对话）。
-- 语义分层：停用 **memory 能力插件** → 工具不注册；停用 **记忆服务**（service-memory / memory-mem0）→ 无快照注入。
+- 语义分层：停用 **memory 插件**（plugins/，可选能力）→ 工具不注册；停用 **记忆服务模块**（service-memory / memory-mem0）→ 无快照注入。
 
 ## 6. 工具层：memory 工具对齐 Hermes（已落地）
 

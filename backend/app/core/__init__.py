@@ -6,6 +6,7 @@
     registry = Registry(app, bus, scope)  # fiber 状态机 + 依赖驱动加载
     entries = resolve_profile(profile)  # 组合配置（应用 = 插件树）
 """
+
 from .composition import ProfileEntry, default_profile, load_profile, resolve_profile
 from .context import PluginContext
 from .events import EventBus
@@ -14,6 +15,15 @@ from .scope import Scope
 from .skill import SkillContribution
 
 __all__ = [
-    "EventBus", "Scope", "PluginContext", "Fiber", "FiberState", "Registry",
-    "SkillContribution", "ProfileEntry", "resolve_profile", "load_profile", "default_profile",
+    "EventBus",
+    "Scope",
+    "PluginContext",
+    "Fiber",
+    "FiberState",
+    "Registry",
+    "SkillContribution",
+    "ProfileEntry",
+    "resolve_profile",
+    "load_profile",
+    "default_profile",
 ]

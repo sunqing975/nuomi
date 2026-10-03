@@ -1,0 +1,43 @@
+{
+  "name": "memory-mem0",
+  "version": "0.1.0",
+  "description": "外部记忆 provider（Mem0）：对话级语义提取 + 向量检索；启用后替代内置 service-memory（profile 同时停用内置，一行切换记忆后端）",
+  "entry": "memory_mem0.py",
+  "load": "lazy",
+  "system_instruction": "记忆后端已切换为 Mem0（语义记忆）：需要模糊回想、跨话题联想、按语义找记忆时用 memory_read；写/改/删与内置一致。",
+  "settings": {
+    "mode": {
+      "type": "string",
+      "default": "openmemory",
+      "description": "运行模式：openmemory=本地自托管（默认，数据不出本机）/ cloud=Mem0 云"
+    },
+    "base_url": {
+      "type": "string",
+      "default": "http://localhost:8000",
+      "description": "OpenMemory 服务地址（openmemory 模式）"
+    },
+    "api_key": {
+      "type": "string",
+      "default": "",
+      "description": "Mem0 云 API Key（cloud 模式；也可用环境变量 MEM0_API_KEY）"
+    },
+    "llm_model": {
+      "type": "string",
+      "default": "deepseek-chat",
+      "description": "记忆提取用 LLM 模型（OpenAI 兼容）"
+    },
+    "llm_base_url": {
+      "type": "string",
+      "default": "https://api.deepseek.com",
+      "description": "记忆提取用 LLM 地址"
+    },
+    "llm_api_key": {
+      "type": "string",
+      "default": "",
+      "description": "记忆提取用 LLM API Key（留空继承 DEEPSEEK_API_KEY / LLM_API_KEY）"
+    }
+  },
+  "provides": [
+    "memory"
+  ]
+}

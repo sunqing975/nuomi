@@ -9,9 +9,9 @@
 - memory_remove  = Hermes remove：唯一子串定位并删除
 单用户形态（2026-10-02）：不再有 per-user 隔离参数。
 """
-from langchain_core.tools import tool
 
 from app.storage.memory import get_backend
+from langchain_core.tools import tool
 
 
 @tool

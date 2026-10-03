@@ -1,4 +1,5 @@
 """V3 core 内核：5 种事件分发 / fiber 状态机 / 依赖驱动 / composition patch。"""
+
 from __future__ import annotations
 
 import asyncio
@@ -10,7 +11,6 @@ from app.core import (
     EventBus,
     Fiber,
     FiberState,
-    PluginContext,
     Registry,
     Scope,
     resolve_profile,
@@ -22,6 +22,7 @@ def _app():
 
 
 # ---------- 事件 5 种分发 ----------
+
 
 def test_emit_broadcast():
     bus = EventBus()
@@ -101,6 +102,7 @@ def test_waterfall_transform_and_shortcircuit():
 
 # ---------- Fiber 状态机 + 依赖驱动 ----------
 
+
 def _write_plugin(root: Path, name: str, body: str):
     d = root / name
     d.mkdir(parents=True, exist_ok=True)
@@ -168,7 +170,8 @@ def test_fiber_dispose_cleanup(tmp_path):
     scope = Scope()
     reg = Registry(app, bus, scope)
     d = _write_plugin(
-        tmp_path, "c",
+        tmp_path,
+        "c",
         "def apply(ctx):\n    fired=[]\n    ctx.on('ev', lambda **kw: fired.append(1))\n    ctx.effect(lambda: fired.append('disposed'))\n    ctx.app.state.last=fired\n",
     )
     fb = Fiber("c", "c", d, {}, app, bus, scope)
@@ -182,17 +185,24 @@ def test_fiber_dispose_cleanup(tmp_path):
 
 # ---------- Composition patch ----------
 
+
 def test_resolve_profile_layer_patch():
     profile = {
         "layers": [
-            {"id": "base", "plugins": [
-                {"id": "cap-a", "plugin": "plugin-a", "config": {"k": "v1"}},
-                {"id": "mood", "plugin": "mood", "config": {}},
-            ]},
-            {"id": "user", "plugins": [
-                {"id": "cap-a", "plugin": "plugin-b", "config": {"k": "v2"}},
-                {"id": "mood", "disabled": True},
-            ]},
+            {
+                "id": "base",
+                "plugins": [
+                    {"id": "cap-a", "plugin": "plugin-a", "config": {"k": "v1"}},
+                    {"id": "mood", "plugin": "mood", "config": {}},
+                ],
+            },
+            {
+                "id": "user",
+                "plugins": [
+                    {"id": "cap-a", "plugin": "plugin-b", "config": {"k": "v2"}},
+                    {"id": "mood", "disabled": True},
+                ],
+            },
         ]
     }
     entries = {e.id: e for e in resolve_profile(profile)}

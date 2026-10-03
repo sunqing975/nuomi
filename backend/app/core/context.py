@@ -8,10 +8,12 @@
 - 生命周期：ctx.effect(disposer)；停用时逆序清理
 - 贡献：ctx.register_tools / ctx.register_skill（与 v0.6 兼容）
 """
+
 from __future__ import annotations
 
 import logging
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from langchain_core.tools import BaseTool
 
@@ -51,7 +53,9 @@ class PluginContext:
 
     def service(self, name: str) -> Any | None:
         return self.scope.get(name) or (
-            getattr(self.app.state, "services", {}).get(name) if hasattr(self.app, "state") else None
+            getattr(self.app.state, "services", {}).get(name)
+            if hasattr(self.app, "state")
+            else None
         )
 
     # 可选依赖探测：不存在返回 None（与 inject 硬依赖互补）
@@ -84,7 +88,9 @@ class PluginContext:
     def bail(self, event: str, **payload: Any) -> Any | None:
         return self.bus.bail(event, **payload)
 
-    async def waterfall(self, event: str, payload: Any, default: Callable[[], Awaitable[Any] | Any]) -> Any:
+    async def waterfall(
+        self, event: str, payload: Any, default: Callable[[], Awaitable[Any] | Any]
+    ) -> Any:
         return await self.bus.waterfall(event, payload, default)
 
     # --- 贡献：模型工具 / 技能 ---

@@ -2,8 +2,9 @@
 """Nuomi 桌面后端 sidecar 打包配置（PyInstaller onefile）。
 
 资源策略：
-- plugins/ partners/ 整体作为 datas 打入包内（运行时从 sys._MEIPASS 加载，
+- plugins/ partners/ skills/ 整体作为 datas 打入包内（运行时从 sys._MEIPASS 加载，
   PyInstaller onefile 会把 _MEIPASS 加入 sys.path，动态 import 可用）。
+- 模块（backend/app/modules/）随 Python 代码（app 包）一起打包，无需 datas。
 - chromadb / fastembed / onnxruntime / langchain 等动态导入密集的包
   用 collect_all 全量收集（submodules + binaries）。
 数据落点：sidecar_main.py 启动时把 DB/记忆/知识库/工作区重定向到
@@ -20,6 +21,7 @@ repo_root = os.path.dirname(backend)
 datas = [
     (os.path.join(repo_root, "plugins"), "plugins"),
     (os.path.join(repo_root, "partners"), "partners"),
+    (os.path.join(repo_root, "skills"), "skills"),
 ]
 binaries = []
 hiddenimports = []

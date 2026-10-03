@@ -20,6 +20,7 @@ LangChain create_agent 的 middleware，用 `awrap_model_call` 钩子直接构�
 - 自有 system 提示以 PROMPT_MARK 标记；记忆快照以 MEMORY_MARK 标记；
   摘要以 SUMMARY_MARK 标记。
 """
+
 from __future__ import annotations
 
 from langchain.agents.middleware import AgentMiddleware
@@ -43,10 +44,7 @@ def _render_snapshot(snapshot: dict) -> str:
         limit = s.get("char_limit") or 1
         pct = round(s.get("total_chars", 0) / limit * 100)
         label = "我的笔记" if s.get("name") == "MEMORY" else "用户画像"
-        header = (
-            f"{s['name']}（{label}）[{pct}% — "
-            f"{s.get('total_chars', 0):,}/{limit:,} 字符]"
-        )
+        header = f"{s['name']}（{label}）[{pct}% — {s.get('total_chars', 0):,}/{limit:,} 字符]"
         lines = [header]
         for e in entries:
             content = e.content if hasattr(e, "content") else e.get("content", "")
@@ -102,7 +100,9 @@ class NuomiMiddleware(AgentMiddleware):
         if existing:
             prompt += f"已有摘要：\n{existing}\n\n"
         for m in delta_msgs:
-            role = {HumanMessage: "用户", AIMessage: "糯米", ToolMessage: "工具结果"}.get(type(m), "其他")
+            role = {HumanMessage: "用户", AIMessage: "糯米", ToolMessage: "工具结果"}.get(
+                type(m), "其他"
+            )
             prompt += f"{role}：{m.content}\n"
         res = await self.llm.ainvoke(prompt)
         return str(res.content).strip()

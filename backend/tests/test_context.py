@@ -1,12 +1,12 @@
 """NuomiMiddleware 端到端：每轮注入人设+记忆；长对话自动摘要（模型输入有界）。"""
+
 from __future__ import annotations
 
 import re
 from pathlib import Path
 
-from fastapi.testclient import TestClient
-
 from app.main import build_app
+from fastapi.testclient import TestClient
 
 from .fake_llm import FakeChatModel
 
@@ -17,7 +17,7 @@ def _make_app(tmp_path, max_msgs: int = 6, keep_recent: int | None = None):
     return build_app(
         llm=FakeChatModel(),
         db_path=str(tmp_path / "test.sqlite"),
-        skills_dir=str(REPO_ROOT / "plugins"),
+        plugins_dir=str(REPO_ROOT / "plugins"),
         memory_file=str(tmp_path / "mem" / "facts.json"),
         summarize_max_messages=max_msgs,
         summarize_keep_recent=keep_recent,

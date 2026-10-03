@@ -1,5 +1,5 @@
 /** ui-plugin-manager：插件管理（对齐 Harness dsh plugin GUI）。
- *  只展示外部（用户安装）插件：可开关 + 点击展开参数编辑。内置插件不再展示。
+ *  v0.7 三区：只展示外部插件（plugins/，可选能力）；模块（modules/，内核）与技能区（skills/）不再在此展示。
  *  页头：标题 + 说明 + 刷新 + 添加插件。 */
 import { useRef, useState } from "react";
 import { t } from "../../i18n";

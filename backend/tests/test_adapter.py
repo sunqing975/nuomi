@@ -1,4 +1,5 @@
 """Phase 2 · adapter：外部格式插件（普通函数）适配成 LangChain 工具。"""
+
 from __future__ import annotations
 
 from pathlib import Path

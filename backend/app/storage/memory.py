@@ -7,6 +7,7 @@
 - 上限：300 条，超出按"访问少 + 旧"淘汰
 - 多用户已移除（决策 1）：单库单伙伴，不再有 per-user 目录
 """
+
 from __future__ import annotations
 
 import re
@@ -42,8 +43,15 @@ class MemoryFact:
         }
 
     @classmethod
-    def from_dict(cls, d: dict) -> "MemoryFact":
-        return cls(**{k: d.get(k) for k in cls.__dataclass_fields__})
+    def from_dict(cls, d: dict) -> MemoryFact:
+        return cls(
+            id=str(d.get("id", "")),
+            content=str(d.get("content", "")),
+            category=str(d.get("category", "fact")),
+            created_at=float(d.get("created_at", 0.0)),
+            updated_at=float(d.get("updated_at", 0.0)),
+            access_count=int(d.get("access_count", 0)),
+        )
 
 
 def _ensure_table(conn: sqlite3.Connection) -> None:
@@ -81,13 +89,14 @@ class MemoryStore:
     # ---------- 读写 ----------
 
     def _load(self):
-        rows = self.db.execute(
-            "SELECT * FROM facts WHERE partner = ?", (self.partner,)
-        ).fetchall()
+        rows = self.db.execute("SELECT * FROM facts WHERE partner = ?", (self.partner,)).fetchall()
         self.facts = [
             MemoryFact(
-                id=r["id"], content=r["content"], category=r["category"],
-                created_at=r["created_at"], updated_at=r["updated_at"],
+                id=r["id"],
+                content=r["content"],
+                category=r["category"],
+                created_at=r["created_at"],
+                updated_at=r["updated_at"],
                 access_count=r["access_count"],
             )
             for r in rows
@@ -95,27 +104,33 @@ class MemoryStore:
 
     def _save(self):
         """全量落库（接口兼容：调用方语义不变）。"""
-        with self._lock:
-            with self.db:
-                self.db.execute("DELETE FROM facts WHERE partner = ?", (self.partner,))
-                self.db.executemany(
-                    "INSERT OR REPLACE INTO facts "
-                    "(id, partner, content, category, created_at, updated_at, access_count) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    [
-                        (f.id, self.partner, f.content, f.category, f.created_at, f.updated_at, f.access_count)
-                        for f in self.facts
-                    ],
-                )
+        with self._lock, self.db:
+            self.db.execute("DELETE FROM facts WHERE partner = ?", (self.partner,))
+            self.db.executemany(
+                "INSERT OR REPLACE INTO facts "
+                "(id, partner, content, category, created_at, updated_at, access_count) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                [
+                    (
+                        f.id,
+                        self.partner,
+                        f.content,
+                        f.category,
+                        f.created_at,
+                        f.updated_at,
+                        f.access_count,
+                    )
+                    for f in self.facts
+                ],
+            )
 
     def _touch(self, fact: MemoryFact):
         fact.updated_at = time.time()
-        with self._lock:
-            with self.db:
-                self.db.execute(
-                    "UPDATE facts SET updated_at = ?, access_count = ? WHERE id = ?",
-                    (fact.updated_at, fact.access_count, fact.id),
-                )
+        with self._lock, self.db:
+            self.db.execute(
+                "UPDATE facts SET updated_at = ?, access_count = ? WHERE id = ?",
+                (fact.updated_at, fact.access_count, fact.id),
+            )
 
     def add(self, content: str, category: str = "fact") -> MemoryFact | None:
         content = content.strip()
@@ -166,7 +181,7 @@ class MemoryStore:
         qg, fg = MemoryStore._bigrams(query), MemoryStore._bigrams(fact)
         if not qg:
             return 0.0
-        overlap = len(qg & fg)
+        overlap: float = float(len(qg & fg))
         if query in fact:
             overlap += 2.0
         if fact in query:
@@ -206,6 +221,7 @@ USER_CATEGORIES = {"user", "preference"}
 @dataclass
 class MemoryEntry:
     """契约层条目（与存储实现解耦）。"""
+
     id: str
     content: str
     category: str = "fact"
@@ -218,8 +234,6 @@ class MemoryBackend(Protocol):
     1=成功 / 0=未找到 / -1=多条匹配（需更精确的子串）。
     """
 
-    def list(self) -> list[MemoryEntry]: ...
-
     def add(self, content: str, category: str = "fact") -> MemoryEntry | None: ...
 
     def replace(self, old_text: str, content: str) -> tuple[int, str]: ...
@@ -231,6 +245,9 @@ class MemoryBackend(Protocol):
     def snapshot(self) -> dict:
         """注入快照（Hermes 式）：{sections: [{name, entries, total_chars, char_limit}]}。"""
         ...
+
+    # 置于末尾：避免方法名 `list` 遮蔽内建 list，导致类内后续注解解析失败（mypy）
+    def list(self) -> list[MemoryEntry]: ...
 
 
 class FileMemoryBackend:
@@ -250,12 +267,12 @@ class FileMemoryBackend:
     @staticmethod
     def _entry(f: MemoryFact) -> MemoryEntry:
         return MemoryEntry(
-            id=f.id, content=f.content, category=f.category,
-            created_at=f.created_at, updated_at=f.updated_at,
+            id=f.id,
+            content=f.content,
+            category=f.category,
+            created_at=f.created_at,
+            updated_at=f.updated_at,
         )
-
-    def list(self) -> list[MemoryEntry]:
-        return [self._entry(f) for f in self.store.facts]
 
     def add(self, content: str, category: str = "fact") -> MemoryEntry | None:
         f = self.store.add(content, category=category)
@@ -321,8 +338,12 @@ class FileMemoryBackend:
             )
         return {"sections": sections}
 
+    # 置于末尾：避免方法名 `list` 遮蔽内建 list，导致类内后续注解解析失败（mypy）
+    def list(self) -> list[MemoryEntry]:
+        return [self._entry(f) for f in self.store.facts]
 
-# ---------- 应用内单例（由服务插件注入；记忆工具经 get_backend 读取） ----------
+
+# ---------- 应用内单例（由内核模块 service-memory / memory-mem0 注入；记忆工具经 get_backend 读取） ----------
 _store: MemoryStore | None = None
 _backend: MemoryBackend | None = None
 

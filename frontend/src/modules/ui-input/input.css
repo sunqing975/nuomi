@@ -21,8 +21,8 @@
   max-width: var(--composer-max);
   padding-top: 8px;
   border: 1px solid var(--line-2);
-  border-radius: var(--radius-xl);
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  border-radius: var(--radius-3xl); /* ChatGPT 风格大圆角输入框 */
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
   box-shadow: var(--shadow-float);
   backdrop-filter: blur(10px);
   font-size: var(--fs-14);
@@ -135,6 +135,43 @@
   transform: translateY(-1px);
 }
 .composer-add:active { transform: scale(0.94); }
+
+/* 范围按钮（对齐 Harness 范围切换）：只读 / 工作区内 / 全局 */
+.scope-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--label-2);
+  font-size: var(--fs-11);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+.scope-btn:hover {
+  background: var(--dsw-hover);
+  color: var(--label);
+}
+.scope-btn.full-access {
+  border-color: #e5534b66;
+  color: #ff8b80;
+}
+.scope-btn.full-access:hover { background: #e5534b14; }
+
+/* 运行统计（最近一次回复：token 用量 · 耗时） */
+.run-stats {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  color: var(--label-3);
+  white-space: nowrap;
+}
 
 /* 发送键：34px 圆形渐变底白箭头 */
 .composer-send {

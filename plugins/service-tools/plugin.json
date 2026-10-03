@@ -1,1 +1,0 @@
-{"name": "service-tools", "version": "1.0.0", "description": "ctx.tools：作用域化工具注册表 + 带把关的执行流水线（tools/pre-execute → execute → tools/post-execute → tools/result）"}

@@ -13,6 +13,7 @@
 （内存子 Agent + 持久主图，是 Supervisor 常见形态；换持久子 Agent
 只需给 create_agent 传 checkpointer 并按子命名空间隔离）。
 """
+
 from __future__ import annotations
 
 from typing import Annotated, TypedDict
@@ -86,7 +87,13 @@ def build_supervisor(
         # 兼容路径：直接让 LLM 输出 JSON 路由（DeepSeek thinking / 任意模型）
         try:
             res = await llm.ainvoke(
-                [SystemMessage(content=ROUTER_PROMPT + "\n只输出 JSON：{\"next\": \"companion\" 或 \"researcher\"}"), last]
+                [
+                    SystemMessage(
+                        content=ROUTER_PROMPT
+                        + '\n只输出 JSON：{"next": "companion" 或 "researcher"}'
+                    ),
+                    last,
+                ]
             )
             import json as _json
             import re as _re

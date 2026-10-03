@@ -1,9 +1,9 @@
-"""插件加载器 v0.6（Harness 形态）：元数据常驻 / apply(ctx) 贡献收集 / 资源按需。"""
+"""插件加载器 v0.7（对齐 Octop：插件 / 技能 / 模块三区）：元数据常驻 / apply(ctx) 贡献收集 / 资源按需。"""
+
 from __future__ import annotations
 
 from pathlib import Path
 
-from app.plugins.runtime import PluginContext
 from app.plugins.loader import (
     collect_instructions,
     collect_skill_catalog,
@@ -28,22 +28,23 @@ def test_scan_is_metadata_only():
 
 
 def test_apply_collects_contributions():
-    """v0.6：apply(ctx) 后，每个插件的贡献（工具/服务/事件/技能）被收集。"""
+    """v0.7：apply(ctx) 后，插件贡献工具、模块贡献服务/事件、技能进独立技能区。"""
     app = applied_app(PLUGINS_DIR)
     by_name = {p.name: p for p in app.state.plugins}
+    skills_by_name = {s.name: s for s in app.state.skills}
     # 能力插件贡献工具
     assert {t.name for t in by_name["datetime"].tools} == {"get_current_time"}
     assert {t.name for t in by_name["memory"].tools} >= {"memory_write", "memory_read"}
-    # 程序插件贡献服务/事件（不再有 type 区分）
+    # 模块（内核组成部分）贡献服务/事件
     assert "voice_input" in by_name["voice-input"].services
     assert "response_done" in by_name["mood"].events
-    # SKILL.md 自动成为技能（正文在描述符里，目录只注入 name+description）
-    assert by_name["memory"].skill_body
-    assert not by_name["team"].skill_body  # 无 SKILL.md 的程序插件
+    # SKILL.md 是独立技能概念：正文在技能区（skills/），插件目录不再携带
+    assert skills_by_name["memory"].body
+    assert not by_name["team"].skill_body  # 模块目录不再带 SKILL.md
 
 
 def test_collect_tools_after_apply():
-    """级2：collect_tools 汇总 apply 后的全部工具（无类型过滤——一切皆插件）。"""
+    """级2：collect_tools 汇总 apply 后的全部工具（插件 + 模块，无类型过滤）。"""
     app = applied_app(PLUGINS_DIR)
     tools = collect_tools(app.state.plugins, enabled=app.state.enabled_plugins)
     by_name = {t.name: t for t in tools}
@@ -64,10 +65,10 @@ def test_collect_instructions():
 def test_skill_catalog_metadata_only():
     """目录只含 name+description，正文不进常驻上下文（对齐 Harness 会话目录）。"""
     app = applied_app(PLUGINS_DIR)
-    catalog = collect_skill_catalog(app.state.plugins, app.state.enabled_plugins)
-    assert "skill name=\"memory\"" in catalog
+    catalog = collect_skill_catalog(app.state.skills)
+    assert 'skill name="memory"' in catalog
     assert "memory_write" not in catalog  # 正文不进目录
-    assert "skill name=\"mood\"" not in catalog  # 无 SKILL.md 的插件不进目录
+    assert 'skill name="mood"' not in catalog  # 无 SKILL.md 的技能不进目录
 
 
 def test_apply_surfaces_entry_error(tmp_path):

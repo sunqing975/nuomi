@@ -2,14 +2,15 @@
 
 注意：shell/fs 工作区锚定 settings.workspace_dir，测试用 tmp_path 隔离，不碰真实 backend/data/workspace。
 """
+
 from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
-
 from app.config import settings
 from app.plugins.loader import collect_tools
+
 from .conftest import applied_app
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -75,9 +76,7 @@ def test_shell_workspace_write_blocks_traversal(ws):
 def test_shell_full_access_allows_outside(ws, tmp_path):
     tools = _load("shell")
     target = tmp_path / "outside.txt"
-    r = tools["bash"].invoke(
-        {"command": f"echo ok > {target}", "cwd": ".", "mode": "full-access"}
-    )
+    r = tools["bash"].invoke({"command": f"echo ok > {target}", "cwd": ".", "mode": "full-access"})
     assert "退出码 0" in r and target.exists()
 
 

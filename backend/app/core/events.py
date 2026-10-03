@@ -10,12 +10,15 @@
 
 事件命名约定 namespace/action（如 plugin/toggled、agent/pre-step、response/done）。
 """
+
 from __future__ import annotations
 
 import asyncio
 import logging
 from collections import defaultdict
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from contextlib import suppress
+from typing import Any
 
 logger = logging.getLogger("nuomi.core.events")
 
@@ -34,10 +37,8 @@ class EventBus:
         self._handlers[event].append(handler)
 
         def _off() -> None:
-            try:
+            with suppress(ValueError):
                 self._handlers[event].remove(handler)
-            except ValueError:
-                pass
 
         return _off
 
@@ -50,10 +51,8 @@ class EventBus:
         self._handlers[event].append(_adapter)
 
         def _off() -> None:
-            try:
+            with suppress(ValueError):
                 self._handlers[event].remove(_adapter)
-            except ValueError:
-                pass
 
         return _off
 
@@ -62,10 +61,8 @@ class EventBus:
         self.emit(event, **(payload or {}))
 
     def off(self, event: str, handler: Handler) -> None:
-        try:
+        with suppress(ValueError):
             self._handlers[event].remove(handler)
-        except ValueError:
-            pass
 
     def listeners(self, event: str) -> list[Handler]:
         return list(self._handlers.get(event, []))
@@ -124,7 +121,9 @@ class EventBus:
         return None
 
     # --- waterfall：环绕中间件（可转换 / 可短路否决） ---
-    async def waterfall(self, event: str, payload: Any, default: Callable[[], Awaitable[Any] | Any]) -> Any:
+    async def waterfall(
+        self, event: str, payload: Any, default: Callable[[], Awaitable[Any] | Any]
+    ) -> Any:
         """监听器签名：handler(payload, next)。next 调用下游（其他监听器或 default）。
 
         监听器必须调用 next() 委托下去；不调用 = 有意短路（返回自身结果）。

@@ -1,7 +1,9 @@
 """测试用假模型：不联网、不花 API 费用，验证 graph + checkpointer + SSE 全链路。"""
+
 from __future__ import annotations
 
-from typing import Any, AsyncIterator, ClassVar, Iterator
+from collections.abc import AsyncIterator, Iterator
+from typing import Any, ClassVar
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage

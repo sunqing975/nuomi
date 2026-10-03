@@ -3,13 +3,24 @@
 安全约束：只列工作区根之内的内容；跳过隐藏文件与常见构建/依赖目录；
 深度与条目数上限，防止巨树拖垮前端。
 """
+
 from __future__ import annotations
 
 from pathlib import Path
 
 _SKIP = {
-    ".git", "node_modules", ".venv", "venv", "__pycache__", "dist", "build",
-    ".DS_Store", ".idea", ".vscode", ".nuomi", ".gitignore",
+    ".git",
+    "node_modules",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "dist",
+    "build",
+    ".DS_Store",
+    ".idea",
+    ".vscode",
+    ".nuomi",
+    ".gitignore",
 }
 MAX_DEPTH = 3
 MAX_ENTRIES = 300

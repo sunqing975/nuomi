@@ -1,12 +1,13 @@
 """Phase 4c · 语音 + Web 插件：可加载、可调用、失败有兜底。"""
+
 from __future__ import annotations
 
 import shutil
 from pathlib import Path
 
 import pytest
-
 from app.plugins.robust import apply_robust
+
 from .conftest import applied_app
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -29,9 +30,29 @@ def test_voice_transcribe_validates_input(tmp_path):
     r = tools["transcribe"].invoke({"audio_path": str(tmp_path / "none.wav")})
     assert "不存在" in r
     f = tmp_path / "a.wav"
-    f.write_bytes(b"RIFF")
-    r2 = tools["transcribe"].invoke({"audio_path": str(f)})
-    assert "接口已就绪" in r2
+    f.write_bytes(b"")
+    r1 = tools["transcribe"].invoke({"audio_path": str(f)})
+    assert "0 字节" in r1
+
+    # 注入 fake 模型验证成功路径（不触发真实模型下载）；真实模型已在插件内实测
+    class _Seg:
+        text = "本地转写测试"
+
+    class _FakeModel:
+        def transcribe(self, path, **kw):
+            return iter([_Seg()]), type(
+                "Info", (), {"language": "zh", "language_probability": 0.99}
+            )()
+
+    g = tools["transcribe"].func.__globals__
+    g["_model"] = _FakeModel()
+    try:
+        f2 = tmp_path / "ok.wav"
+        f2.write_bytes(b"RIFF")
+        r2 = tools["transcribe"].invoke({"audio_path": str(f2)})
+        assert "本地转写测试" in r2 and "zh" in r2
+    finally:
+        g["_model"] = None
 
 
 @pytest.mark.skipif(shutil.which("say") is None, reason="非 macOS 环境")

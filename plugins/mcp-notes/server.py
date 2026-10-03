@@ -3,6 +3,7 @@
 演示"外部能力经 MCP 接入"：这个 server 独立于糯米后端，任何 MCP 客户端都能连。
 数据存本目录 data/notes.json。用 `python server.py` 启动（stdio 传输）。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -16,7 +17,9 @@ from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
 # 数据路径可用环境变量覆盖（测试隔离用）；默认存本目录 data/notes.json
-DATA = Path(os.environ.get("NOTES_DATA", str(Path(__file__).resolve().parent / "data" / "notes.json")))
+DATA = Path(
+    os.environ.get("NOTES_DATA", str(Path(__file__).resolve().parent / "data" / "notes.json"))
+)
 
 
 def _load() -> list[dict]:
@@ -91,7 +94,11 @@ async def call_tool(name: str, args: dict) -> list[TextContent]:
             return [TextContent(type="text", text=f"便签编号 {args.get('index')} 不存在。")]
         removed = notes.pop(idx)
         _save(notes)
-        return [TextContent(type="text", text=f"已删除便签 #{args.get('index')}：{removed['content'][:40]}")]
+        return [
+            TextContent(
+                type="text", text=f"已删除便签 #{args.get('index')}：{removed['content'][:40]}"
+            )
+        ]
     return [TextContent(type="text", text=f"未知工具: {name}")]
 
 

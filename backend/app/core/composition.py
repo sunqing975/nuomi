@@ -16,6 +16,7 @@ profile 结构：
   ]
 }
 """
+
 from __future__ import annotations
 
 import json
@@ -61,7 +62,9 @@ def resolve_profile(profile: dict | None) -> list[ProfileEntry]:
             if prev is not None:
                 # patch 语义：后层整个替换 config（不合并），plugin 可换，disabled 可覆盖
                 entry.plugin = entry.plugin or prev.plugin
-                entry.config = dict(row.get("config", prev.config)) if "config" in row else prev.config
+                entry.config = (
+                    dict(row.get("config", prev.config)) if "config" in row else prev.config
+                )
             merged[row_id] = entry
     return list(merged.values())
 
@@ -84,7 +87,11 @@ def default_profile() -> dict:
                     # LLM 是核心服务（models.py + /api/models/activate），不由供应商插件提供
                     {"id": "service-tools", "plugin": "service-tools", "config": {}},
                     {"id": "service-sessions", "plugin": "service-sessions", "config": {}},
-                    {"id": "service-system-prompt", "plugin": "service-system-prompt", "config": {}},
+                    {
+                        "id": "service-system-prompt",
+                        "plugin": "service-system-prompt",
+                        "config": {},
+                    },
                     {"id": "service-agent-loop", "plugin": "service-agent-loop", "config": {}},
                     {"id": "service-memory", "plugin": "service-memory", "config": {}},
                     {"id": "service-settings", "plugin": "service-settings", "config": {}},
@@ -112,6 +119,7 @@ def default_profile() -> dict:
                 "plugins": [
                     {"id": "runtime-voice-input", "plugin": "voice-input", "config": {}},
                     {"id": "runtime-mood", "plugin": "mood", "config": {}},
+                    {"id": "runtime-robot", "plugin": "robot", "config": {}},
                 ],
             },
         ]

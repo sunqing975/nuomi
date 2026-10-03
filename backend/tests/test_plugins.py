@@ -1,11 +1,11 @@
 """Phase 4d+ · 统一插件管理 API：清单 / 启停 / 程序插件（voice-input、team）。"""
+
 from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi.testclient import TestClient
-
 from app.main import build_app
+from fastapi.testclient import TestClient
 
 from .fake_llm import FakeChatModel
 
@@ -16,7 +16,7 @@ def _make_app(tmp_path):
     return build_app(
         llm=FakeChatModel(),
         db_path=str(tmp_path / "t.sqlite"),
-        skills_dir=str(REPO_ROOT / "plugins"),
+        plugins_dir=str(REPO_ROOT / "plugins"),
         memory_file=str(tmp_path / "mem" / "nuomi" / "facts.json"),
         knowledge_store_type="lexical",
         knowledge_dir=str(tmp_path / "kb"),

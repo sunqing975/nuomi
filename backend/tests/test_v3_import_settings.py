@@ -1,14 +1,14 @@
 """V3：插件导入（install/install-upload/uninstall）+ 设置系统（global/plugin settings）。"""
+
 from __future__ import annotations
 
 import json
-import shutil
 import zipfile
 from pathlib import Path
 
+from app.main import build_app
 from fastapi.testclient import TestClient
 
-from app.main import build_app
 from tests.fake_llm import FakeChatModel
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -20,14 +20,16 @@ def _make_app(tmp_path, plugins_dir=None):
     return build_app(
         llm=FakeChatModel(),
         db_path=str(tmp_path / "t.sqlite"),
-        skills_dir=pd,
+        plugins_dir=pd,
         memory_file=str(tmp_path / "mem" / "facts.json"),
         knowledge_store_type="lexical",
         knowledge_dir=str(tmp_path / "kb"),
     )
 
 
-def _write_plugin(root: Path, name: str, tool_code: str = "TOOLS = []", extra_meta: str = "{}") -> None:
+def _write_plugin(
+    root: Path, name: str, tool_code: str = "TOOLS = []", extra_meta: str = "{}"
+) -> None:
     d = root / name
     d.mkdir(parents=True, exist_ok=True)
     (d / "plugin.json").write_text(
@@ -39,15 +41,31 @@ def _write_plugin(root: Path, name: str, tool_code: str = "TOOLS = []", extra_me
 
 # ---------- 插件导入 ----------
 
+
 def _writable_plugins(tmp_path):
     """独立可写插件目录：把真实内置插件符号链接进去（不污染 REPO plugins）。"""
     d = tmp_path / "plugins"
     d.mkdir(parents=True, exist_ok=True)
-    for name in ["service-tools", "service-sessions", "service-system-prompt",
-                 "service-agent-loop", "service-memory", "service-settings",
-                 "agent-companion", "agent-researcher",
-                 "datetime", "memory", "knowledge", "mcp-notes", "pyfunc",
-                 "voice", "web", "team", "voice-input", "mood"]:
+    for name in [
+        "service-tools",
+        "service-sessions",
+        "service-system-prompt",
+        "service-agent-loop",
+        "service-memory",
+        "service-settings",
+        "agent-companion",
+        "agent-researcher",
+        "datetime",
+        "memory",
+        "knowledge",
+        "mcp-notes",
+        "pyfunc",
+        "voice",
+        "web",
+        "team",
+        "voice-input",
+        "mood",
+    ]:
         src_dir = REPO_ROOT / "plugins" / name
         if src_dir.exists():
             (d / name).symlink_to(src_dir)
@@ -56,7 +74,7 @@ def _writable_plugins(tmp_path):
 
 def test_install_plugin_from_directory(tmp_path):
     app = _make_app(tmp_path, plugins_dir=_writable_plugins(tmp_path))
-    _write_plugin(tmp_path, "weather", 'TOOLS = []\n')
+    _write_plugin(tmp_path, "weather", "TOOLS = []\n")
     src = tmp_path / "weather"
     with TestClient(app) as client:
         r = client.post("/api/plugins/install", json={"name": "weather", "source": str(src)})
@@ -72,7 +90,7 @@ def test_install_plugin_from_directory(tmp_path):
 
 def test_install_plugin_zip_upload(tmp_path):
     app = _make_app(tmp_path, plugins_dir=_writable_plugins(tmp_path))
-    _write_plugin(tmp_path, "calc", 'TOOLS = []\n')
+    _write_plugin(tmp_path, "calc", "TOOLS = []\n")
     src = tmp_path / "calc"
     zip_path = tmp_path / "calc.zip"
     with zipfile.ZipFile(zip_path, "w") as zf:
@@ -91,7 +109,7 @@ def test_install_plugin_zip_upload(tmp_path):
 
 def test_install_rejects_duplicate_and_missing_manifest(tmp_path):
     app = _make_app(tmp_path, plugins_dir=_writable_plugins(tmp_path))
-    _write_plugin(tmp_path, "dup", 'TOOLS = []\n')
+    _write_plugin(tmp_path, "dup", "TOOLS = []\n")
     src = tmp_path / "dup"
     with TestClient(app) as client:
         r1 = client.post("/api/plugins/install", json={"name": "dup", "source": str(src)})
@@ -109,10 +127,11 @@ def test_install_rejects_duplicate_and_missing_manifest(tmp_path):
 def test_install_plugin_with_tools_contributes_to_agent(tmp_path):
     app = _make_app(tmp_path, plugins_dir=_writable_plugins(tmp_path))
     _write_plugin(
-        tmp_path, "greet",
-        'from langchain_core.tools import tool\n'
+        tmp_path,
+        "greet",
+        "from langchain_core.tools import tool\n"
         '@tool\ndef greet(name: str) -> str:\n    """问候。"""\n    return f"你好 {name}"\n'
-        'TOOLS = [greet]\n',
+        "TOOLS = [greet]\n",
     )
     src = tmp_path / "greet"
     with TestClient(app) as client:
@@ -125,7 +144,7 @@ def test_install_plugin_with_tools_contributes_to_agent(tmp_path):
 
 def test_uninstall_plugin(tmp_path):
     app = _make_app(tmp_path, plugins_dir=_writable_plugins(tmp_path))
-    _write_plugin(tmp_path, "tmp", 'TOOLS = []\n')
+    _write_plugin(tmp_path, "tmp", "TOOLS = []\n")
     src = tmp_path / "tmp"
     with TestClient(app) as client:
         client.post("/api/plugins/install", json={"name": "tmp", "source": str(src)})
@@ -138,6 +157,7 @@ def test_uninstall_plugin(tmp_path):
 
 
 # ---------- 设置系统 ----------
+
 
 def test_settings_global_get_set(tmp_path):
     app = _make_app(tmp_path)

@@ -3,6 +3,7 @@
 注册落入调用方上下文所在的层（global 或具名 scope）；读取时合并全局层与观察 scope 的链：
 最近层的条目直接赢得重名服务。用于"多伙伴/多 agent 各有独立服务实例"。
 """
+
 from __future__ import annotations
 
 import logging
@@ -12,7 +13,7 @@ logger = logging.getLogger("nuomi.core.scope")
 
 
 class Scope:
-    def __init__(self, name: str = "global", parent: "Scope | None" = None) -> None:
+    def __init__(self, name: str = "global", parent: Scope | None = None) -> None:
         self.name = name
         self.parent = parent
         self._services: dict[str, Any] = {}

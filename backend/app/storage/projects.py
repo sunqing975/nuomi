@@ -5,6 +5,7 @@
 - 存储合一（决策 3）：建在统一库 nuomi.db（与 checkpointer / facts / settings 同文件），
   WAL + busy_timeout 保证多连接并发。
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -88,17 +89,38 @@ class ProjectStore:
             except sqlite3.IntegrityError:
                 cur = self._conn.execute("SELECT id FROM projects WHERE name = ?", (name,))
                 pid = cur.fetchone()["id"]
-                return {"id": pid, "name": name, "directory": directory, "created_at": self._iso_of(pid)}
+                return {
+                    "id": pid,
+                    "name": name,
+                    "directory": directory,
+                    "created_at": self._iso_of(pid),
+                }
             pid = cur.lastrowid
-        return {"id": pid, "name": name, "directory": directory, "created_at": self._iso_of(pid), "thread_count": 0}
+        return {
+            "id": pid,
+            "name": name,
+            "directory": directory,
+            "created_at": self._iso_of(pid),
+            "thread_count": 0,
+        }
 
     def set_directory(self, project_id: int, directory: str | None) -> dict:
         """绑定 / 解绑（传 None 或空串解绑）项目目录，返回更新后的项目。"""
         directory = (directory or "").strip() or None
         with self._conn:
-            self._conn.execute("UPDATE projects SET directory = ? WHERE id = ?", (directory, project_id))
+            self._conn.execute(
+                "UPDATE projects SET directory = ? WHERE id = ?", (directory, project_id)
+            )
         proj = next((p for p in self.list_projects() if p["id"] == project_id), None)
         return proj or {"id": project_id, "directory": directory}
+
+    def get_project(self, project_id: int) -> dict | None:
+        """单个项目（含绑定目录）；不存在返回 None。"""
+        with self._conn:
+            row = self._conn.execute(
+                "SELECT id, name, created_at, directory FROM projects WHERE id = ?", (project_id,)
+            ).fetchone()
+        return dict(row) if row else None
 
     def directory_of_thread(self, thread_id: str) -> str | None:
         """会话所属项目的绑定目录；未绑定返回 None。"""
@@ -122,9 +144,11 @@ class ProjectStore:
         with self._conn:
             self._conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))
 
-    def _iso_of(self, project_id: int) -> str:
+    def _iso_of(self, project_id: int | None) -> str:
         with self._conn:
-            row = self._conn.execute("SELECT created_at FROM projects WHERE id = ?", (project_id,)).fetchone()
+            row = self._conn.execute(
+                "SELECT created_at FROM projects WHERE id = ?", (project_id,)
+            ).fetchone()
         return row["created_at"] if row else _iso()
 
     # ---------- 会话 ----------
@@ -148,7 +172,13 @@ class ProjectStore:
                 "INSERT INTO threads (id, project_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
                 (thread_id, pid, title, now, now),
             )
-        return {"id": thread_id, "project_id": pid, "title": title, "created_at": now, "updated_at": now}
+        return {
+            "id": thread_id,
+            "project_id": pid,
+            "title": title,
+            "created_at": now,
+            "updated_at": now,
+        }
 
     def get_thread(self, thread_id: str) -> dict | None:
         with self._conn:
@@ -171,7 +201,9 @@ class ProjectStore:
 
     def touch_thread(self, thread_id: str) -> None:
         with self._conn:
-            self._conn.execute("UPDATE threads SET updated_at = ? WHERE id = ?", (_iso(), thread_id))
+            self._conn.execute(
+                "UPDATE threads SET updated_at = ? WHERE id = ?", (_iso(), thread_id)
+            )
 
     def rename_thread(self, thread_id: str, title: str) -> None:
         title = (title or "").strip()

@@ -143,7 +143,9 @@ export interface PluginInfo {
   plugin: string;
   description: string;
   version: string;
-  /** 内置插件（随系统启动，不可停用）；外部插件可开关 + 配参数 */
+  /** 来源：plugin（可选用能力，plugins/）| module（内核组成部分，backend/app/modules/） */
+  category: "plugin" | "module";
+  /** 内置（随系统启动，不可停用）；外部插件可开关 + 配参数 */
   builtin: boolean;
   enabled: boolean;
   disabled: boolean;
@@ -503,6 +505,26 @@ export async function fetchWorkspaceTree(): Promise<WorkspaceTree> {
   const res = await fetch("/api/workspace/tree");
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json() as Promise<WorkspaceTree>;
+}
+
+/** 项目绑定的本地目录文件树（一个项目 = 一个目录；未绑定目录 → HTTP 404） */
+export async function fetchProjectTree(projectId: number): Promise<WorkspaceTree> {
+  const res = await fetch(`/api/projects/${projectId}/tree`);
+  if (res.status === 404) throw new Error("NO_DIR");
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json() as Promise<WorkspaceTree>;
+}
+
+/** 项目目录命令执行（复用后端 shell 沙箱；未绑定目录 → 404 "NO_DIR"） */
+export async function execShell(projectId: number, command: string): Promise<{ output: string; cwd: string }> {
+  const res = await fetch(`/api/projects/${projectId}/shell/exec`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ command }),
+  });
+  if (res.status === 404) throw new Error("NO_DIR");
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as { output: string; cwd: string };
 }
 
 // ---------- 阶段 D：首启向导 ----------

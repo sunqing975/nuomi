@@ -7,6 +7,7 @@
 按 rubric（contains / not_contains / regex / tool_used）逐项打分 →
 输出控制台表格 + data/logs/eval_report_<ts>.json。
 """
+
 from __future__ import annotations
 
 import argparse
@@ -81,17 +82,20 @@ def main():
         got_w = sum(c["weight"] for c in sc["checks"] if check_pass(c, reply, tools))
         ratio = got_w / total_w if total_w else 0.0
         record = {
-            "id": sc["id"], "name": sc["name"], "score": round(ratio, 2),
-            "reply": reply[:160], "tools": tools,
+            "id": sc["id"],
+            "name": sc["name"],
+            "score": round(ratio, 2),
+            "reply": reply[:160],
+            "tools": tools,
         }
         report["scenarios"].append(record)
         summary = reply[:40].replace("\n", " ")
-        print(f"{sc['name']:<16}{ratio*100:>5.0f}%  {got_w}/{total_w:<10}{summary}")
+        print(f"{sc['name']:<16}{ratio * 100:>5.0f}%  {got_w}/{total_w:<10}{summary}")
 
     report["overall"] = round(
         sum(s["score"] for s in report["scenarios"]) / len(report["scenarios"]), 2
     )
-    print(f"\n总体得分：{report['overall']*100:.0f}%  ({len(report['scenarios'])} 个场景)")
+    print(f"\n总体得分：{report['overall'] * 100:.0f}%  ({len(report['scenarios'])} 个场景)")
 
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
     out = REPORT_DIR / f"eval_report_{int(time.time())}.json"

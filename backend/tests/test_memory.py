@@ -1,7 +1,6 @@
 """MemoryStore 单测：增删、去重、检索打分、上限淘汰、持久化。"""
-from __future__ import annotations
 
-import json
+from __future__ import annotations
 
 from app.storage.memory import MemoryStore
 

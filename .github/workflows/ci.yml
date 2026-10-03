@@ -1,0 +1,61 @@
+name: CI
+
+# 糯米质量门禁：PR 与 main 推送都跑。后端 lint + 格式检查 + mypy + pytest，
+# 前端 tsc + vite build。全绿才算 done（对齐 Octop 的 make all 船闸）。
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend（ruff + mypy + pytest）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Install dependencies
+        working-directory: backend
+        run: uv sync
+
+      - name: Lint（ruff check）
+        run: make lint
+
+      - name: Format check（ruff format）
+        run: make format-check
+
+      - name: Type check（mypy）
+        run: make typecheck
+
+      - name: Test（pytest）
+        run: make test
+
+  frontend:
+    name: Frontend（tsc + vite build）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build（tsc -b && vite build）
+        working-directory: frontend
+        run: npm run build

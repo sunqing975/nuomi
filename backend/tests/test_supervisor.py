@@ -1,15 +1,15 @@
 """Phase 4b · Supervisor 多智能体：路由 + 子 Agent 分派。"""
+
 from __future__ import annotations
 
 import asyncio
 from pathlib import Path
 
 import pytest
+from app.agent.supervisor import build_supervisor
+from app.main import build_app
 from fastapi.testclient import TestClient
 from langchain_core.messages import HumanMessage
-
-from app.main import build_app
-from app.agent.supervisor import build_supervisor
 
 from .fake_llm import FakeChatModel
 
@@ -31,7 +31,7 @@ def sup(tmp_path):
     app = build_app(
         llm=FakeChatModel(),
         db_path=str(tmp_path / "t.sqlite"),
-        skills_dir=str(REPO_ROOT / "plugins"),
+        plugins_dir=str(REPO_ROOT / "plugins"),
         memory_file=str(tmp_path / "mem" / "nuomi" / "facts.json"),
         knowledge_store_type="lexical",
         knowledge_dir=str(tmp_path / "kb"),

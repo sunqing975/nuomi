@@ -1,0 +1,9 @@
+{
+  "name": "agent-researcher",
+  "version": "1.0.0",
+  "description": "Agent preset：调研专员（知识库/网页/MCP 工具集，事实类问题）",
+  "entry": "agent_researcher.py",
+  "provides": [
+    "preset:researcher"
+  ]
+}

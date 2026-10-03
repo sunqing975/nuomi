@@ -5,8 +5,9 @@
 - 从 nuomi.json（profile）读取插件树 → 逐个挂载 Fiber（依赖驱动的加载/重试）
 - toggle = 改组合 + 增量卸载/挂载 + 事件广播（订阅方热更新）
 - install = 导入外部插件（#35 插件导入的落点）
-- list = fiber 状态 + 贡献 + plugin.json 元数据（前端能力面板 / 设置 schema 的数据源）
+- list = fiber 状态 + 贡献 + 清单元数据（前端能力面板 / 设置 schema 的数据源）
 """
+
 from __future__ import annotations
 
 import json
@@ -15,28 +16,36 @@ import subprocess
 import tempfile
 import zipfile
 from pathlib import Path
+from typing import Any
 
 from ..core import (
     EventBus,
     Fiber,
     FiberState,
+    ProfileEntry,
     Registry,
     Scope,
     default_profile,
     load_profile,
-    resolve_profile,
 )
 
 
 class NuomiComposer:
-    def __init__(self, app, plugins_dir: str | Path, profile_path: str | Path) -> None:
+    def __init__(
+        self,
+        app,
+        plugins_dir: str | Path,
+        profile_path: str | Path,
+        modules_dir: str | Path | None = None,
+    ) -> None:
         self.app = app
         self.plugins_dir = Path(plugins_dir)
+        self.modules_dir = Path(modules_dir) if modules_dir is not None else None
         self.profile_path = Path(profile_path)
         self.bus = EventBus()
         self.scope = Scope("global")
         self.registry = Registry(app, self.bus, self.scope)
-        self.entries: dict[str, object] = {}  # entry_id -> ProfileEntry
+        self.entries: dict[str, ProfileEntry] = {}  # entry_id -> ProfileEntry
 
         # 内核挂到 app.state（V2 兼容读点：event_bus 仍是发布点）
         app.state.bus = self.bus
@@ -66,14 +75,44 @@ class NuomiComposer:
         # 全量挂载完成：通知关心方（agent-loop）重建（初始加载时依赖插件的 apply 在其后）
         self.bus.emit("plugins/loaded", count=len(self.registry.fibers))
 
+    def _plugin_dir(self, name: str) -> Path | None:
+        """定位插件/模块目录：模块在 backend/app/modules/，插件在 plugins/。"""
+        if self.modules_dir is not None:
+            cand = self.modules_dir / name
+            if cand.exists():
+                return cand
+        cand = self.plugins_dir / name
+        return cand if cand.exists() else None
+
+    @staticmethod
+    def _read_manifest(plugin_dir: Path) -> dict:
+        """读取目录清单（v0.7.1 双 manifest）：模块 module.json / 插件 plugin.json。"""
+        pj = plugin_dir / "module.json"
+        if not pj.exists():
+            pj = plugin_dir / "plugin.json"
+        if not pj.exists():
+            return {}
+        try:
+            return json.loads(pj.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+
     def _mount(self, entry) -> None:
-        plugin_dir = self.plugins_dir / entry.plugin
+        # 模块（内核组成部分）在 backend/app/modules/，插件在 plugins/
+        plugin_dir = self._plugin_dir(entry.plugin)
+        # 入口由清单的 entry 声明（默认 hook.py）；模块已改为唯一入口名
+        entry_file = "hook.py"
+        if plugin_dir is not None:
+            entry_file = self._read_manifest(plugin_dir).get("entry", "hook.py") or "hook.py"
         fiber = Fiber(
             entry.id,
             entry.plugin,
-            plugin_dir if plugin_dir.exists() else None,
+            plugin_dir,
             {"config": dict(entry.config)},
-            self.app, self.bus, self.scope,
+            self.app,
+            self.bus,
+            self.scope,
+            entry=entry_file,
         )
         self.registry.add(fiber)
         fiber.load()
@@ -83,12 +122,12 @@ class NuomiComposer:
         self.app.state.enabled_plugins = active
 
     def _save_profile(self) -> None:
-        data = {"layers": []}
+        data: dict[str, Any] = {"layers": []}
         for e in self.entries.values():
-            data["layers"].append(
-                {"id": "user", "plugins": [e.to_dict()]}
-            )
-        self.profile_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            data["layers"].append({"id": "user", "plugins": [e.to_dict()]})
+        self.profile_path.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
 
     # ---------- 启停（配置组合语义） ----------
     def toggle(self, entry_id: str, enabled: bool) -> dict:
@@ -105,7 +144,9 @@ class NuomiComposer:
             f = self.registry.get(entry_id)
             rebuilt = bool(f and f.ctx and f.ctx.tools)
             # 事件在挂载后发布（订阅刚注册可收到）
-            self.bus.publish("plugin_toggled", {"plugin": entry.plugin, "id": entry_id, "enabled": enabled})
+            self.bus.publish(
+                "plugin_toggled", {"plugin": entry.plugin, "id": entry_id, "enabled": enabled}
+            )
             self.bus.emit("plugin/toggled", id=entry_id, plugin=entry.plugin, enabled=enabled)
         else:
             # 顺序（对齐 V2 踩坑记录"改集合→publish→再 dispose"）：
@@ -118,7 +159,9 @@ class NuomiComposer:
                 self.registry.fibers.pop(entry_id, None)
             self.registry.reconcile()
             self._sync_enabled()
-            self.bus.publish("plugin_toggled", {"plugin": entry.plugin, "id": entry_id, "enabled": enabled})
+            self.bus.publish(
+                "plugin_toggled", {"plugin": entry.plugin, "id": entry_id, "enabled": enabled}
+            )
             self.bus.emit("plugin/toggled", id=entry_id, plugin=entry.plugin, enabled=enabled)
             if f is not None:
                 f.dispose()
@@ -153,7 +196,9 @@ class NuomiComposer:
         elif str(source).startswith(("http://", "https://", "git@", "ssh://")):
             with tempfile.TemporaryDirectory() as td:
                 subprocess.run(
-                    ["git", "clone", "--depth", "1", str(source), td], check=True, capture_output=True
+                    ["git", "clone", "--depth", "1", str(source), td],
+                    check=True,
+                    capture_output=True,
                 )
                 repo = Path(td)
                 inner = repo / name if (repo / name).is_dir() else repo
@@ -169,14 +214,18 @@ class NuomiComposer:
         meta = json.loads((target / "plugin.json").read_text(encoding="utf-8"))
         self._save_profile()
         # 挂载新 entry
-        entry = type("E", (), {"id": name, "plugin": name, "config": {}, "disabled": False,
-                               "to_dict": lambda self: {"id": name, "plugin": name, "config": {}, "disabled": False, "layer": "user"}})()
+        entry = ProfileEntry(id=name, plugin=name, config={}, disabled=False, layer="user")
         self.entries[name] = entry
         self._mount(entry)
         self.registry.reconcile()
         self._sync_enabled()
         self.bus.publish("plugin_toggled", {"plugin": name, "id": name, "enabled": True})
-        return {"id": name, "name": meta.get("name", name), "installed": True, "state": self.list_entry(name)["state"]}
+        return {
+            "id": name,
+            "name": meta.get("name", name),
+            "installed": True,
+            "state": self.list_entry(name)["state"],
+        }
 
     def uninstall(self, entry_id: str) -> dict:
         entry = self.entries.get(entry_id)
@@ -192,7 +241,7 @@ class NuomiComposer:
         return {"id": entry_id, "uninstalled": True}
 
     # ---------- 列表 ----------
-    def list(self) -> list[dict]:
+    def list_plugins(self) -> list[dict]:
         return [self.list_entry(eid) for eid in self.entries]
 
     def list_entry(self, entry_id: str) -> dict:
@@ -201,26 +250,36 @@ class NuomiComposer:
             raise KeyError(entry_id)
         fiber = self.registry.get(entry_id)
         meta = {}
-        pj = self.plugins_dir / e.plugin / "plugin.json"
-        if pj.exists():
-            try:
-                meta = json.loads(pj.read_text(encoding="utf-8"))
-            except Exception:
-                meta = {}
+        pdir = self._plugin_dir(e.plugin)
+        if pdir is not None:
+            meta = self._read_manifest(pdir)
         tools = [t.name for t in fiber.ctx.tools] if fiber and fiber.ctx else []
         skills = list(fiber.ctx.skills) if fiber and fiber.ctx else []
-        # v0.6 兼容：SKILL.md 存在即视为技能贡献（加载器语义）
-        if not skills and (self.plugins_dir / e.plugin / "SKILL.md").exists():
-            skills = [e.plugin]
-        services = self.scope.provided_by(fiber.ctx) if fiber and fiber.ctx else []
-        events = list(fiber.ctx.events) if fiber and fiber.ctx else []
+        # v0.7：技能独立在技能区（skills/），同名技能即关联展示
+        if not skills:
+            skill_names = {s.name for s in getattr(self.app.state, "skills", [])}
+            if e.plugin in skill_names:
+                skills = [e.plugin]
+        # v0.7.1：服务/事件 = 声明式（module.json provides/hooks）∪ 运行时（fiber.ctx）
+        services = (
+            list(dict.fromkeys([*meta.get("provides", []), *self.scope.provided_by(fiber.ctx)]))
+            if fiber and fiber.ctx
+            else [*meta.get("provides", [])]
+        )
+        events = (
+            list(dict.fromkeys([*meta.get("hooks", []), *fiber.ctx.events]))
+            if fiber and fiber.ctx
+            else [*meta.get("hooks", [])]
+        )
         return {
             "id": entry_id,
             "name": meta.get("name", e.plugin),
             "plugin": e.plugin,
             "description": meta.get("description", ""),
             "version": meta.get("version", ""),
-            "builtin": bool(meta.get("builtin", False)) or e.plugin.startswith("service-"),
+            "builtin": bool(meta.get("builtin", False))
+            or e.plugin.startswith("service-")
+            or (self.modules_dir is not None and (self.modules_dir / e.plugin).is_dir()),
             "enabled": not e.disabled,
             "disabled": e.disabled,
             "config": dict(e.config),
@@ -234,7 +293,12 @@ class NuomiComposer:
             "events": events,
             "rebuilt": len(tools) > 0,  # v0.6 兼容：工具贡献变化触发重建
             # v0.6 兼容字段（前端能力面板 / 旧测试）
-            "contributions": {"skills": skills, "tools": tools, "services": services, "events": events},
+            "contributions": {
+                "skills": skills,
+                "tools": tools,
+                "services": services,
+                "events": events,
+            },
         }
 
     def available(self) -> list[dict]:
@@ -250,7 +314,13 @@ class NuomiComposer:
                 meta = json.loads((d / "plugin.json").read_text(encoding="utf-8"))
             except Exception:
                 meta = {}
-            out.append({"plugin": d.name, "name": meta.get("name", d.name), "description": meta.get("description", "")})
+            out.append(
+                {
+                    "plugin": d.name,
+                    "name": meta.get("name", d.name),
+                    "description": meta.get("description", ""),
+                }
+            )
         return out
 
 

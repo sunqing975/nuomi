@@ -4,6 +4,7 @@ stdlib 实现（urllib + HTMLParser），不引额外依赖；robust 由 plugin.
 统一配置（超时 10s + 重试 1 次）。演示"浏览器/MCP 版可按需替换"：
 换 playwright/MCP 插件即可升级为完整浏览器能力。
 """
+
 from __future__ import annotations
 
 import re
@@ -45,9 +46,7 @@ def http_get(url: str, max_chars: int = _MAX_TEXT) -> str:
     if not url.startswith(("http://", "https://")):
         return "URL 必须以 http:// 或 https:// 开头"
     try:
-        req = urllib.request.Request(
-            url, headers={"User-Agent": "Mozilla/5.0 NuomiCompanion/1.0"}
-        )
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 NuomiCompanion/1.0"})
         with urllib.request.urlopen(req, timeout=8) as resp:
             body = resp.read(512 * 1024)  # 最多读 512KB
         charset = resp.headers.get_content_charset() or "utf-8"

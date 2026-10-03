@@ -1,13 +1,13 @@
 """Phase 3 · 工具健壮性：重试 / 超时 / fallback。"""
+
 from __future__ import annotations
 
 import asyncio
 from pathlib import Path
 
 import pytest
-from langchain_core.tools import tool
-
 from app.plugins.robust import RetryError, with_fallback, with_retry, with_timeout
+from langchain_core.tools import tool
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 _state = {"flaky_calls": 0}

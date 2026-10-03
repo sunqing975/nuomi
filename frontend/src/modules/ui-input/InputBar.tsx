@@ -8,7 +8,8 @@ import ModelSelect from "../ui-model-selection/ModelSelect";
 import type { ModelProvider } from "../../api";
 import { parseCommand, parseAt, type CommandDef, type AtRef } from "./commands";
 import { t } from "../../i18n";
-import { MicIcon, SendIcon } from "../icons";
+import type { MessageKey } from "../../i18n/zh-CN";
+import { MicIcon, SendIcon, ShieldIcon } from "../icons";
 
 /** 浏览器语音输入（Chrome / localhost 可用），不支持时返回 null。 */
 export function createRecognizer(): {
@@ -57,6 +58,9 @@ export default function InputBar({
   onVoiceStop,
   onSelectModel,
   onEffort,
+  scope,
+  onScopeCycle,
+  runStats,
 }: {
   input: string;
   setInput: (v: string) => void;
@@ -79,6 +83,11 @@ export default function InputBar({
   onVoiceStop: () => void;
   onSelectModel: (provider: string, model: string) => void;
   onEffort: (e: string) => void;
+  /** 范围（shell 沙箱模式）：read-only / workspace-write / full-access（对齐 Harness 范围切换） */
+  scope: string;
+  onScopeCycle: () => void;
+  /** 最近一次回复运行统计（token 用量 · 耗时） */
+  runStats: { tokens: number; latency_s: number } | null;
 }) {
   const [cmdIdx, setCmdIdx] = useState(0);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -307,8 +316,24 @@ export default function InputBar({
             <button className="composer-add" onClick={openCommandMenu} title={t("input.openCommands")}>
               /
             </button>
+            <button
+              className={`scope-btn ${scope}`}
+              onClick={onScopeCycle}
+              title={t(`scope.tip.${scope}` as MessageKey)}
+            >
+              <ShieldIcon size={12} />
+              <span>{t(`scope.label.${scope}` as MessageKey)}</span>
+            </button>
           </div>
           <div className="composer-trailing">
+            {runStats && (
+              <span className="run-stats" title={t("input.runStatsTip")}>
+                {t("input.runStats", {
+                  tokens: String(runStats.tokens),
+                  latency: runStats.latency_s.toFixed(1),
+                })}
+              </span>
+            )}
             <ModelSelect
               providers={providers}
               activeProvider={activeProvider}

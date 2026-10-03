@@ -7,13 +7,13 @@
 import type { ChatModelAdapter, ChatModelRunResult } from "@assistant-ui/react";
 
 type AssistantPart = NonNullable<ChatModelRunResult["content"]>[number];
-type ToolCallPart = AssistantPart & { type: "tool-call"; args: Record<string, never>; argsText: string };
+type ToolCallPart = AssistantPart & { type: "tool-call"; args: Record<string, never>; argsText: string; result?: string };
 
 export interface NuomiAdapterCallbacks {
   /** meta 事件：后端可能创建新 thread，回传真实 thread_id */
   onThreadId?: (id: string) => void;
-  /** done 事件：回传 token 用量与情绪 */
-  onDone?: (info: { usage: unknown; emotion: string }) => void;
+  /** done 事件：回传 token 用量、耗时与情绪（供输入框运行统计显示） */
+  onDone?: (info: { usage: unknown; latency_s: number; emotion: string }) => void;
   /** title 事件：模型命名完成，前端刷新侧栏 */
   onTitle?: (title: string) => void;
 }
@@ -82,14 +82,21 @@ export function createNuomiAdapter(callbacks: NuomiAdapterCallbacks = {}): ChatM
                 toolCallId: name,
                 toolName: name,
                 args: {},
-                argsText: "{}",
+                argsText: String(payload.args ?? "{}"),
               });
             }
+            break;
+          }
+          case "tool_result": {
+            const name = String(payload.name ?? "");
+            const tc = toolCalls.get(name);
+            if (tc) tc.result = String(payload.result ?? "");
             break;
           }
           case "done":
             callbacks.onDone?.({
               usage: payload.usage,
+              latency_s: Number(payload.latency_s ?? 0),
               emotion: String(payload.emotion ?? "neutral"),
             });
             break;
@@ -97,7 +104,10 @@ export function createNuomiAdapter(callbacks: NuomiAdapterCallbacks = {}): ChatM
             callbacks.onTitle?.(String(payload.title ?? ""));
             break;
           case "error":
-            throw new Error(String(payload.message ?? "未知错误"));
+            // 错误不进顶部 banner，而是作为一条对话内错误卡片消息
+            // （ChatWindow 检测 ⚠️ 前缀渲染 .msg-error-card）
+            textAcc += `⚠️ ${String(payload.message ?? "未知错误")}`;
+            break;
         }
       };
 

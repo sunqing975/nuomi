@@ -1,14 +1,14 @@
 """Phase 3 · human-in-the-loop：高风险工具审批门。"""
+
 from __future__ import annotations
 
 import asyncio
 from pathlib import Path
 
+from app.main import build_app
+from app.plugins.approval import ApprovalGate
 from fastapi.testclient import TestClient
 from langchain_core.tools import tool
-
-from app.plugins.approval import ApprovalGate
-from app.main import build_app
 
 from .fake_llm import FakeChatModel
 
@@ -25,7 +25,7 @@ def _make_app(tmp_path):
     return build_app(
         llm=FakeChatModel(),
         db_path=str(tmp_path / "t.sqlite"),
-        skills_dir=str(REPO_ROOT / "plugins"),
+        plugins_dir=str(REPO_ROOT / "plugins"),
         memory_file=str(tmp_path / "mem" / "facts.json"),
         knowledge_store_type="lexical",
         knowledge_dir=str(tmp_path / "kb"),
@@ -77,13 +77,16 @@ def test_gate_auto_approve_skips():
 def test_loader_marks_risky_tool(tmp_path):
     """加载器把 plugin.json approval 列表中的工具包进审批门。"""
     app = _make_app(tmp_path)
-    with TestClient(app) as client:
+    with TestClient(app):
         gate = app.state.gate
         assert gate is not None
         assert "notes_delete" in {t.name for t in app.state.tools}
+
         # 经 gate 包装后：直接调用应返回"需人工确认"，不真正执行
         async def go():
-            r = await next(t for t in app.state.tools if t.name == "notes_delete").ainvoke({"index": 1})
+            r = await next(t for t in app.state.tools if t.name == "notes_delete").ainvoke(
+                {"index": 1}
+            )
             assert "人工确认" in r or "apv-" in r
 
         asyncio.run(go())

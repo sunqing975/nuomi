@@ -4,6 +4,7 @@
 没有 LangChain 依赖。adapter 扫描 tools_external/ 目录，把注册过的函数统一
 转成 LangChain BaseTool——"外部插件 = 放进目录即被适配，自家格式不变"。
 """
+
 from __future__ import annotations
 
 import importlib.util

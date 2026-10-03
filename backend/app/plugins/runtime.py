@@ -1,7 +1,8 @@
 """plugin_runtime.py · 插件运行时内核（移植 DeepSeek Harness / Cordis 设计）。
 
-对齐 Cordis 的插件形态（v0.6：不再区分"程序型/能力型"——一切皆插件）：
-- 插件 = 一个模块，导出 `apply(ctx)`；加载器用上下文 ctx 调用它
+对齐 Cordis 的插件形态（v0.7 三区：插件 / 模块 / 技能）：
+- 插件（plugins/，可选能力）与模块（modules/，内核组成部分）都是"一个模块导出 apply(ctx)"，
+  加载器用上下文 ctx 调用它；区别只在目录归属（category：plugin | module）
 - ctx 是"贡献 + 服务 + 事件 + 生命周期"容器，apply(ctx) 里声明它贡献的一切：
     ctx.register_tools([...])    → 贡献模型工具（进 agent 工具集）
     ctx.register_skill(...)      → 贡献技能（SKILL.md：目录只给 name+description，正文按需读）
@@ -11,12 +12,15 @@
 - 启停 = 配置组合：启用时 apply(ctx)，停用时 dispose 并重建
 - 事件：message_received / response_done / tool_called / plugin_toggled / model_switched / approval_created
 """
+
 from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from dataclasses import dataclass, field
-from typing import Any, Callable
+from collections.abc import Callable
+from contextlib import suppress
+from dataclasses import dataclass
+from typing import Any
 
 from langchain_core.tools import BaseTool
 
@@ -51,10 +55,8 @@ class EventBus:
         self._handlers[event].append(handler)
 
         def _unsubscribe() -> None:
-            try:
+            with suppress(ValueError):
                 self._handlers[event].remove(handler)
-            except ValueError:
-                pass
 
         return _unsubscribe
 
@@ -80,6 +82,9 @@ class PluginContext:
         self.tools: list[BaseTool] = []
         self.skills: dict[str, SkillContribution] = {}
         self.events: list[str] = []  # 订阅过的事件名（贡献视图用）
+        self.config: dict[
+            str, Any
+        ] = {}  # 组合配置注入（lifecycle._apply 填充，与 core/context 一致）
 
     # --- 贡献：模型工具 ---
     def register_tools(self, tools: list[BaseTool]) -> None:

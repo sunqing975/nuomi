@@ -1,11 +1,11 @@
 """阶段 B/C/D 回归测试：工作区树、项目自动建目录、bootstrap、token 守卫。"""
+
 from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi.testclient import TestClient
-
 from app.main import build_app
+from fastapi.testclient import TestClient
 
 
 def _make_app(tmp_path: Path, workspace_dir: str | None = None, **kw):

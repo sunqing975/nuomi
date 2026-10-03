@@ -5,16 +5,16 @@
   查会话所属项目的绑定目录；绑定则所有操作限定在该目录内，未绑定回退工作区。
 路径安全：resolve 后必须落在作用域根内，`..` 穿越 / 绝对路径逃逸一律拒绝。
 """
+
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
 
-from langchain_core.runnables import RunnableConfig
-from langchain_core.tools import tool
-
 from app.config import settings
 from app.storage.projects import ProjectStore
+from langchain_core.runnables import RunnableConfig
+from langchain_core.tools import tool
 
 _MAX_READ = 8000
 
@@ -107,7 +107,9 @@ def _read(path: str, max_chars: int, config: RunnableConfig | None) -> str:
 
 
 @tool
-def write_file(path: str, content: str, mode: str = "overwrite", config: RunnableConfig | None = None) -> str:
+def write_file(
+    path: str, content: str, mode: str = "overwrite", config: RunnableConfig | None = None
+) -> str:
     """把内容写入当前作用域内的文件。mode=overwrite 覆盖 / append 追加；父目录自动创建。"""
     return _safe(_write, path, content, mode, config)
 

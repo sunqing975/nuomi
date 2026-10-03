@@ -8,10 +8,10 @@ LangChain BaseTool 装饰器组合：
 设计：纯组合式包装（不改工具内部），在插件加载器 collect_tools 时按
 plugin.json 的 robust 配置应用——"工具失败怎么办"从每个工具内部抽到统一层。
 """
+
 from __future__ import annotations
 
 import asyncio
-import time
 from typing import Any
 
 from langchain_core.tools import BaseTool, StructuredTool
@@ -26,6 +26,7 @@ class RetryError(RuntimeError):
 
 def with_timeout(tool: BaseTool, seconds: float = 30.0) -> BaseTool:
     """给工具加调用超时（async 路径 asyncio.wait_for；sync 路径包进线程池）。"""
+
     async def _arun(**kwargs) -> Any:
         return await asyncio.wait_for(tool.ainvoke(kwargs), timeout=seconds)
 
@@ -43,6 +44,7 @@ def with_timeout(tool: BaseTool, seconds: float = 30.0) -> BaseTool:
 
 def with_retry(tool: BaseTool, retries: int = 2, backoff: float = 0.5) -> BaseTool:
     """瞬时错误指数退避重试。重试耗尽抛 RetryError（可由 fallback 层兜住）。"""
+
     async def _arun(**kwargs) -> Any:
         last: Exception | None = None
         for attempt in range(retries + 1):
@@ -69,6 +71,7 @@ def with_retry(tool: BaseTool, retries: int = 2, backoff: float = 0.5) -> BaseTo
 
 def with_fallback(tool: BaseTool, fallback: BaseTool | str) -> BaseTool:
     """失败时降级：另一工具，或一段兜底提示文本。"""
+
     async def _arun(**kwargs) -> Any:
         try:
             return await tool.ainvoke(kwargs)

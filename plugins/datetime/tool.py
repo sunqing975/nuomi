@@ -3,6 +3,7 @@
 插件契约：入口模块必须导出 `TOOLS`（list，元素为 @tool 函数或 BaseTool）。
 加载器（backend/app/skills.py）扫描 plugin.json 后自动注入 LangGraph agent。
 """
+
 from datetime import datetime
 from zoneinfo import ZoneInfo
 

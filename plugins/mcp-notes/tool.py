@@ -3,6 +3,7 @@
 级3 资源按需：MCP 客户端连接与工具列表在**首次调用**时才建立（get_tools 一次，
 之后按工具名缓存；每次调用由 adapter 自动开新会话）。启动零开销、零子进程。
 """
+
 from __future__ import annotations
 
 import os
@@ -25,12 +26,14 @@ async def _resolve(name: str):
             from langchain_mcp_adapters.sessions import StdioConnection
 
             _client = MultiServerMCPClient(
-                {"notes": StdioConnection(
-                    transport="stdio",
-                    command=sys.executable,
-                    args=[str(SERVER_SCRIPT)],
-                    env=dict(os.environ),  # 显式传环境（测试可用 NOTES_DATA 隔离数据）
-                )}
+                {
+                    "notes": StdioConnection(
+                        transport="stdio",
+                        command=sys.executable,
+                        args=[str(SERVER_SCRIPT)],
+                        env=dict(os.environ),  # 显式传环境（测试可用 NOTES_DATA 隔离数据）
+                    )
+                }
             )
         tools = await _client.get_tools(server_name="notes")
         _tools_by_name = {t.name: t for t in tools}

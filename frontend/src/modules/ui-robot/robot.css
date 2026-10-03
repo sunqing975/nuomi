@@ -1,0 +1,175 @@
+/* 机器人模式（双模式之一）：全屏机器人脸 + 表情联动 + 极简输入栏。
+   样式全部走 tokens.css 设计 token，不引入新色值；深色为主，浅色由 light.css 覆盖。 */
+
+.robot-mode {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--label);
+  font-family: var(--font);
+}
+
+.robot-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line-2);
+}
+
+.robot-status {
+  font-size: 13px;
+  color: var(--label-2);
+}
+
+.robot-stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 20px;
+}
+
+.robot-face-wrap {
+  width: min(46vh, 340px);
+  height: min(46vh, 340px);
+  position: relative;
+  filter: drop-shadow(0 0 40px var(--accent-soft));
+}
+
+.robot-face-wrap agent-3d {
+  width: 100%;
+  height: 100%;
+  display: block;
+  --agent-accent: var(--accent-strong);
+  --agent-on-surface: var(--label);
+}
+
+.robot-speech {
+  max-width: min(560px, 86%);
+  padding: 12px 16px;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  color: var(--label);
+  font-size: 14px;
+  line-height: 1.7;
+  text-align: center;
+  word-break: break-word;
+}
+
+.robot-bottom {
+  padding: 14px 18px 20px;
+  border-top: 1px solid var(--line-2);
+}
+
+.robot-input {
+  max-width: var(--composer-max);
+  margin: 0 auto;
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 8px 8px 8px 14px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--line-2);
+  background: var(--surface);
+  box-shadow: var(--shadow-pop);
+}
+
+.robot-input:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.robot-input textarea {
+  flex: 1;
+  min-height: 22px;
+  max-height: 96px;
+  background: transparent;
+  border: none;
+  outline: none;
+  resize: none;
+  color: var(--label);
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.5;
+  padding: 2px 0;
+  caret-color: var(--accent-strong);
+}
+
+.robot-input textarea::placeholder {
+  color: var(--label-3);
+  opacity: 1;
+}
+
+.robot-input textarea:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* 麦克风按钮（纯语音入口）：recording 时 accent 呼吸脉冲 */
+.robot-mic {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid var(--line-2);
+  background: var(--surface);
+  color: var(--label-2);
+  cursor: pointer;
+  transition: transform 0.15s var(--ease-out), border-color 0.15s, color 0.15s;
+}
+
+.robot-mic:hover:not(:disabled) {
+  color: var(--accent-strong);
+  border-color: var(--accent);
+}
+
+.robot-mic:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.robot-mic.recording {
+  color: #fff;
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+  animation: rf-mic-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes rf-mic-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 var(--accent-soft); }
+  50% { box-shadow: 0 0 0 10px transparent; }
+}
+
+.robot-send {
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border-radius: 50%;
+  border: none;
+  background: var(--accent-strong);
+  color: #fff;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  transition: transform 0.15s var(--ease-out), opacity 0.15s;
+}
+
+.robot-send:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.robot-send:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

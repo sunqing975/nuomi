@@ -15,7 +15,7 @@ import {
   loadThreadId,
   renameThread,
   saveThreadId,
-  setProjectDirectory,
+  setGlobalSetting,
   togglePlugin,
   type BootstrapStatus,
   type ModelProvider,
@@ -32,15 +32,17 @@ import { createNuomiAdapter } from "./modules/ui-chat/NuomiAdapter";
 import ChatWindow from "./modules/ui-chat/ChatWindow";
 import InputBar, { createRecognizer } from "./modules/ui-input/InputBar";
 import SideBar from "./modules/ui-sidebar/SideBar";
+import FilesPanel from "./modules/ui-sidebar/FilesPanel";
 import WelcomeWizard from "./modules/ui-wizard/WelcomeWizard";
 import PluginManager from "./modules/ui-plugin-manager/PluginManager";
 import SettingsModal from "./modules/ui-settings/SettingsModal";
-import { Emotion, PetMood } from "./modules/ui-avatar/PetBuddy";
+import RobotMode from "./modules/ui-robot/RobotMode";
+import { FolderIcon, RobotIcon, XIcon } from "./modules/icons";
 import { t } from "./i18n";
 
 interface ChatMsg extends Msg {
   reasoning?: string;
-  toolCalls?: string[];
+  toolCalls?: { name: string; args?: string; result?: string }[];
   usage?: TokenUsage | null;
 }
 
@@ -51,8 +53,15 @@ function toThreadMessages(msgs: ChatMsg[]): ThreadMessageLike[] {
     const content: LikePart[] = [];
     if (m.role === "assistant") {
       if (m.reasoning) content.push({ type: "reasoning", text: m.reasoning } as const);
-      for (const name of m.toolCalls ?? []) {
-        content.push({ type: "tool-call", toolCallId: name, toolName: name, args: {} } as const);
+      for (const tc of m.toolCalls ?? []) {
+        content.push({
+          type: "tool-call",
+          toolCallId: tc.name,
+          toolName: tc.name,
+          args: {},
+          argsText: tc.args,
+          result: tc.result ?? undefined,
+        } as const);
       }
     }
     content.push({ type: "text", text: m.content } as const);
@@ -70,7 +79,6 @@ function BusyBridge({ children }: { children: (ctx: { busy: boolean; empty: bool
 export default function App() {
   const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [mood, setMood] = useState<PetMood>("idle");
   const [plugins, setPlugins] = useState<PluginInfo[]>([]);
   const [available, setAvailable] = useState<{ name: string; description: string }[]>([]);
   const [providers, setProviders] = useState<ModelProvider[]>([]);
@@ -78,6 +86,8 @@ export default function App() {
   const [tab, setTab] = useState<"chat" | "plugins">("chat");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [listening, setListening] = useState(false);
+  // 双模式（对齐"机器人大脑"定位）：general 通用聊天 / robot 全屏机器人脸（表情联动，大脑共用）
+  const [mode, setMode] = useState<"general" | "robot">("general");
   // 项目 / 会话
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [threads, setThreads] = useState<ThreadInfo[]>([]);
@@ -94,8 +104,46 @@ export default function App() {
   });
   // 计划模式（对齐 dsh /plan：软约束引导「先计划后执行」，发送时注入提示）
   const [planMode, setPlanMode] = useState(false);
-  // 阶段 B：工作区文件树刷新计数（新建/删除项目后 +1，FilesPanel 重拉）
+  // 阶段 B：工作区文件树刷新计数（新建/删除项目/绑定目录后 +1，FilesPanel 重拉）
   const [filesTick, setFilesTick] = useState(0);
+  // 项目文件树抽屉开关（主区右上角按钮，2026-10-02 自侧栏移入）
+  const [filesOpen, setFilesOpen] = useState(false);
+  // 最近一次回复运行统计（输入框状态行：token 用量 · 耗时）
+  const [runStats, setRunStats] = useState<{ tokens: number; latency_s: number } | null>(null);
+  // 范围（shell 沙箱模式，对齐 Harness 范围切换）：read-only / workspace-write / full-access
+  const scope = (settings.global.shell_default_mode as string | undefined) ?? "workspace-write";
+  const cycleScope = () => {
+    const order = ["read-only", "workspace-write", "full-access"] as const;
+    const idx = Math.max(order.indexOf(scope as (typeof order)[number]), 0);
+    const next = order[(idx + 1) % order.length];
+    void setGlobalSetting("shell_default_mode", next)
+      .then(() => setSettings((s) => ({ ...s, global: { ...s.global, shell_default_mode: next } })))
+      .catch((e: unknown) => setError(t("app.settingsFailed", { msg: String(e) })));
+  };
+  // Esc 关闭文件抽屉（对齐交互规范：弹层 Esc 即关）
+  useEffect(() => {
+    if (!filesOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setFilesOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [filesOpen]);
+  // ⌘P：展开右栏文件树面板（对齐 Harness ⌘P 工作区文件）
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      const k = e.key.toLowerCase();
+      const cur = projects.find((p) => p.id === currentProjectId);
+      if (!cur?.directory || tab !== "chat") return;
+      if (k === "p") {
+        e.preventDefault();
+        setFilesOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [tab, projects, currentProjectId]);
   // 阶段 D：首启向导（全新环境未配置 LLM 时展示）
   const [setup, setSetup] = useState<BootstrapStatus | null>(null);
   const [wizardError, setWizardError] = useState<string | null>(null);
@@ -116,14 +164,10 @@ export default function App() {
             setThreadTitle(null);
             refreshThreads();
           },
-          onDone: ({ emotion }) => {
-            const e = (emotion || "neutral") as Emotion;
-            if (e !== "neutral") {
-              setMood(e);
-              window.setTimeout(() => setMood("idle"), 2600);
-            } else {
-              setMood("idle");
-            }
+          onDone: ({ usage, latency_s }) => {
+            const u = usage as { total_tokens?: number } | null | undefined;
+            const tokens = u?.total_tokens ?? 0;
+            if (tokens || latency_s) setRunStats({ tokens, latency_s });
             refreshThreads();
           },
           onTitle: (title) => {
@@ -135,8 +179,16 @@ export default function App() {
     )
   );
 
-  const voiceEnabled = plugins.find((p) => p.id === "voice-input")?.enabled ?? true;
-  const teamMode = plugins.find((p) => p.id === "team")?.enabled ?? true;
+  // 插件启停联动：/api/plugins 返回的 id 是层 id（如 runtime-robot），按 plugin 名匹配
+  const voiceEnabled = plugins.find((p) => p.plugin === "voice-input")?.enabled ?? true;
+  const teamMode = plugins.find((p) => p.plugin === "team")?.enabled ?? true;
+  // v0.7 三区：robot 是内核模块 → 启用时机器人模式入口可见；停用 → 入口隐藏（命令同步失效）
+  const robotEnabled = plugins.find((p) => p.plugin === "robot")?.enabled ?? true;
+
+  // robot 插件被停用且正处于机器人模式 → 自动回通用模式
+  useEffect(() => {
+    if (!robotEnabled && mode === "robot") setMode("general");
+  }, [robotEnabled, mode]);
 
   const refreshPlugins = useCallback(() => {
     fetchPlugins()
@@ -299,7 +351,6 @@ export default function App() {
     const text = planMode ? t("app.planModePrefix") + "\n" + raw : raw;
     setInput("");
     setError(null);
-    setMood("typing");
     runtime.thread.append({
       role: "user",
       content: [{ type: "text", text }],
@@ -322,13 +373,11 @@ export default function App() {
       }
     });
     setListening(true);
-    setMood("listening");
     rec.start();
   };
 
   const stopVoice = () => {
     setListening(false);
-    setMood("idle");
     recRef.current?.stop();
   };
 
@@ -438,7 +487,30 @@ export default function App() {
           return t("app.noModel");
         },
       },
+      {
+        name: "robot",
+        description: t("cmd.robotDesc"),
+        handler: () => {
+          setMode("robot");
+          return t("cmd.robot");
+        },
+      },
+      {
+        name: "general",
+        description: t("cmd.generalDesc"),
+        handler: () => {
+          setMode("general");
+          return t("cmd.general");
+        },
+      },
     ];
+    // v0.7 三区：robot 模块停用 → /robot 命令失效（返回提示，不切换）
+    if (!robotEnabled) {
+      const robotCmd = all.find((c) => c.name === "robot");
+      if (robotCmd) {
+        robotCmd.handler = () => t("cmd.robotDisabled");
+      }
+    }
     help.handler = (raw) => {
       void raw;
       return all.map((c) => `/${c.name} — ${c.description}`).join("\n");
@@ -460,14 +532,20 @@ export default function App() {
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
-      <div className="app">
+      {mode === "robot" ? (
+        <RobotMode
+          error={error}
+          onSend={(text) => void send(text)}
+          onBack={() => setMode("general")}
+        />
+      ) : (
+      <div className={`app ${filesOpen ? "right-open" : ""}`}>
         <SideBar
           tab={tab}
           projects={projects}
           threads={threads}
           currentProjectId={currentProjectId}
           currentThreadId={currentThreadId}
-          filesRefreshTick={filesTick}
           onTab={setTab}
           onOpenSettings={() => setSettingsOpen(true)}
           onNewThread={() => void newThread()}
@@ -482,16 +560,6 @@ export default function App() {
               selectProject(p.id);
             } catch (e) {
               setError(t("app.newProjectFailed", { msg: String(e instanceof Error ? e.message : e) }));
-            }
-          }}
-          onSetProjectDirectory={async (projectId, directory) => {
-            try {
-              await setProjectDirectory(projectId, directory);
-              setError(null);
-              refreshProjects();
-              refreshThreads();
-            } catch (e) {
-              setError(t("app.projectDirFailed", { msg: String(e instanceof Error ? e.message : e) }));
             }
           }}
           onRenameThread={async (id, title) => {
@@ -509,12 +577,36 @@ export default function App() {
 
         {tab === "chat" && (
           <main className="main">
+            {/* 顶栏：会话标题 + 右栏开关（按钮在顶栏，不再浮在对话消息流上） */}
+            <div className="topbar">
+              <div className="topbar-title" title={threadTitle ?? undefined}>
+                {threadTitle || projects.find((p) => p.id === currentProjectId)?.name || t("sidebar.newSession")}
+              </div>
+              <div className="topbar-actions">
+                {robotEnabled && (
+                  <button
+                    className="mode-toggle"
+                    onClick={() => setMode("robot")}
+                    title={t("app.robotSwitch")}
+                  >
+                    <RobotIcon size={14} />
+                  </button>
+                )}
+                {projects.find((p) => p.id === currentProjectId)?.directory && (
+                  <button
+                    className={`icon-btn files-toggle ${filesOpen ? "on" : ""}`}
+                    onClick={() => setFilesOpen((v) => !v)}
+                    title={t("right.filesTab") + " · ⌘P"}
+                  >
+                    <FolderIcon size={15} />
+                  </button>
+                )}
+              </div>
+            </div>
             {error && <div className="error">{error}</div>}
             <ChatWindow
               teamMode={teamMode}
-              threadTitle={threadTitle}
               onSuggestion={(text) => void send(text)}
-              mood={mood}
             />
             <BusyBridge>
               {({ busy, empty }) => (
@@ -537,10 +629,34 @@ export default function App() {
                   onVoiceStop={stopVoice}
                   onSelectModel={(p, m) => void selectModel(p, m)}
                   onEffort={setEffort}
+                  scope={scope}
+                  onScopeCycle={cycleScope}
+                  runStats={runStats}
                 />
               )}
             </BusyBridge>
           </main>
+        )}
+
+        {/* 右侧「其他」面板（三栏第三列，对齐 dsh AppFrame 右栏）：文件树，
+            常驻布局列（非弹窗），右上角按钮开合，宽度由 .app.right-open 过渡 */}
+        {tab === "chat" && (
+          <aside className="right-panel">
+            <div className="right-panel-head">
+              <span className="right-panel-title">
+                <FolderIcon size={14} />
+                <span className="name">{projects.find((p) => p.id === currentProjectId)?.name ?? t("chat.files")}</span>
+              </span>
+              <button
+                className="icon-btn rp-close"
+                title={t("common.close")}
+                onClick={() => setFilesOpen(false)}
+              >
+                <XIcon />
+              </button>
+            </div>
+            {currentProjectId != null && <FilesPanel projectId={currentProjectId} refreshTick={filesTick} />}
+          </aside>
         )}
 
         {tab === "plugins" && (
@@ -587,6 +703,7 @@ export default function App() {
         )}
         {wizardError && <div className="error wizard-error">{wizardError}</div>}
       </div>
+      )}
     </AssistantRuntimeProvider>
   );
 }

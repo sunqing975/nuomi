@@ -3,28 +3,28 @@
 不依赖任何真实 LLM key，验证：流式逐字输出、会话持久化（两轮对话共享 thread_id）、
 skills 加载与 /health、出错时返回 error 事件。
 """
+
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
-from fastapi.testclient import TestClient
-
 from app.main import build_app
 from app.plugins.loader import scan_plugins
+from fastapi.testclient import TestClient
 
 from .fake_llm import FakeChatModel
 
 # tests/ -> backend -> nuomi 仓库根
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SKILLS_DIR = REPO_ROOT / "plugins"
+PLUGINS_DIR = REPO_ROOT / "plugins"
 
 
 def _make_app(tmp_path):
     return build_app(
         llm=FakeChatModel(),
         db_path=str(tmp_path / "test.sqlite"),
-        skills_dir=str(SKILLS_DIR),
+        plugins_dir=str(PLUGINS_DIR),
         memory_file=str(tmp_path / "mem" / "facts.json"),
     )
 

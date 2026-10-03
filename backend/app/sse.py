@@ -6,6 +6,7 @@
   event: done   data: {"thread_id": "...", "content": "完整回复"}   —— 结束
   event: error  data: {"message": "..."}         —— 出错（流提前终止）
 """
+
 from __future__ import annotations
 
 import json

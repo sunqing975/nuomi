@@ -1,4 +1,5 @@
 """伙伴人设：加载与 system prompt 组装顺序。"""
+
 from __future__ import annotations
 
 from pathlib import Path

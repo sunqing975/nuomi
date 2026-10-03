@@ -2,7 +2,6 @@
   "name": "fs",
   "version": "0.1.0",
   "description": "文件工具：read_file / write_file / list_dir / search_files / delete_file（作用域=当前项目绑定的本机目录，未绑定回退工作区，防穿越）",
-  "entry": "tool.py",
   "load": "lazy",
   "robust": {
     "timeout": 10,

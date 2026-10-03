@@ -1,8 +1,8 @@
 """Phase 2 · MCP 插件：元数据常驻不建连 + 首次调用才连真实 server。"""
+
 from __future__ import annotations
 
 import asyncio
-import os
 from pathlib import Path
 
 from app.plugins.loader import scan_plugins

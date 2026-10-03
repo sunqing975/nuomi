@@ -4,6 +4,7 @@
 回复长度 / 模型 / 耗时。文件即唯一权威来源（/logs 端点读它，脚本 tail 它）。
 日志按大小轮转（默认 5MB，保留 3 个备份），避免长期运行无限膨胀。
 """
+
 from __future__ import annotations
 
 import json

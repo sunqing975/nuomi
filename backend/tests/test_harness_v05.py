@@ -1,12 +1,12 @@
 """插件规范 v0.5（Harness 移植）· 事件总线 / PluginContext / mood / skill_doc / 技能目录。"""
+
 from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi.testclient import TestClient
-
 from app.main import build_app
-from app.plugins.runtime import PLUGIN_TOGGLED, RESPONSE_DONE, EventBus, PluginContext
+from app.plugins.runtime import RESPONSE_DONE, EventBus, PluginContext
+from fastapi.testclient import TestClient
 
 from .fake_llm import FakeChatModel
 
@@ -17,7 +17,7 @@ def _make_app(tmp_path):
     return build_app(
         llm=FakeChatModel(),
         db_path=str(tmp_path / "t.sqlite"),
-        skills_dir=str(REPO_ROOT / "plugins"),
+        plugins_dir=str(REPO_ROOT / "plugins"),
         memory_file=str(tmp_path / "mem" / "nuomi" / "facts.json"),
         knowledge_store_type="lexical",
         knowledge_dir=str(tmp_path / "kb"),
@@ -77,7 +77,7 @@ def test_mood_plugin_rules(tmp_path):
     import importlib.util
     import sys
 
-    hook_path = REPO_ROOT / "plugins" / "mood" / "hook.py"
+    hook_path = REPO_ROOT / "backend" / "app" / "modules" / "mood" / "mood.py"
     spec = importlib.util.spec_from_file_location("nuomi_mood_hook", hook_path)
     mod = importlib.util.module_from_spec(spec)
     sys.modules["nuomi_mood_hook"] = mod
@@ -94,7 +94,7 @@ def test_mood_plugin_rules(tmp_path):
 
 def test_mood_plugin_done_event_sets_emotion(tmp_path):
     app = _make_app(tmp_path)
-    with TestClient(app) as client:
+    with TestClient(app):
         assert app.state.last_emotion == "neutral"
         # 直接发布 RESPONSE_DONE（等效于 chat 完成），mood 插件订阅后写入
         app.state.event_bus.publish(RESPONSE_DONE, {"reply": "哈哈 那你可找对人了"})
@@ -120,16 +120,16 @@ def test_skill_doc_reads_body(tmp_path):
         tools = {t.name: t for t in app.state.tools}
         assert "skill_doc" in tools
         result = tools["skill_doc"].invoke({"name": "memory"})
-        assert "<skill_content name=\"memory\">" in result
+        assert '<skill_content name="memory">' in result
         assert "memory_write" in result  # 正文含工具名
         # 未知技能 → 明确报错
         assert "未知技能" in tools["skill_doc"].invoke({"name": "nope"})
-        # 程序型插件无正文
-        assert "运行时扩展" in tools["skill_doc"].invoke({"name": "mood"})
-        # 停用后拒绝
+        # 技能独立概念：mood 不在技能区 → 未知技能（不再有"程序型"分支）
+        assert "未知技能" in tools["skill_doc"].invoke({"name": "mood"})
+        # 技能独立：停用 memory 插件不影响读技能正文（技能区全量可用）
         client.post("/api/plugins/memory/toggle")
         tools2 = {t.name: t for t in app.state.tools}
-        assert "已停用" in tools2["skill_doc"].invoke({"name": "memory"})
+        assert "memory_write" in tools2["skill_doc"].invoke({"name": "memory"})
 
 
 def test_skill_catalog_only_metadata(tmp_path):
@@ -137,14 +137,14 @@ def test_skill_catalog_only_metadata(tmp_path):
     with TestClient(app) as client:
         from app.plugins.loader import collect_skill_catalog
 
-        catalog = collect_skill_catalog(app.state.plugins, app.state.enabled_plugins)
+        catalog = collect_skill_catalog(app.state.skills)
         assert "memory_write" not in catalog  # 正文不进常驻目录
-        assert "skill name=\"memory\"" in catalog
-        assert "skill name=\"mood\"" not in catalog  # 程序型不进目录
-        # 停用后从目录消失
+        assert 'skill name="memory"' in catalog
+        assert 'skill name="mood"' not in catalog  # 不在技能区
+        # 技能独立：停用插件不影响技能目录（全量注入）
         client.post("/api/plugins/datetime/toggle")
-        catalog2 = collect_skill_catalog(app.state.plugins, app.state.enabled_plugins)
-        assert "skill name=\"datetime\"" not in catalog2
+        catalog2 = collect_skill_catalog(app.state.skills)
+        assert 'skill name="datetime"' in catalog2
 
 
 # --- 程序插件事件驱动（voice-input 设置随 toggle） ---

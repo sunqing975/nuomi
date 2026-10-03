@@ -53,7 +53,7 @@ nuomi/
 │   │   │   ├── partner.py     # ← partner.py：伙伴人设组装
 │   │   │   ├── models.py      # ← models.py：模型管理与 DeepSeekChat
 │   │   │   └── thread_ctx.py  # ← thread_ctx.py：请求级会话上下文（contextvars）
-│   │   ├── plugins/           # 插件内核（一切皆插件）
+│   │   ├── plugins/           # 插件内核（v0.7 三区：插件/模块/技能）
 │   │   │   ├── loader.py      # ← skills.py：三级加载/扫描/技能目录
 │   │   │   ├── lifecycle.py   # ← plugins.py：apply/toggle/列表
 │   │   │   ├── runtime.py     # ← plugin_runtime.py：事件总线/PluginContext

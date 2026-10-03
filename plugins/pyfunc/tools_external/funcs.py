@@ -3,6 +3,7 @@
 假设这是从别的智能体生态（Codex/Claude 技能、某个开源仓库）拿来的能力包，
 adapter.py 负责把它们转成自家插件体系的工具。
 """
+
 from __future__ import annotations
 
 

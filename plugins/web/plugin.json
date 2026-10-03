@@ -2,7 +2,6 @@
   "name": "web",
   "version": "0.1.0",
   "description": "Web 抓取：http_get 读取网页正文文本（stdlib 实现，浏览器/MCP 版可按需替换）",
-  "entry": "tool.py",
   "load": "lazy",
   "robust": {
     "timeout": 10,

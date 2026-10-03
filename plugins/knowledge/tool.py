@@ -3,11 +3,11 @@
 工具层只面对 KnowledgeStore 接口（app.knowledge）；具体实现（Chroma+fastembed /
 词法兜底）由 lifespan 按配置注入——"换 RAG 方案 = 换插件/配置"。
 """
+
 from __future__ import annotations
 
-from langchain_core.tools import tool
-
 from app.storage.knowledge import get_store
+from langchain_core.tools import tool
 
 
 @tool
@@ -26,9 +26,7 @@ def knowledge_search(query: str, top_k: int = 3) -> str:
     hits = get_store().search(query, top_k=min(top_k, 8))
     if not hits:
         return "知识库中没有找到相关内容。"
-    return "\n".join(
-        f"[{h['category']}]({h['score']:.2f}) {h['content']}" for h in hits
-    )
+    return "\n".join(f"[{h['category']}]({h['score']:.2f}) {h['content']}" for h in hits)
 
 
 TOOLS = [knowledge_add, knowledge_search]

@@ -10,6 +10,7 @@
 - bash -c 执行，不加载用户 shell 配置（无 -l/-i）
 注意：逻辑沙箱非 OS 级隔离（未用 bwrap/Seatbelt），写操作拦截是启发式黑名单——文档如实说明。
 """
+
 from __future__ import annotations
 
 import os
@@ -17,9 +18,8 @@ import re
 import subprocess
 from pathlib import Path
 
-from langchain_core.tools import tool
-
 from app.config import settings
+from langchain_core.tools import tool
 
 _MODES = ("read-only", "workspace-write", "full-access")
 
@@ -37,6 +37,7 @@ def set_default_mode(mode: str) -> None:
 def _effective_mode(mode: str | None) -> str:
     """工具显式 mode 优先；空/None 用运行时默认。"""
     return mode if mode in _MODES else _DEFAULT_MODE
+
 
 # 只读模式拦截的写命令（词边界匹配，启发式黑名单）
 _WRITE_CMDS = re.compile(
@@ -56,15 +57,37 @@ _ABS_PATH_WRITE_RE = re.compile(r"(?:^|\s)[12]?&?>+\s*/(?!dev/null\b)", re.M)
 _TRAVERSAL_RE = re.compile(r"(?:^|\s)[12]?&?>+\s*[^\"']*\.\.[/\\]")
 # 敏感环境变量名（shell 子进程一律剥离，防模型读取密钥）
 _SENSITIVE_ENV_KEYS = {
-    "LLM_API_KEY", "DEEPSEEK_API_KEY", "ARK_API_KEY", "OPENAI_API_KEY",
-    "ANTHROPIC_API_KEY", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY",
-    "GITHUB_TOKEN", "NPM_TOKEN", "JWT_SECRET", "PGPASSWORD", "DATABASE_URL",
+    "LLM_API_KEY",
+    "DEEPSEEK_API_KEY",
+    "ARK_API_KEY",
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "GITHUB_TOKEN",
+    "NPM_TOKEN",
+    "JWT_SECRET",
+    "PGPASSWORD",
+    "DATABASE_URL",
 }
 # 子进程环境白名单（只继承这些，其余丢弃）
 _ENV_ALLOW = {
-    "PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE", "LC_MESSAGES", "TERM",
-    "TZ", "PWD", "SHELL", "USER", "LOGNAME", "SSH_AUTH_SOCK", "EDITOR",
-    "PYTHONIOENCODING", "VIRTUAL_ENV",
+    "PATH",
+    "HOME",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "LC_MESSAGES",
+    "TERM",
+    "TZ",
+    "PWD",
+    "SHELL",
+    "USER",
+    "LOGNAME",
+    "SSH_AUTH_SOCK",
+    "EDITOR",
+    "PYTHONIOENCODING",
+    "VIRTUAL_ENV",
 }
 
 

@@ -9,6 +9,7 @@ import "./modules/ui-input/input.css";
 import "./modules/ui-model-selection/model.css";
 import "./modules/ui-plugin-manager/plugin.css";
 import "./modules/ui-settings/settings.css";
+import "./modules/ui-robot/robot.css";
 
 /** 全局错误边界：任何渲染异常都显示可恢复提示，而不是整页黑屏。 */
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: string | null }> {

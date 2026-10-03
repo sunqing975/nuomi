@@ -9,6 +9,7 @@
 
 "换 RAG 方案 = 换插件/配置"：入口处按 store_type 工厂分发，上层（工具层）只面对接口。
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -77,16 +78,15 @@ class ChromaStore:
             return []
         qv = list(_get_embedder().query_embed(query))[0]
         res = self._collection().query(
-            query_embeddings=[qv.tolist()], n_results=top_k,
+            query_embeddings=[qv.tolist()],
+            n_results=top_k,
             include=["documents", "metadatas", "distances"],
         )
         out = []
         for doc, meta, dist in zip(
-            res["documents"][0], res["metadatas"][0], res["distances"][0]
+            res["documents"][0], res["metadatas"][0], res["distances"][0], strict=False
         ):
-            out.append(
-                {"content": doc, "category": meta.get("category", ""), "score": 1 - dist}
-            )
+            out.append({"content": doc, "category": meta.get("category", ""), "score": 1 - dist})
         return out
 
     def count(self) -> int:
@@ -140,7 +140,9 @@ class LexicalStore:
             if query in it["content"]:
                 overlap += 2
             if overlap > 0:
-                scored.append({"content": it["content"], "category": it["category"], "score": overlap})
+                scored.append(
+                    {"content": it["content"], "category": it["category"], "score": overlap}
+                )
         scored.sort(key=lambda x: x["score"], reverse=True)
         return scored[:top_k]
 

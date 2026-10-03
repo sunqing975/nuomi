@@ -2,7 +2,6 @@
   "name": "mcp-notes",
   "version": "0.2.0",
   "description": "外部能力示例：本地便签 MCP server（stdio），经 langchain-mcp-adapters 接入",
-  "entry": "tool.py",
   "load": "lazy",
   "approval": [
     "notes_delete"

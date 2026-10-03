@@ -6,42 +6,94 @@
  * - 消息状态/流式/自动滚动由 assistant-ui runtime 管理（NuomiAdapter 桥接后端 SSE）
  */
 import { useState } from "react";
+import ReactMarkdown from "react-markdown";
 import { ThreadPrimitive, MessagePrimitive, useAuiState } from "@assistant-ui/react";
 import type {
   TextMessagePartProps,
   ReasoningMessagePartProps,
   ToolCallMessagePartProps,
 } from "@assistant-ui/core/react";
-import PetBuddy, { PetMood } from "../ui-avatar/PetBuddy";
 import { t } from "../../i18n";
 import { SendIcon, SparkleIcon, ZapIcon } from "../icons";
 
 // ---------- part 组件 ----------
 
+/** 对话流错误卡片（对齐 Harness：API 错误原文直接渲染在对话流）。
+ *  后端 error 事件经 NuomiAdapter 以 "⚠️ " 前缀注入文本 part。 */
 function TextPart({ text }: TextMessagePartProps) {
-  return <div className="bubble">{text || "…"}</div>;
+  const body = text || "…";
+  if (body.startsWith("⚠️ ")) {
+    const detail = body.slice(3).trim();
+    return (
+      <div className="msg-error-card" title={detail}>
+        <div className="msg-error-title">⚠️ 处理失败</div>
+        <pre className="msg-error-body">{detail}</pre>
+      </div>
+    );
+  }
+  // Markdown 渲染：react-markdown（成熟开源），气泡内样式见 .bubble .md-* 系列
+  return (
+    <div className="bubble">
+      <ReactMarkdown>{body}</ReactMarkdown>
+    </div>
+  );
 }
 
 function ReasoningPart({ text }: ReasoningMessagePartProps) {
-  const [open, setOpen] = useState(false);
+  // 深度思考流式展示：思考进行中自动展开逐字滚动，输出完成后自动折叠；
+  // 用户手动点过徽章后以其选择为准（manual 覆盖流式行为）
+  const isRunning = useAuiState((s) => s.thread.isRunning);
+  const [manual, setManual] = useState<boolean | null>(null);
+  const open = manual ?? isRunning;
+  const toggle = () => setManual((m) => (m === null ? !isRunning : !m));
   return (
     <div className={`reasoning-row ${open ? "open" : ""}`}>
-      <button className="reasoning-toggle" onClick={() => setOpen((v) => !v)}>
+      <button className="reasoning-toggle" onClick={toggle}>
         <SparkleIcon />
-        <span>深度思考</span>
+        <span>{t("chat.deepThinking")}</span>
         <span className="reasoning-len">{t("chat.charCount", { n: text.length })}</span>
+        {isRunning && <span className="reasoning-caret" aria-hidden>›</span>}
       </button>
       {open && <div className="reasoning-body">{text}</div>}
     </div>
   );
 }
 
-function ToolCallPart({ toolName }: ToolCallMessagePartProps) {
+function ToolCallPart({ toolName, argsText, result }: ToolCallMessagePartProps) {
+  const [open, setOpen] = useState(false);
+  const done = Boolean(result);
   return (
-    <div className="tool-row">
-      <ZapIcon size={12} />
-      <span>调用工具</span>
-      <code>{toolName}</code>
+    <div className={`tool-card ${open ? "open" : ""} ${done ? "done" : "running"}`}>
+      <button className="tool-card-head" onClick={() => setOpen((v) => !v)}>
+        <ZapIcon size={13} />
+        <span>{t("chat.toolCall")}</span>
+        <code>{toolName}</code>
+        <span className="tool-card-status">{done ? t("chat.toolDone") : t("chat.toolRunning")}</span>
+        <span className="tool-card-caret" aria-hidden>
+          ›
+        </span>
+      </button>
+      {open && (
+        <div className="tool-card-body">
+          {argsText && argsText !== "{}" && (
+            <div className="tool-card-sec">
+              <div className="tool-card-label">{t("chat.toolArgs")}</div>
+              <pre className="tool-card-json">{argsText}</pre>
+            </div>
+          )}
+          {result !== undefined && (
+            <div className="tool-card-sec">
+              <div className="tool-card-label">{t("chat.toolResult")}</div>
+              <pre className="tool-card-json">{String(result)}</pre>
+            </div>
+          )}
+          {(!argsText || argsText === "{}") && result === undefined && (
+            <div className="tool-card-sec">
+              <div className="tool-card-label">{t("chat.toolNoDetail")}</div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -97,37 +149,14 @@ function ChatHero({ teamMode, onSuggestion }: { teamMode: boolean; onSuggestion:
 // ---------- 主组件 ----------
 
 export default function ChatWindow({
-  threadTitle,
   teamMode,
-  mood,
   onSuggestion,
 }: {
-  threadTitle: string | null;
   teamMode: boolean;
-  mood: PetMood;
   onSuggestion: (text: string) => void;
 }) {
-  const busy = useAuiState((s) => s.thread.isRunning);
-  const PLACEHOLDER_TITLES = ["新会话", "新建会话", "未命名"];
-  const showTitle = !!threadTitle && !PLACEHOLDER_TITLES.includes(threadTitle);
-
   return (
     <div className="chat">
-      {/* 伙伴栏：表情随回答情绪变化 */}
-      <div className="partner-bar">
-        <PetBuddy mood={mood} size={92} speech={busy ? t("chat.pondering") : null} />
-        <div className="partner-meta">
-          <div className="partner-name">{t("brand.name")}</div>
-          <div className={`partner-status ${busy ? "busy" : ""}`}>{t("chat.online")}</div>
-        </div>
-      </div>
-
-      {showTitle && (
-        <div className="chat-header">
-          <div className="chat-title">{threadTitle}</div>
-        </div>
-      )}
-
       <ThreadPrimitive.Root>
         <ThreadPrimitive.Viewport className="thread-viewport">
           <ThreadPrimitive.If empty>

@@ -3,6 +3,7 @@
 Phase 0 打字核心；Phase 1 由 NuomiMiddleware 每轮注入人设+记忆+摘要，system_prompt 传 None；
 Phase 2 挂插件调度。决策 1：多用户移除，仅 SQLite checkpointer（统一库 nuomi.db）。
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -27,12 +28,14 @@ DEFAULT_SYSTEM_PROMPT = (
 
 
 def build_llm(settings: Settings) -> ChatOpenAI:
+    from pydantic import SecretStr
+
     from .models import DeepSeekChat
 
     # 无 temperature（对齐 dsh：不暴露温度，交给提供商默认）
     return DeepSeekChat(
         model=settings.llm_model,
-        api_key=settings.llm_api_key,
+        api_key=SecretStr(settings.llm_api_key) if settings.llm_api_key else None,
         base_url=settings.llm_base_url,
         streaming=True,
     )

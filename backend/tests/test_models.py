@@ -2,13 +2,13 @@
 
 对齐 DeepSeek Harness ModelSelection：{provider, model, reasoningEffort?}，无 temperature。
 """
+
 from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi.testclient import TestClient
-
 from app.main import build_app
+from fastapi.testclient import TestClient
 
 from .fake_llm import FakeChatModel
 
@@ -19,7 +19,7 @@ def _make_app(tmp_path):
     return build_app(
         llm=FakeChatModel(),
         db_path=str(tmp_path / "t.sqlite"),
-        skills_dir=str(REPO_ROOT / "plugins"),
+        plugins_dir=str(REPO_ROOT / "plugins"),
         memory_file=str(tmp_path / "mem" / "nuomi" / "facts.json"),
         knowledge_store_type="lexical",
         knowledge_dir=str(tmp_path / "kb"),
@@ -120,7 +120,6 @@ def test_custom_provider_crud_and_masked_key(tmp_path):
     with TestClient(app) as client:
         r = client.post("/api/models/custom", json=_custom_body())
         assert r.status_code == 200, r.text
-        provs = {p["key"]: p for p in r.json()["providers"]}
         custom = [p for p in r.json()["providers"] if p["custom"]]
         assert len(custom) == 1
         cp = custom[0]
@@ -164,7 +163,7 @@ def test_custom_provider_activate_and_restore(tmp_path):
     # 重启（不带测试 llm 注入）：active_model 持久化 → 恢复
     app2 = build_app(
         db_path=str(tmp_path / "t.sqlite"),
-        skills_dir=str(REPO_ROOT / "plugins"),
+        plugins_dir=str(REPO_ROOT / "plugins"),
         knowledge_store_type="lexical",
         knowledge_dir=str(tmp_path / "kb"),
     )

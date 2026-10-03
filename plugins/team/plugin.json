@@ -1,6 +1,0 @@
-{
-  "name": "team",
-  "version": "1.0.0",
-  "description": "智能体团队：companion 陪伴 + researcher 研究员 子 Agent，由 LLM 自动路由分工；关闭则退化为单 Agent",
-  "entry": "hook.py"
-}

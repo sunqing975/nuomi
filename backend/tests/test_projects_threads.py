@@ -1,11 +1,12 @@
 """V3 增强：项目 / 会话 API + chat 事件（标题/触摸/reasoning/usage）。"""
+
 from __future__ import annotations
 
 from pathlib import Path
 
+from app.main import build_app
 from fastapi.testclient import TestClient
 
-from app.main import build_app
 from tests.fake_llm import FakeChatModel
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -15,7 +16,7 @@ def _make_app(tmp_path):
     return build_app(
         llm=FakeChatModel(),
         db_path=str(tmp_path / "t.sqlite"),
-        skills_dir=str(REPO_ROOT / "plugins"),
+        plugins_dir=str(REPO_ROOT / "plugins"),
         memory_file=str(tmp_path / "mem" / "facts.json"),
         knowledge_store_type="lexical",
         knowledge_dir=str(tmp_path / "kb"),
@@ -116,7 +117,7 @@ def test_chat_done_carries_usage_and_emotion(tmp_path):
     with TestClient(app) as client:
         r = client.post("/api/chat", json={"message": "今天天气怎么样", "thread_id": "wx1"})
         assert r.status_code == 200
-        done = [l for l in r.text.splitlines() if l.startswith("event: done")]
+        done = [line for line in r.text.splitlines() if line.startswith("event: done")]
         assert done
         for i, line in enumerate(r.text.splitlines()):
             if line.startswith("event: done"):

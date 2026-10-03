@@ -3,6 +3,7 @@
 覆盖：FileMemoryBackend（内置 SQLite provider）增删改查/双档快照/容量截取/
 唯一子串定位；快照渲染格式；Mem0Backend 的契约映射（fake mem0，不依赖外部服务）。
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -151,7 +152,8 @@ def _install_fake_mem0(monkeypatch):
 
 def _load_mem0_hook():
     spec = importlib.util.spec_from_file_location(
-        "memory_mem0_hook", REPO_ROOT / "plugins" / "memory-mem0" / "hook.py"
+        "memory_mem0_hook",
+        REPO_ROOT / "backend" / "app" / "modules" / "memory-mem0" / "memory_mem0.py",
     )
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)

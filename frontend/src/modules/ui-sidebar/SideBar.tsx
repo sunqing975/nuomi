@@ -1,21 +1,20 @@
 /** ui-sidebar：单栏侧边栏（工作区对齐 dsh ui-workspace WorkspaceBrowser）。
- *  自上而下：品牌行 → 新会话 → 导航（插件）→ 工作区浏览器（会话/文件双视图）
+ *  自上而下：品牌行 → 新会话 → 导航（插件）→ 工作区浏览器（会话视图）
  *  → 底部设置。
  *  会话视图：项目（Workspace）直接铺为可折叠分组（无下拉），未分组会话为独立组；
  *  组内会话默认 5 条 + 展开其余/收起、置顶（本地持久化）、全局搜索、空标题未命名。
- *  文件视图（阶段 B）：工作区目录树 = 前端项目树（FilesPanel）。 */
+ *  文件树已移出侧栏：主区右上角按钮展开当前项目的文件树抽屉（2026-10-02）。 */
 import { useEffect, useState } from "react";
 import type { ProjectInfo, ThreadInfo } from "../../api";
 import { t as tr } from "../../i18n";
 import ConfirmDialog, { type ConfirmState } from "../ui-confirm/ConfirmDialog";
 import PromptDialog, { type PromptState } from "../ui-confirm/PromptDialog";
-import FilesPanel from "./FilesPanel";
 import {
-  ChevronDownIcon,
   FolderIcon,
   FolderPlusIcon,
   GearIcon,
   LogoMark,
+  MoreIcon,
   PencilIcon,
   PinIcon,
   PlusIcon,
@@ -77,11 +76,9 @@ export default function SideBar({
   onSelectThread,
   onSelectProject,
   onCreateProject,
-  onSetProjectDirectory,
   onRenameThread,
   onDeleteThread,
   onDeleteProject,
-  filesRefreshTick = 0,
 }: {
   tab: "chat" | "plugins";
   projects: ProjectInfo[];
@@ -96,15 +93,10 @@ export default function SideBar({
   onSelectThread: (id: string) => void;
   onSelectProject: (id: number | null) => void;
   onCreateProject: (name: string, directory?: string) => void;
-  /** 绑定 / 解绑项目目录（传 null 解绑） */
-  onSetProjectDirectory: (projectId: number, directory: string | null) => void | Promise<void>;
   onRenameThread: (id: string, title: string) => void;
   onDeleteThread: (id: string) => void;
   onDeleteProject: (id: number) => void;
-  /** 工作区文件树刷新触发（新建项目/删项目后 +1，FilesPanel 重拉） */
-  filesRefreshTick?: number;
 }) {
-  const [view, setView] = useState<"sessions" | "files">("sessions");
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameText, setRenameText] = useState("");
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
@@ -114,6 +106,8 @@ export default function SideBar({
   const [pinned, setPinned] = useState<Record<number, string[]>>(() => loadJson(PIN_KEY, {}));
   const [expanded, setExpanded] = useState<Record<number, boolean>>(() => loadJson(EXPANDED_KEY, {}));
   const [groupOpen, setGroupOpen] = useState<Record<string, boolean>>(() => loadJson(GROUP_KEY, {}));
+  /** 当前打开「更多操作」下拉的项目组 key */
+  const [moreKey, setMoreKey] = useState<string | null>(null);
 
   useEffect(() => localStorage.setItem(PIN_KEY, JSON.stringify(pinned)), [pinned]);
   useEffect(() => localStorage.setItem(EXPANDED_KEY, JSON.stringify(expanded)), [expanded]);
@@ -139,6 +133,7 @@ export default function SideBar({
 
   const toggleGroup = (g: Group) => {
     setGroupOpen((o) => ({ ...o, [g.key]: !(o[g.key] ?? true) }));
+    setMoreKey(null);
   };
 
   const renderThreads = (g: Group) => {
@@ -290,57 +285,37 @@ export default function SideBar({
 
       {/* 工作区浏览器（dsh WorkspaceBrowser：标题行右侧图标，非整行搜索框） */}
       <div className="workspace-head">
-        <span className="workspace-tabs">
-          <button
-            className={`ws-tab ${view === "sessions" ? "on" : ""}`}
-            onClick={() => setView("sessions")}
-          >
-            {tr("sidebar.tabSessions")}
-          </button>
-          <button
-            className={`ws-tab ${view === "files" ? "on" : ""}`}
-            onClick={() => setView("files")}
-          >
-            {tr("sidebar.tabFiles")}
-          </button>
-        </span>
+        <span className="workspace-tabs">{tr("sidebar.tabSessions")}</span>
         <span className="workspace-head-actions">
-          {view === "sessions" && (
-            <>
-              <button
-                className={`icon-btn ${searchOpen ? "on" : ""}`}
-                title={tr("sidebar.searchPlaceholder")}
-                onClick={() => setSearchOpen((v) => !v)}
-              >
-                <SearchIcon />
-              </button>
-              <button
-                className="icon-btn"
-                title={tr("sidebar.newProjectIcon")}
-                onClick={() =>
-                  setPrompt({
-                    message: tr("sidebar.newProjectName"),
-                    placeholder: tr("sidebar.newProjectPlaceholder"),
-                    field2: {
-                      label: tr("sidebar.projectDirLabel"),
-                      placeholder: tr("sidebar.projectDirPlaceholder"),
-                    },
-                    confirmText: tr("common.confirm"),
-                    onSubmit: (name, dir) => onCreateProject(name, dir),
-                  })
-                }
-              >
-                <FolderPlusIcon />
-              </button>
-            </>
-          )}
+          <button
+            className={`icon-btn ${searchOpen ? "on" : ""}`}
+            title={tr("sidebar.searchPlaceholder")}
+            onClick={() => setSearchOpen((v) => !v)}
+          >
+            <SearchIcon />
+          </button>
+          <button
+            className="icon-btn"
+            title={tr("sidebar.newProjectIcon")}
+            onClick={() =>
+              setPrompt({
+                message: tr("sidebar.newProjectName"),
+                placeholder: tr("sidebar.newProjectPlaceholder"),
+                field2: {
+                  label: tr("sidebar.projectDirLabel"),
+                  placeholder: tr("sidebar.projectDirPlaceholder"),
+                },
+                confirmText: tr("common.confirm"),
+                onSubmit: (name, dir) => onCreateProject(name, dir),
+              })
+            }
+          >
+            <FolderPlusIcon />
+          </button>
         </span>
       </div>
 
-      {view === "files" ? (
-        <FilesPanel refreshTick={filesRefreshTick ?? 0} />
-      ) : (
-        <div className="session-tree">
+      <div className="session-tree">
         {searchOpen && (
           <input
             className="thread-search"
@@ -374,67 +349,51 @@ export default function SideBar({
                   title={tr("sidebar.toggleGroup")}
                 >
                   <span className="group-icon"><FolderIcon /></span>
-                  <span className="group-title">
-                    {g.name}
-                    {g.projectId !== null && projects.find((p) => p.id === g.projectId)?.directory && (
-                      <span className="group-dir" title={projects.find((p) => p.id === g.projectId)?.directory ?? ""}>
-                        {projects.find((p) => p.id === g.projectId)?.directory}
-                      </span>
-                    )}
-                  </span>
+                  <span className="group-title">{g.name}</span>
                   <span className="group-count">{count}</span>
-                  {g.projectId !== null && (
-                    <button
-                      className="group-dir-btn"
-                      title={tr("sidebar.projectDirBind")}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const cur = projects.find((p) => p.id === g.projectId)?.directory ?? "";
-                        setPrompt({
-                          message: cur
-                            ? tr("sidebar.projectDirEdit", { dir: cur })
-                            : tr("sidebar.projectDirBind"),
-                          placeholder: tr("sidebar.projectDirPlaceholder"),
-                          confirmText: tr("common.confirm"),
-                          onSubmit: (dir) => {
-                            if (dir) void onSetProjectDirectory(g.projectId as number, dir);
-                            else void onSetProjectDirectory(g.projectId as number, null);
-                          },
-                        });
-                      }}
-                    >
-                      <FolderIcon size={12} />
-                    </button>
-                  )}
                   <button
                     className="group-new"
                     title={tr("sidebar.newThreadIn")}
                     onClick={(e) => {
                       e.stopPropagation();
                       onNewThreadIn(g.projectId);
-                          }}
+                    }}
                   >
                     <PlusIcon size={12} />
                   </button>
                   {g.projectId !== null && (
-                    <button
-                      className="group-del"
-                      title={tr("sidebar.deleteProject")}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setConfirm({
-                          message: tr("sidebar.deleteProjectConfirm", { name: g.name }),
-                          danger: true,
-                          onConfirm: () => onDeleteProject(g.projectId as number),
-                        });
-                      }}
-                    >
-                      <TrashIcon size={12} />
-                    </button>
+                    <div className="group-more">
+                      <button
+                        className={`icon-btn group-more-btn ${moreKey === g.key ? "on" : ""}`}
+                        title={tr("sidebar.moreActions")}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setMoreKey((k) => (k === g.key ? null : g.key));
+                        }}
+                      >
+                        <MoreIcon />
+                      </button>
+                      {moreKey === g.key && (
+                        <div className="group-menu">
+                          <button
+                            className="group-menu-item danger"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setMoreKey(null);
+                              setConfirm({
+                                message: tr("sidebar.deleteProjectConfirm", { name: g.name }),
+                                danger: true,
+                                onConfirm: () => onDeleteProject(g.projectId as number),
+                              });
+                            }}
+                          >
+                            <TrashIcon size={13} />
+                            {tr("sidebar.deleteProject")}
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   )}
-                  <span className="model-caret group-caret">
-                    <ChevronDownIcon />
-                  </span>
                 </div>
                 {open && renderThreads(g)}
               </div>
@@ -443,7 +402,6 @@ export default function SideBar({
           {searching && totalMatches === 0 && <div className="thread-empty">{tr("sidebar.noMatch")}</div>}
         </div>
       </div>
-      )}
 
       {/* 底部设置 */}
       <div className="sidebar-foot">

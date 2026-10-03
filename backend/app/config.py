@@ -7,6 +7,7 @@
   PLUGINS_DIR / PARTNERS_DIR 覆盖（指向 PyInstaller 只读资源区）。
 - 工作区默认 ~/Documents/Nuomi（用户可见），可用 NUOMI_WORKSPACE 覆盖。
 """
+
 from __future__ import annotations
 
 import os
@@ -49,10 +50,17 @@ class Settings(BaseSettings):
     # --- 单一数据根（NUOMI_HOME；不设置则用默认用户应用数据目录） ---
     nuomi_home: str | None = None
 
-    # --- 统一插件根目录（源码默认仓库 plugins/；打包 sidecar 用 PLUGINS_DIR 覆盖） ---
+    # --- 扩展体系三区（v0.7 对齐 Octop：插件 / 技能 / 模块） ---
+    # 插件（plugins/）：分发单元，给 LLM 注册工具；打包 sidecar 用 PLUGINS_DIR 覆盖
     plugins_dir: str = str(REPO_ROOT / "plugins")
+    # 技能（skills/）：独立文档资产（SKILL.md），与插件解耦；打包 sidecar 用 SKILLS_DIR 覆盖
+    skills_dir: str = str(REPO_ROOT / "skills")
+    # 模块（backend/app/modules/）：内核组成部分（service-* / preset / hook 类），随 Python 代码打包
+    modules_dir: str = str(REPO_ROOT / "backend" / "app" / "modules")
     # --- 伙伴目录（同理，PARTNERS_DIR 覆盖） ---
     partners_dir: str = str(REPO_ROOT / "partners")
+    # --- 运行时注入（非环境字段）：设置页/首启向导保存的工作区覆盖 ---
+    _workspace_override: str | None = None
 
     # --- 伙伴与记忆 ---
     partner_name: str = "nuomi"
@@ -139,7 +147,11 @@ class Settings(BaseSettings):
         > 默认 ~/Documents/Nuomi。
         """
         env_set = "NUOMI_WORKSPACE" in os.environ or "WORKSPACE_DIR" in os.environ
-        raw = self.workspace_dir if env_set else getattr(self, "_workspace_override", None) or self.workspace_dir
+        raw = (
+            self.workspace_dir
+            if env_set
+            else getattr(self, "_workspace_override", None) or self.workspace_dir
+        )
         p = Path(raw).expanduser()
         if not p.is_absolute():
             p = self.data_root / p

@@ -8,6 +8,7 @@
 连接规范：所有连接设 WAL + busy_timeout（LangGraph 的 aiosqlite 与我们的
 sqlite3 多连接并发读写同一文件时避免 database is locked）。
 """
+
 from __future__ import annotations
 
 import sqlite3

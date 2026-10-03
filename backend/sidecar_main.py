@@ -2,7 +2,7 @@
 
 职责（决策 5 简化版：单一数据根，不逐项设置数据路径）：
 1. 解析 --port（Tauri 侧探测的空闲端口），以 127.0.0.1 监听。
-2. 资源目录指向打包内嵌目录（sys._MEIPASS 的 plugins/partners，只读）；
+2. 资源目录指向打包内嵌目录（sys._MEIPASS 的 plugins/partners/skills，只读）；
    数据路径全部由 config 的 NUOMI_HOME 单一规则解析（默认
    ~/Library/Application Support/Nuomi），打包形态无需覆盖。
 3. 启动 uvicorn 托管 FastAPI app。
@@ -17,14 +17,16 @@ import sys
 
 
 def _setup_env() -> None:
-    """打包形态：plugins/partners 落在 PyInstaller 只读资源区（sys._MEIPASS）。
+    """打包形态：plugins/partners/skills 落在 PyInstaller 只读资源区（sys._MEIPASS）。
 
-    源码运行（dev）时这些变量不设置，config 默认指向仓库 plugins/、partners/。
+    源码运行（dev）时这些变量不设置，config 默认指向仓库 plugins/、partners/、skills/。
+    模块（backend/app/modules/）随 Python 代码打包，无需覆盖。
     """
     if getattr(sys, "frozen", False):
         meipass = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
         os.environ.setdefault("PLUGINS_DIR", os.path.join(meipass, "plugins"))
         os.environ.setdefault("PARTNERS_DIR", os.path.join(meipass, "partners"))
+        os.environ.setdefault("SKILLS_DIR", os.path.join(meipass, "skills"))
     # embedding 模型下载镜像（直连 huggingface 实测超时）
     os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 

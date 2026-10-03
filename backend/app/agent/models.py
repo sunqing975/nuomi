@@ -8,6 +8,7 @@
 - API Key 一律掩码回显；无 key 的供应商标记不可用（输入栏模型菜单只列可用）
 - 激活持久化：/api/models/activate 后写入 settings.global["active_model"]，启动时恢复
 """
+
 from __future__ import annotations
 
 import uuid
@@ -76,7 +77,12 @@ def custom_key(base_url: str, name: str) -> str:
     """生成唯一供应商 key（url 主机 + 名称 slug + 随机后缀，避免重名覆盖）。"""
     import re
 
-    host = re.sub(r"[^a-z0-9]", "", (base_url or "provider").split("//")[-1].split("/")[0].lower())[:16] or "provider"
+    host = (
+        re.sub(r"[^a-z0-9]", "", (base_url or "provider").split("//")[-1].split("/")[0].lower())[
+            :16
+        ]
+        or "provider"
+    )
     slug = re.sub(r"[^a-z0-9]", "", name.lower())[:12] or "custom"
     return f"custom-{host}-{slug}-{uuid.uuid4().hex[:4]}"
 
@@ -124,7 +130,9 @@ def list_providers(
                     "context_window": mk.get("context_window"),
                     "max_output": mk.get("max_output"),
                     "active": cp["key"] == current_provider and mk["id"] == current_model,
-                    "available": bool(cp.get("api_key") or keys.get(f"{PROVIDER_KEY_PREFIX}{cp['key']}")),
+                    "available": bool(
+                        cp.get("api_key") or keys.get(f"{PROVIDER_KEY_PREFIX}{cp['key']}")
+                    ),
                     "configured": bool(cp.get("api_key")),
                 }
             )
@@ -203,12 +211,12 @@ def build_model_llm(
     api_key = cp.get("api_key") or keys.get(f"{PROVIDER_KEY_PREFIX}{provider}") or ""
     base_url = cp.get("base_url", "")
     efforts = mk.get("efforts") or ["medium"]
-    kwargs: dict = dict(
-        model=model_key,
-        api_key=api_key,
-        base_url=base_url,
-        streaming=streaming,
-    )
+    kwargs: dict = {
+        "model": model_key,
+        "api_key": api_key,
+        "base_url": base_url,
+        "streaming": streaming,
+    }
     max_output = mk.get("max_output")
     if max_tokens is not None:
         kwargs["max_tokens"] = int(max_tokens)

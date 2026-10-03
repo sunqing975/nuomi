@@ -2,7 +2,6 @@
   "name": "knowledge",
   "version": "0.1.0",
   "description": "RAG 知识库：语义存取资料（Chroma + fastembed，方案可插拔）",
-  "entry": "tool.py",
   "load": "eager",
   "system_instruction": "当用户要求把一段资料、文章或知识点保存起来，或询问你之前存入过的资料内容时，必须使用 knowledge_add / knowledge_search 工具。"
 }

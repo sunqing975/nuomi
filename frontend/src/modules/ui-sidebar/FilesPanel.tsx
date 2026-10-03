@@ -1,12 +1,12 @@
-/** ui-sidebar/FilesPanel：工作区文件树（阶段 B：前端项目树 = 工作区目录）。
- *  展示 /api/workspace/tree 返回的目录树：目录行可展开/收起，文件行显示大小；
- *  隐藏项/依赖目录由后端跳过。展开状态本地持久化（nuomi.sidebar.filesOpen）。 */
+/** ui-chat/FilesPanel：项目文件树（主区右上角抽屉内容，2026-10-02 从侧栏移入）。
+ *  展示 /api/projects/{id}/tree 返回的目录树：目录行可展开/收起，文件行显示大小；
+ *  隐藏项/依赖目录由后端跳过。展开状态本地持久化（nuomi.filesOpen）。 */
 import { useEffect, useState } from "react";
-import { fetchWorkspaceTree, type WorkspaceEntry, type WorkspaceTree } from "../../api";
+import { fetchProjectTree, type WorkspaceEntry, type WorkspaceTree } from "../../api";
 import { t as tr } from "../../i18n";
 import { ChevronDownIcon, FolderIcon } from "../icons";
 
-const OPEN_KEY = "nuomi.sidebar.filesOpen";
+const OPEN_KEY = "nuomi.filesOpen";
 
 function fmtSize(n?: number): string {
   if (n == null) return "";
@@ -24,19 +24,21 @@ function loadOpen(): Record<string, boolean> {
   }
 }
 
-export default function FilesPanel({ refreshTick }: { refreshTick: number }) {
+export default function FilesPanel({ projectId, refreshTick }: { projectId: number; refreshTick: number }) {
   const [tree, setTree] = useState<WorkspaceTree | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<Record<string, boolean>>(loadOpen);
 
   useEffect(() => {
-    fetchWorkspaceTree()
+    setTree(null);
+    setError(null);
+    fetchProjectTree(projectId)
       .then((t) => {
         setTree(t);
         setError(null);
       })
       .catch((e) => setError(String(e?.message ?? e)));
-  }, [refreshTick]);
+  }, [projectId, refreshTick]);
 
   useEffect(() => {
     try {
@@ -99,10 +101,12 @@ export default function FilesPanel({ refreshTick }: { refreshTick: number }) {
       <div className="files-head">
         <span className="files-root" title={tree?.root ?? ""}>{tree?.root ?? tr("sidebar.filesRoot")}</span>
       </div>
-      {error ? (
+      {error === "NO_DIR" ? (
+        <div className="files-empty">{tr("sidebar.filesNoDir")}</div>
+      ) : error ? (
         <div className="files-empty error">{tr("sidebar.filesError")}</div>
       ) : !tree ? (
-        <div className="files-empty">{tr("sidebar.filesRoot")}…</div>
+        <div className="files-empty">{tr("sidebar.filesLoading")}</div>
       ) : tree.entries.length === 0 ? (
         <div className="files-empty">{tr("sidebar.filesEmpty")}</div>
       ) : (

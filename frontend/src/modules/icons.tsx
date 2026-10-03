@@ -235,6 +235,17 @@ export function MenuIcon(props: IconProps) {
   );
 }
 
+/** 更多操作（水平三点）：侧栏项目组头的下拉入口 */
+export function MoreIcon(props: IconProps) {
+  return (
+    <Base {...props}>
+      <circle cx="5.5" cy="12" r="1.4" />
+      <circle cx="12" cy="12" r="1.4" />
+      <circle cx="18.5" cy="12" r="1.4" />
+    </Base>
+  );
+}
+
 /** 眼睛：密钥可见性切换（设置-模型 API Key） */
 export function EyeIcon(props: IconProps) {
   return (
@@ -264,6 +275,40 @@ export function InboxIcon(props: IconProps) {
       <path d="M3.5 13.5 5.2 5.9A2 2 0 0 1 7.1 4.5h9.8a2 2 0 0 1 1.9 1.4l1.7 7.6" />
       <path d="M3.5 13.5h4.6a2 2 0 0 1 2 1.6 2.4 2.4 0 0 0 4.7 0 2 2 0 0 1 2-1.6h4.6" />
       <path d="M3.5 13.5V18a1.5 1.5 0 0 0 1.5 1.5h14A1.5 1.5 0 0 0 20.5 18v-4.5" />
+    </Base>
+  );
+}
+
+/** 终端：右栏面板（对齐 Harness 新建终端） */
+export function TerminalIcon(props: IconProps) {
+  return (
+    <Base {...props}>
+      <rect x="3" y="4.5" width="18" height="15" rx="2.5" />
+      <path d="m6.5 9.5 3 2.5-3 2.5" />
+      <path d="M12 14.5h5" />
+    </Base>
+  );
+}
+
+/** 浏览器/地球：右栏面板（对齐 Harness 浏览器） */
+export function GlobeIcon(props: IconProps) {
+  return (
+    <Base {...props}>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M3.5 12h17" />
+      <path d="M12 3.5c2.5 2.3 3.7 5.2 3.7 8.5s-1.2 6.2-3.7 8.5c-2.5-2.3-3.7-5.2-3.7-8.5s1.2-6.2 3.7-8.5Z" />
+    </Base>
+  );
+}
+
+/** 机器人头：机器人模式（双模式切换） */
+export function RobotIcon(props: IconProps) {
+  return (
+    <Base {...props}>
+      <rect x="4" y="8" width="16" height="11" rx="3" />
+      <path d="M12 8V5.5M9.5 5.5h5" />
+      <path d="M8.5 13h.01M15.5 13h.01" />
+      <path d="M9.5 16.5h5" />
     </Base>
   );
 }

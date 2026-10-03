@@ -89,6 +89,8 @@
   --radius-md: 8px;
   --radius-lg: 12px;
   --radius-xl: 16px;
+  --radius-2xl: 22px; /* ChatGPT 风格消息气泡 */
+  --radius-3xl: 28px; /* ChatGPT 风格输入框 */
   --radius-pill: 999px;
 
   /* ---- 阴影 ---- */

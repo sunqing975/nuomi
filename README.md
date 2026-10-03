@@ -1,10 +1,12 @@
 # 糯米 · Nuomi V2
 
-全能型个人智能体（对齐 DeepSeek Harness 方向，打字为核心，能力全部插件化）——面向求职作品集的完整项目。
+**有温度的全能智能体**：会干活，也记得你。
 
-主线技术栈：**LangChain / LangGraph + FastAPI + React**，前后端分离 + Cordis 风格插件内核（一切皆插件）+ 执行能力（shell/fs）+ 上下文工程 + 记忆/知识/协作。聊天界面接入 **assistant-ui**（headless primitives + LocalRuntime）渲染流式回复、深度思考（推理过程折叠块）与工具调用卡片。
+糯米是一个桌面个人智能体。内核对齐 DeepSeek Harness 方向——打字为核心、能力全部插件化——具备完整的执行能力（shell/fs 沙箱）、上下文工程与记忆/知识/协作；同时保留 v1 的陪伴人格层（情绪、表情、伙伴记忆），让你面对的不仅是一个冷工具，而是一个记得你的助手。
 
-> 定位沿革：v1/v2 曾是陪伴型智能体（伙伴人格 + 情绪表情）；2026-10-01 起转型为全能智能体，陪伴资产保留为可选"人格层"插件，不再是产品主定位。
+主线技术栈：**LangChain / LangGraph + FastAPI + React**，前后端分离 + Cordis 风格扩展内核（v0.7 三区：插件=可选能力 / 模块=内核组成部分 / 技能=独立文档资产）+ 执行能力（shell/fs）+ 上下文工程 + 记忆/知识/协作。聊天界面接入 **assistant-ui**（headless primitives + LocalRuntime）渲染流式回复、深度思考（推理过程折叠块）与工具调用卡片。
+
+> 定位沿革：v1/v2 曾是陪伴型智能体（伙伴人格 + 情绪表情）；2026-10-01 起转型为全能智能体；2026-10-02 桌面化定稿。陪伴资产从"主定位"转为"人格层"，构成与 Harness 类冷工具的关键差异——**能干活的 agent 很多，记得你的只有一个糯米。**
 
 ## 分阶段路线图
 
@@ -28,26 +30,27 @@ nuomi/
 │   │   ├── main.py     POST /api/chat（SSE 流式）+ /api/plugins /api/settings /api/projects…
 │   │   ├── config.py   环境变量配置（NUOMI_HOME 单一数据根 / LLM 密钥）
 │   │   ├── agent/      智能体组装：graph（create_agent + checkpointer）/ middleware / supervisor / partner / thread_ctx / models
-│   │   ├── plugins/    插件内核：loader（技能扫描）/ lifecycle / runtime / composer / approval / robust
+│   │   ├── plugins/    插件内核：loader（插件/模块扫描 + 技能扫描）/ lifecycle / runtime / composer / approval / robust
+│   ├── modules/    内核模块目录：service-*（运行时服务）/ mood·team·robot·voice-input（钩子/模式）/ agent-*（Agent preset）
 │   │   ├── storage/    统一存储层：db（ensure_database 迁移 + 版本化）/ projects / memory / knowledge / trace
 │   │   ├── core/       V3 内核：events（5 分发）/ scope / context / fiber / composition / skill
 │   │   └── sse.py      SSE 事件协议封装
 │   ├── sidecar_main.py 桌面 sidecar 入口（PyInstaller 打包后端时使用）
-│   ├── tests/          127 项假模型端到端测试（不花 API 费用）
+│   ├── tests/          143 项假模型端到端测试（不花 API 费用）
 │   └── data/           遗留运行时数据（v0.2 时代产物；已由首启迁移一次性读入统一库，只读保留）
 ├── frontend/           Vite + React + TS（对齐 Harness 设计系统：深色主题/三栏/设置弹窗/插件管理）
-├── plugins/            统一插件目录：加一个目录 = 多一种能力（一切皆插件）
-│   ├── service-*       V3 服务插件（agent-loop/sessions/settings/memory/system-prompt/tools）
+├── plugins/            插件区：可选能力分发单元（加一个目录 = 多一种可调用能力）
 │   ├── shell/          shell 执行器（沙箱三级 read-only/workspace-write/full-access）
 │   ├── fs/             fs 工作区文件工具（read/write/list/search，路径防穿越）
-│   ├── datetime/       能力型：获取当前时间（@tool）
-│   ├── memory/         能力型：memory_write / memory_read（记忆是插件）
-│   ├── knowledge/      知识型：RAG 语义存取（Chroma + fastembed）
-│   ├── mcp-notes/      MCP 型：本地便签 MCP server（stdio），adapter 接入
+│   ├── datetime/       获取当前时间（@tool）
+│   ├── memory/         memory_write / memory_read（长期记忆读写）
+│   ├── knowledge/      RAG 语义存取（Chroma + fastembed）
+│   ├── mcp-notes/      本地便签 MCP server（stdio），adapter 接入
 │   ├── pyfunc/         adapter 演示：外部格式插件（普通函数）转 LangChain 工具
 │   ├── web/            http_get 网页正文抓取
-│   ├── voice/ voice-input/  语音 TTS + 前端 STT
-│   └── mood/ team/ …   情绪联动 / Supervisor 挂卸等程序插件
+│   └── voice/          语音 TTS + 本地 STT
+├── skills/             技能区：独立文档资产（SKILL.md 说明书，全量注入 system prompt，不随插件启停）
+├── backend/app/modules/  模块区：内核组成部分（service-* 服务 / mood·team·robot·voice-input·memory-mem0 钩子模式 / agent-* Agent preset）
 ├── partners/           伙伴人格目录（v1 陪伴资产，保留为可选人格层）
 ├── scripts/smoke.sh    冒烟测试脚本
 └── .env.example        环境变量示例
@@ -56,16 +59,17 @@ nuomi/
 ## 快速开始
 
 ```bash
-# 1) 后端（uv 管理依赖，首次自动建 .venv）
-cd backend && uv sync
-uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
+# 桌面版（推荐，默认形态）：`cargo tauri dev` 自动拉起 vite + 源码后端
+make start        # 弹窗即桌面应用；后端由 tauri 自动管理（随机端口+token，退出自动回收）
+make stop         # 停止桌面版（含残留回收）
+make status       # 运行状态 · make logs 查看日志 · make restart 重启
 
-# 2) 前端（另开终端）
-cd frontend && npm install && npm run dev
-# 打开 http://localhost:5173
+# web 调试（可选，浏览器访问 http://localhost:5173）
+make web          # 后端 :8000 + 前端 :5173（vite 代理 /api → 8000）
 ```
 
-> 当前实际跑法（开发机）：后端 `.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000`（未开 `--reload`，改后端代码需重启进程）；前端 `npm run dev`（Vite，:5173，热更新）。
+> 首次需准备依赖：`cd backend && uv sync`、`cd frontend && npm install`、桌面版 `frontend/dist` 由 `make build`（或 `cargo tauri dev` 的 beforeDevCommand）构建。
+> 桌面版 dev 模式：8000 已有可用后端时 tauri 直接复用（无 token）；否则自起源码后端于随机空闲端口并注入 `window.__NUOMI_API__/__NUOMI_TOKEN__`。
 
 LLM：默认 DeepSeek（`LLM_BASE_URL=https://api.deepseek.com`、`LLM_MODEL=deepseek-chat`）。
 密钥取 `LLM_API_KEY` → `DEEPSEEK_API_KEY` → `ARK_API_KEY` 任一即可；换豆包只需改 `.env` 里的 base_url 与 model。
@@ -90,7 +94,7 @@ NUOMI_HOME/
 ```
 
 - **工作区**：`WORKSPACE_DIR`（默认 `~/Documents/Nuomi`，首启自动创建）——shell/fs 等工具的文件操作根目录，与程序数据分离；优先级 `NUOMI_WORKSPACE`/`WORKSPACE_DIR` env > 运行时设置 > 默认路径。侧栏"文件"视图展示工作区目录树（`/api/workspace/tree`），新建项目无绑定目录时自动在工作区创建同名目录。
-- **资源目录**：`PLUGINS_DIR` / `PARTNERS_DIR` 可覆盖（打包时指向 PyInstaller 内嵌只读区；源码运行默认指向仓库 `plugins/`、`partners/`）。
+- **资源目录**：`PLUGINS_DIR` / `SKILLS_DIR` / `PARTNERS_DIR` 可覆盖（打包时指向 PyInstaller 内嵌只读区；源码运行默认指向仓库 `plugins/`、`skills/`、`partners/`）。模块 `backend/app/modules/` 随 Python 代码打包，不走资源覆盖。
 - **首启向导**：全新环境（未配置任何 LLM 供应商）启动时全屏引导：选择工作区路径 → 配置 OpenAI 兼容模型服务并激活（`/api/bootstrap` + `POST /api/bootstrap/workspace`）。
 - **本地 API 守卫（桌面形态）**：Tauri 壳每次启动生成随机 token（`NUOMI_TOKEN` env 传入后端），后端中间件校验 `X-Nuomi-Token`（`/api/health` 放行）；仅绑定 `127.0.0.1` 回环。前端 fetch 自动带 token，web dev（vite proxy）不受影响。
 - **单用户**：JWT / PostgreSQL / 多用户命名空间已移除（2026-10-02）；`backend/data/` 遗留数据已废弃（不迁移，桌面版全新环境）。
@@ -109,7 +113,7 @@ NUOMI_HOME/
 | 记忆 | 自研 MemoryStore（SQLite facts 表） | CJK 二元组检索、去重淘汰；换向量库 = 换 search 实现 |
 | 知识库 | **Chroma** + **fastembed**（`BAAI/bge-small-zh-v1.5`） | RAG 语义检索，词法兜底可插拔 |
 | MCP | **langchain-mcp-adapters** | 本地便签 server（stdio）演示外部能力 |
-| 工具体系 | 自研三级加载插件内核 | @tool + 程序插件 + MCP + adapter 统一成"插件" |
+| 工具体系 | 自研三级加载插件内核（v0.7 三区：插件/模块/技能） | 插件=可选能力（工具）、模块=内核（服务/钩子）、技能=独立 SKILL.md |
 
 ### 前端
 
@@ -118,7 +122,7 @@ NUOMI_HOME/
 | 框架 | **React 18** + **Vite 5** + TypeScript | 前后端分离 SPA |
 | 聊天界面 | **assistant-ui**（`@assistant-ui/react`，MIT） | LocalRuntime + ChatModelAdapter 桥接自建 SSE；headless primitives 渲染文本/深度思考/工具调用，未引入 Tailwind |
 | 表情组件 | **react-ai-pet**（MIT） | WebGL 果冻身体 + 表情，思考动画 |
-| 语音输入 | Web Speech API | `voice-input` 插件控制 |
+| 语音输入 | Web Speech API | `voice-input` 模块（内核钩子）控制 |
 
 ### 模型
 
@@ -144,35 +148,40 @@ NUOMI_HOME/
 
 历史记忆：thread_id 相同 → LangGraph checkpointer 自动续上下文（SQLite 持久化，重启不丢）。
 
-## 插件规范（v0.3）
+## 概念体系（v0.7，三区）
+
+**插件**（`plugins/`）= 可选能力分发单元：目录 + plugin.json，入口（`hook.py`，`apply(ctx)`）向 LLM 注册工具，可安装 / 卸载 / 启停 / 配参数。
+**模块**（`backend/app/modules/`）= 内核组成部分：运行时服务（service-*）、钩子/模式（mood/team/robot/voice-input/memory-mem0）、Agent preset（agent-companion/agent-researcher），随系统启动（builtin）。
+**技能**（`skills/`）= 独立文档资产：SKILL.md 说明书，全量注入 system prompt，不随插件/模块启停过滤。
+
+- 判定：给 LLM 加可调用能力 → 插件；运行时基础设施/钩子/模式 → 模块；教 LLM 用能力的文档 → 技能。目录即分类，无 `kind`/`type` 字段。
+- 关联：插件与技能**同名即关联展示**（如插件 `memory` ↔ 技能 `memory`），但技能区独立可用。
+- 未引入：`kind`（目录即分类）、技能包（多技能聚合，暂缓）、插件市场。
+- 权威口径与完整清单：见 [`docs/concepts.md`](docs/concepts.md)。
+
+### 插件/模块/技能结构（v0.7.1，三种概念三种清单）
 
 ```
-skills/<插件名>/
-├── plugin.json    # name / version / type / description / entry / system_instruction(可选) / load(可选)
-├── <entry>.py     # 必须导出 TOOLS: list（@tool 函数或 BaseTool）
-└── 其他资源       # server.py（MCP）、tools_external/（外部插件）等
+plugins/<name>/        # 插件：可选能力（能力导向清单）
+├── plugin.json        # name / description / version / system_instruction(可选) / load(可选) / robust(可选) / approval(可选)
+└── hook.py            # 入口：apply(ctx) 注册工具（TOOLS 形态亦兼容）
+backend/app/modules/<name>/   # 模块：内核组成部分（内核导向清单）
+├── module.json        # name / description / version / entry + provides[](声明的 ctx 服务) / hooks[](订阅的事件)；可选 load/system_instruction/settings
+└── <name>.py          # 唯一入口：apply(ctx) provide/on（入口名 = 目录名转下划线）
+skills/<name>/SKILL.md        # 技能：frontmatter(name/description/when_to_use) + 正文
 ```
 
-`type` 区分：
-- `capability` **能力型** —— 给智能体一项可调用能力（时间/天气/日程/记忆读写…）
-- `procedural` **程序型** —— 一段既定流程（日报生成…），Phase 3 由调度器按流程驱动
-- `knowledge` **知识型** —— RAG 知识库（Chroma+fastembed，方案可插拔）
-- `mcp` **外部能力** —— 经 MCP 协议接入的远端/本地工具集
-
-`load` 区分（可选，默认 eager）：
-- `eager` 启动即导入入口生成工具（轻量能力：datetime/memory）
-- `lazy` 延迟导入；重资源（MCP 会话、embedding 模型、向量库）在工具**首次调用**时才初始化并缓存
+- **格式随概念分离**（对齐 Octop 声明式领域）：插件 `plugin.json` 能力导向、模块 `module.json` 内核导向（`provides[]`/`hooks[]` 声明式，扫描期即见，展示 = 声明 ∪ 运行时）、技能 `SKILL.md` frontmatter 即清单。运行时机制三区同构（一套 Fiber/apply/ctx 引擎），不区分加载路径。
 
 **三级加载（★ 架构核心，面试表达）**：
-1. **元数据常驻**：启动只读 plugin.json 建注册表（/health 可见技能目录，不 import 任何代码）
+1. **元数据常驻**：启动只读清单建注册表（不 import 任何代码）
 2. **指令触发**：构建 agent 时按需导入入口生成 TOOLS（模型由此知道有哪些能力）
 3. **资源按需**：重资源在首次工具调用时初始化并缓存（MCP 连接 / embedding 模型 / Chroma 都是懒加载）
 
-`system_instruction`（可选）：插件自述"什么时候该用我"，加载器收集后置于 system prompt **最前**（最高优先级）。
+`system_instruction`（可选）：插件自述"什么时候该用我"，收集后置于 system prompt **最前**（最高优先级）。
 实测结论：工具规则若不前置，小模型会进入闲聊模式而不调用工具。
 
-设计：统一插件体系（技能+工具+MCP 打包成一个插件），加载器按 type 分发；
-加能力 = 放目录；换 RAG/记忆方案 = 换插件。贴合 SKILL.md/MCP 行业形态，最大化复用。
+`robust`（可选）：工具健壮性策略（超时/重试/兜底）；`approval`（可选）：高风险工具清单（调用需人工确认）。
 
 ### MCP 接入（Phase 2 实测 API）
 
@@ -233,7 +242,7 @@ Phase 1 的 `partners/nuomi/` 人设素材。
 ## Phase 2 设计说明（面试表达）
 
 - **三级加载**：元数据常驻（启动只读 plugin.json，不 import 代码）→ 指令触发（构建 agent 时导入入口生成 TOOLS）→ 资源按需（MCP 连接/embedding 模型/向量库首次调用才初始化并缓存）。"轻的常驻，重的能拖就拖。"
-- **统一插件体系**：技能+工具+MCP 打包成一个插件，加载器按 type 分发；加能力=放目录；换 RAG 方案=换插件/配置。
+- **三区扩展体系（v0.7，面试表达）**：插件=可选能力（plugins/，注册工具）、模块=内核（modules/，服务/钩子/Agent preset）、技能=独立文档资产（skills/，SKILL.md 全量注入）。目录即分类；换 RAG/记忆方案 = 换插件或换 provider 模块。
 - **MCP**：本地便签 server（stdio）演示外部能力接入；客户端连接懒加载，adapter 每次调用自动开新会话。
 - **adapter**：外部生态（普通函数+注册标记，无 LangChain 依赖）放 `tools_external/` 即被适配成自家工具——"复用 Codex/Claude 插件只需放目录"。
 - **真实取舍**：embedding 模型经 HF 镜像下载（hf-mirror.com）；本地 2B 模型工具调用不可靠故测试走 DeepSeek——面试可讲"模型能力分级"。 
@@ -260,25 +269,20 @@ Phase 1 的 `partners/nuomi/` 人设素材。
 
 **多用户取舍**：原 JWT 多用户 + PostgreSQL checkpointer 已**移除**（2026-10-02）——桌面单用户形态不需要鉴权与多租户隔离，收益抵不过复杂度；本地 API 回环监听，会话与记忆不再按用户命名空间。
 
-## 插件管理（Phase 4d+）
+## 插件管理（v0.7 三区）
 
-**理念**："加目录=多能力，关开关=少能力"——插件开关是运行时真开关。
+**理念**："加目录=多能力，关开关=少能力"——插件开关是运行时真开关；模块默认常驻（builtin），技能区独立全量可用。
 
 **API**
-- `GET /api/plugins`：全部插件（三类分组：程序插件 / 功能插件 / MCP 技能），含启用状态、工具清单、设置
-- `POST /api/plugins/{name}/toggle`：启停。程序插件（如 `voice-input` 语音输入开关）翻转设置；其余技能插件翻转 enabled 集并**重建 Agent/Supervisor**（工具集实时变化）
-- 引擎级联动：停用 `memory` 插件时，中间件的记忆注入同时关闭——模型表现为"失忆"（工具层 + 注入层都受控）
+- `GET /api/plugins`：全部条目（插件 `category="plugin"` + 模块 `category="module"`），含启用状态、工具清单、服务/事件/技能贡献、设置
+- `POST /api/plugins/{name}/toggle`：启停。模块（如 `voice-input` 语音输入开关）翻转设置；插件翻转 enabled 集并**重建 Agent/Supervisor**（工具集实时变化）
+- 引擎级联动：停用 `memory` 插件时，中间件的记忆注入同时关闭——模型表现为"失忆"（工具层 + 注入层都受控）。**技能区不受影响**（memory 的 SKILL.md 仍注入，这是设计）
 
-**前端**（React，单用户）：左侧糯米卡通角色（SVG 猫，状态表情：idle/thinking/typing/listening，尾巴动画）；中间聊天区；右侧插件管理面板（开关 + 工具 chips + 类型标签）；语音输入麦克风按钮（Web Speech API，受 `voice-input` 程序插件控制）。登录已移除。
+**前端**（React，单用户）：左侧糯米卡通角色（SVG 猫，状态表情：idle/thinking/typing/listening，尾巴动画）；中间聊天区；右侧插件管理面板（只展示外部插件：开关 + 工具 chips + 参数编辑，模块不再展示）；语音输入麦克风按钮（Web Speech API，受 `voice-input` 模块控制）。登录已移除。
 
-## 统一插件体系 v0.4（Phase 4d+ 重构）
+## 智能体团队（模块 team，v0.7）
 
-**物理统一**：一个插件 = 一个目录 + plugin.json 清单（根目录 `plugins/`），加载器只扫一遍清单，按 `type` 分发——不存在两套割裂机制。
-- `capability / knowledge / adapter / mcp`：能力型——给模型加"会什么"（时间/记忆/知识库/语音/浏览器/MCP 工具）
-- `program`：程序型——给运行时加扩展（钩子/开关）：`voice-input`（语音输入开关）、`team`（智能体团队）
-- 将来加新类型只需加一个 type + 一个注册器
-
-**智能体团队（程序插件 team）**：默认启用。启用时构建 Supervisor（companion 陪伴 + researcher 研究员子 Agent，LLM 自动路由），`/api/chat` 自动走团队路由；停用退化为单 Agent。前端无模式按钮——团队就是一个可开关插件。
+**默认启用**。启用时构建 Supervisor（companion 陪伴 + researcher 研究员子 Agent，LLM 自动路由），`/api/chat` 自动走团队路由；停用退化为单 Agent。前端无模式按钮——团队就是一个可开关模块。
 
 **模型管理（运行时切换 LLM）**：
 - `GET /api/models`：deepseek / doubao(火山方舟) / llama-local（本地 llama.cpp 2B，OpenAI 兼容）

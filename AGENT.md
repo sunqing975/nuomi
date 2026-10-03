@@ -432,3 +432,157 @@ models.py 删除 BUILTIN_PROVIDERS（deepseek/doubao/local）与 PROVIDERS/MODEL
 - **测试**：新增 `tests/test_backend_contract.py`（11 项：file 契约增删改查/双档快照/容量截取/渲染格式/Mem0Backend fake mem0 映射/依赖缺失报错）+ `test_frozen_snapshot_unchanged_within_session`（同 thread 快照冻结、新 thread 反映新写入，断言用独特内容"乌龙茶"避开人设既有"嘉兴"）。**全量 pytest 143 passed**（127+16）。
 - **切换**：profile 两行（enable memory-mem0 + disable service-memory），引擎与工具零改动。
 - **P2 待办**：设置页 provider 选择 UI、真实 Mem0 服务端到端验证（需用户配置 mem0 服务/mem0ai 安装）。
+
+## 启动方式决策：仅桌面版 + Makefile（2026-10-02，用户拍板"记一下"）
+
+- **决策**：后续启动仅启动桌面版。默认形态 = `make start` → `cargo tauri dev`（desktop/ 下运行），tauri CLI 全自动：beforeDevCommand 起 vite(:5173) + debug 模式拉起源码后端（`uv run uvicorn`，随机空闲端口 + NUOMI_TOKEN，8000 已有可用 nuomi 后端则直接复用无 token），应用退出（RunEvent::Exit）时 kill 自起后端并注入 `window.__NUOMI_API__/__NUOMI_TOKEN__`。
+- **Makefile（项目根）**：start(桌面版) / stop / restart / status / logs / logs-follow / web(显式 web 模式：后端8000+前端5173) / test(pytest) / build(前端构建) / clean。PID 与日志落 `.logs/`（已 gitignore）。依赖自检：`desktop` 目标是 .PHONY（项目根有 desktop/ 目录，漏了会被 make 当文件目标跳过）。
+- **stop 兜底三层**：① kill tauri dev PID + `pkill -x nuomi-desktop`（精确进程名，**勿用 pkill -f**——make recipe 的 bash -c 命令行含匹配串会误杀 make 自身；pgrep/pkill -f 同理，status 检测一律用 `pgrep -x`）② 回收 :8000/:5173 ③ **tauri 自起后端随机端口**：从 desktop.log grep 最后一条 `http://127.0.0.1:PORT` 回收。
+- **踩坑（已修）**：`uv run uvicorn` 有父进程层级——tauri 退出钩子 kill 的是 uv 父进程，uvicorn python 子进程会残留监听随机端口 → 必须靠日志端口兜底回收（实测 59890/60060 残留后修复）。
+- **验证**：start→health 200→stop 全回收（应用/5173/自起后端）闭环通过；status 显示桌面版/应用窗口/web 三项。
+
+## 产品审视落地（2026-10-02，用户确认三项动作）
+- **审视结论**：工程完成度远超一般作品集，缺的是"产品主张"；差异化机会 = **"有温度的全能智能体"**（Harness/Claude Code 是冷工具，糯米有记忆、有人格）。风险三条：复刻叙事、宽而浅（占位功能被追问）、演示依赖外部（release 打包未验证 + 依赖 DeepSeek API）。
+- **① README 定位段落重写**：新 slogan「有温度的全能智能体：会干活，也记得你」；金句「能干活的 agent 很多，记得你的只有一个糯米」。定位沿革补 2026-10-02 桌面化定稿。
+- **② docs/demo-script.md（新）**：杀手级 demo = 调研→记忆→知识→执行→产物闭环。核心版 5 分钟（Step1-4），完整版 8 分钟（+shell 统计）；含分步 prompt、预期行为、讲解话术、失败降级、追问应答要点、排练清单。
+- **③ docs/placeholder-priorities.md（新）**：深补优先级（排序=演示可见度×被追问概率÷成本）。P0：release 打包验证 / STT 真实 API / 演示降级；P1：文件面板↔fs 联动+权限选择器 / subagent / mem0 端到端 / Supervisor 二层；P2：compaction-spill / credentials-attachment / schedule-todo / i18n-en / TTS 换豆包。
+- 下一步按用户选择推进：可在 docs/ 下继续完善，或直接开工 P0 项。
+
+## 三栏布局 + 项目文件树（2026-10-02，用户两轮迭代拍板）
+
+- **决策 1（侧栏去文件）**：侧栏只保留「会话」视图（项目分组），删除 sessions|files 双 tab（SideBar 删 view 状态/ws-tabs/FilesPanel 引用）。
+- **决策 2（对齐 dsh AppFrame 三栏，非弹窗）**：.app 改三列 grid `var(--sidebar-w) 1fr var(--right-w)`；右栏默认收起（--right-w:0），右上角文件按钮（ChatWindow .files-toggle，仅项目绑定目录时显示）→ `.app.right-open` 展开为**常驻布局列**（--right-w: min(320px,30vw)，grid 过渡 0.22s），**不用 fixed 浮层/遮罩**（用户明确"不在是弹窗"）。三个响应式断点同步第三列。右栏 .right-panel 常驻渲染（chat tab），头部=项目名+关闭，内容=FilesPanel（当前项目文件树）。
+- **后端新接口**：`GET /api/projects/{id}/tree` → ProjectStore.get_project + list_tree(绑定目录)；未绑定/项目不存在/目录失效均 404（复用 list_tree 安全规则）。前端 api.fetchProjectTree（404→"NO_DIR"错误 → FilesPanel 显示"该项目未绑定本地目录"）。
+- **踩坑（bu 实测）**：侧栏项目组头内按钮密集（绑定目录/新建/删除/折叠），bu.click 组头 ref 会命中 group-dir-btn 弹出目录绑定弹窗——点击组头/行要用 find() 定位子元素或坐标点非按钮区。
+- **验证**：tsc/build 通过；bu 实测三栏（right-open 展开右栏 211px、聊天列让出、文件树渲染 sub/readme.md、遮罩/Esc 关闭已随抽屉废弃）；pytest 143 绿。
+
+## 本地 STT 落地（2026-10-02，用户要求"本地跑模型、不花钱"）
+- **方案**：faster-whisper（CTranslate2 int8 CPU）替换 voice 插件 transcribe 占位——免费、离线、数据不出本机。
+- **实测**：macOS say 生成中文语音 → 转写「你好,我是糯米,一个会干活也记得你的智能体,现在测试本地语音转写功能。」置信度 1.00；模型缓存后加载+转写 4.1s。
+- **配置**：默认 small 模型（中文够用），环境变量 NUOMI_STT_MODEL 可换 base/tiny/large-v3；模型缓存 NUOMI_HOME/hf-cache；下载走 HF 镜像（hf-mirror.com）。voice 插件 load=lazy，首次调用才加载模型。
+- **踩坑**：faster-whisper 1.2.1 与 PyAV 19 不兼容（`open() got unexpected keyword 'metadata_errors'`）→ 固定 av>=11,<14（pyproject 已加约束 + uv lock）。
+- **遗留**：speak 音频仍写 backend/data/audio（桌面化后应入 NUOMI_HOME，未改）；前端 Tauri WKWebView 的 webkitSpeechRecognition 不可用，语音按钮需改「录音上传 → 后端 transcribe」（P1 范围，未做）。
+
+## Harness 对齐四项落地（2026-10-02，用户"全做"）
+- **背景**：用户发 DeepSeek Harness 工作台截图，对照评估后（三栏已对齐/右栏入口卡⚠️裸文件树/错误卡片⚠️顶部 banner/状态行⚠️缺）用户拍板"全做"。
+- **① 右栏功能面板容器**：.right-panel-head 内 .right-panel-tabs（文件/终端/浏览器三图标 + 关闭）；App rightPanel state；⌘P→文件树、⌘T→终端（仅 chat tab 且有项目目录）；rp-tab 切换不改变 filesOpen。
+- **② 终端面板**：`POST /api/projects/{id}/shell/exec`（ShellExecRequest 必须模块顶层——定义在 router 函数内会被 FastAPI 当 query 参数报 Field required）；动态 importlib 加载 plugins/shell/tool.py 复用 _run（workspace-write 沙箱，黑名单/超时/截断同 agent bash）；前端 TerminalPanel（命令历史 + 输出、NO_DIR 提示）。
+- **③ 对话流错误卡片**：NuomiAdapter error 事件不再 throw → textAcc += "⚠️ message"；ChatWindow TextPart 检测 ⚠️ 前缀渲染 .msg-error-card（替代 App 顶部 banner）。
+- **④ 输入框范围 + 运行统计**：InputBar 底部 .scope-btn 循环 只读/工作区内/全局（写 /api/settings/global shell_default_mode，后端 shell hook 监听全局键热更新）；.run-stats 显示 `{tokens} tok · {latency}s`（onDone 的 usage.total_tokens + latency_s，done SSE 新增 latency_s）。
+- **踩坑（已修）**：CSS 变量 --right-w + grid-template-columns 的 transition 在 WebKit 卡死（computed --right-w 正确但列宽停 0px）→ 移除 transition、.right-open 用固定 320px（≤720 断点 260px），实测列宽正常。MessageKey 需 `import type from "../../i18n/zh-CN"`（i18n/index 不导出）。CSS token 只有 --radius-md/lg/pill 无 --radius-8/--code-bg。
+- **验证**：pytest 143 绿；tsc/vite build 通过；shell exec API 实测（pwd+ls 正常、绝对路径写被拦、不存在项目 404）；bu 实测：右栏展开 260px、面板切换、终端执行输出、浏览器 iframe 加载 example.com、范围按钮循环（全局→只读→工作区内）。错误卡片/统计为代码路径验证（未做真实 API 错误/回复触发）。
+
+## 右栏开关上移顶栏（2026-10-02，用户"挪到上面，不在对话页面上"）
+- **决策**：files-toggle 从 ChatWindow 内 absolute（浮在对话消息流右上角）移到 `.main` 顶部新增 `.topbar`（高 46px，常驻）：左=会话标题（threadTitle 为空时显示项目名，兜底"新会话"），右=右栏开关（仅项目绑定目录时渲染）。
+- **实现**：ChatWindow 删除 files-toggle 与 chat-header/chat-title（标题统一进顶栏）；App.tsx .main 内渲染 .topbar + 按钮（FolderIcon + 项目名，filesOpen 时 .on）；CSS .files-toggle 去掉 absolute 改顶栏内 inline-flex，.topbar 样式新增，.chat-header/.chat-title/.title-input 死样式删除。
+- **验证**：tsc/vite build 通过；bu 实测：顶栏 46px、按钮在 .topbar 内（position static）、点击开合右栏（right-open/关闭）、右栏文件树正常（hi → sub → readme.md）；截图确认按钮位于顶栏右上角，对话区无浮层按钮。
+
+## 顶栏/侧栏再精简（2026-10-02，用户"不好看；按钮应是展开图标非项目名；组头不要换绑目录"）
+- **顶栏右栏开关**：从「图标+项目名」胶囊改成**纯图标按钮**（28px 方钮，FolderIcon，on 态 accent-soft；对齐 dsh 右栏入口），title 提示「文件树 · ⌘P」。
+- **侧栏项目组头精简**：删除目录路径小字（.group-dir）、换绑目录按钮（.group-dir-btn）、直排删除按钮（.group-del）；组头只留 项目名 + 会话数 + 新建会话（+，hover 浮现）+ ⋯ 更多下拉（.group-more/.group-menu，含「删除项目」danger 项）+ 折叠箭头。
+- **更多菜单**：MoreIcon（icons.tsx 新增水平三点）；moreKey state；toggleGroup 时自动关闭菜单（点击组头其他区域=关菜单）；菜单项点击后关闭并弹删除确认。
+- **API 清理**：SideBar 删 onSetProjectDirectory prop；App 删 setProjectDirectory import 与传参（新建项目绑目录仍走 PromptDialog 的 onCreateProject）。
+- **顺带修复**：RobotMode.tsx onKeyDown 用全局 KeyboardEvent 导致 tsc 报错 → 改 React 的 KeyboardEvent 别名导入。
+- **验证**：tsc/vite build 通过；bu 实测：顶栏按钮纯图标（text 空、icon-btn files-toggle）、组头无目录/绑定/删除按钮、⋯ 菜单展开含「删除项目」、点击组头其他区域菜单关闭、右栏文件树正常；截图确认视觉。
+
+## 右栏精简：移除终端/浏览器（2026-10-02，用户"移除终端和浏览器按钮"）
+- **决策**：右栏面板只保留文件树；删除 .rp-tab 终端/浏览器两个图标按钮与 rightPanel state；⌘T 快捷键删除，⌘P 保留（只 setFilesOpen(true)）；右栏头=项目名+关闭 X，内容直接 FilesPanel。
+- **清理**：删除 modules/ui-right/TerminalPanel.tsx、BrowserPanel.tsx（目录已删）；App 移除 TerminalPanel/BrowserPanel/TerminalIcon/GlobeIcon 引用；layout.css 删除 .right-panel-tabs/.rp-tab/terminal-*/browser-* 死样式（保留 .rp-close）。api.execShell 与后端 /shell/exec 接口保留（未引用，可复用）。
+- **验证**：tsc/vite build 通过；bu 实测：右栏无 rp-tab、无终端/浏览器面板、文件树正常、关闭按钮保留；截图确认视觉。
+
+## 组头移除折叠箭头（2026-10-02，用户"最右侧向右的图标也不要了"）
+- **决策**：删除项目组头最右侧的折叠箭头（.group-caret / ChevronDownIcon）；展开/收起仍通过点击组头完成。
+- **清理**：SideBar 删 group-caret 渲染与 ChevronDownIcon import；layout.css 删 .group-caret 及 rotate 规则。
+- **验证**：tsc/build 通过；bu 实测组头无 caret（剩余 图标+名+数+＋+⋯），截图确认。
+
+## 机器人模式 v2：插件化 + 开源 3D 形象 + 纯语音闭环（2026-10-02，"全部开始"）
+- **决策**（用户三点反馈 → 全部落地）：①机器人模式插件化（一切皆插件）；②形象改用**开源 3D**（three.ws `<agent-3d>`，Apache-2.0），**不再自绘**（用户明确纠正"为什么自己绘制，不能直接用开源项目吗"，记忆策略=成熟开源优先）；③纯语音对话为主，对齐 Replika/Gatebox/Open-LLM-VTuber 产品范式。
+- **插件化**：新建 `plugins/robot/{plugin.json,hook.py}`（program 型，无工具，维护 `app.state.robot_enabled` + 订阅 PLUGIN_TOGGLED）；composition.py default_profile 与用户 nuomi.json 的 runtime 层加 `runtime-robot`；前端 App.tsx `robotEnabled = plugins.find(p => p.plugin === "robot")?.enabled ?? true` 控制顶栏 mode-toggle 显隐 + /robot 命令（停用返回 t("cmd.robotDisabled")）+ 停用时自动回通用模式。
+- **开源 3D 形象**：npm 包 `three.ws` 0.2.0 **不可用**（无 speakAudio，旧版）；改用 CDN 1.5.2 `agent-3d.js`（含 `speakAudio(audio)` 波形驱动嘴型）下载到 `frontend/public/vendor/agent-3d.js`（3.3MB，public 静态资源，RobotMode 用 `<script type="module">` 动态注入，仅进机器人模式加载）。模型：three.ws `avatars/default.glb` 是女性人形（不可用）→ 换 **Poly Pizza Quaternius "Animated Robot"**（CC0，金黄色低多边形卡通机器人，401KB）下载到 `frontend/public/models/nuomi-robot.glb`（换脸=换文件）。body 模式=静默 3D viewer 无 API key/无云。加载失败自动降级自绘 `RobotFace`（SVG 兜底，robot-face.css 动画保留）。
+- **纯语音闭环**：后端 main.py 新增 `POST /api/transcribe`（UploadFile → faster-whisper，language=zh+vad_filter，返回 {"text","language","language_probability"}，400=未识别到语音）与 `POST /api/speak`（text → macOS say+ffmpeg → audio/mpeg 流；**坑：SpeakRequest 必须定义在模块级**，app 函数内定义类 + `from __future__ import annotations` 会被 FastAPI 当 query 参数 422）。前端 RobotMode：MediaRecorder 录音（点 mic 启停，"在听你说…"）→ transcribe → onSend；新回复 → speakAudio(dataURL) 播放 + voice:speech-end 复位"机器人待命中"；打字栏保留降级。
+- **踩坑**：①vite 禁止 import public 目录文件（报 "should not be imported from source code"）→ public 资源只能用 script 注入/HTML 引用；动态 import() 变量路径 vite 不静态分析（dist 无 chunk）→ 放弃该路；②`/api/plugins` 返回 id 是**层 id**（runtime-robot 而非 robot）→ 前端匹配必须用 `p.plugin`（team/voice-input 旧代码用 p.id 匹配恒 true 的同款 bug 一并修）；③后端 8000 会被环境回收（ECONNREFUSED → 前端一片 500"出了点问题"），重启即恢复。
+- **验证**：curl speak=200 29KB MP3 / transcribe=200 置信度 1.0；前端构建通过；浏览器实测：/robot 进入 → 3D 小机器人渲染 → 打字"你好"回复 + "说给你听…" → 复位待机；插件面板 robot 卡片正常 → API 停用后 /robot 命令拦截、启用后恢复；录音启动"在听你说…"、静音 400 降级提示正常；后端全量 pytest **143 passed**。
+- **遗留**：机器人模式语音打断（Open-LLM-VTuber 卖点，P1）；speak 音频临时目录 /tmp 清理逻辑 OK（端点内 rmtree）；three.ws agent-3d 3.3MB 只在机器人模式加载（通用模式零成本）；agent-robot-avatar npm 依赖已从 package.json 移除（npm uninstall three.ws 也执行了）。
+
+## 通用模式移除卡通形象（2026-10-02，用户"通用版本不需要那个糯米的卡通形象了"）
+- **决策**：通用模式走生产力路线，移除 ChatWindow 伙伴栏的 PetBuddy 卡通形象；形象归机器人模式（3D agent-3d）。伙伴栏保留"糯米 + 在线等你"文字。
+- **改动**：ChatWindow.tsx 删 PetBuddy 渲染与 import、props 去 mood；App.tsx 删 mood state/事件链路（onDone 只留 usage）、send/startVoice/stopVoice 去 setMood；layout.css .partner-bar padding 22→14。PetBuddy.tsx / robot-face.css 保留（作品集资产 + 机器人模式 3D 加载失败兜底）。
+- **验证**：tsc/build 通过；浏览器实测通用模式伙伴栏无形象、消息流/语音按钮正常；机器人模式不受影响。后端 mood 插件仍在跑（事件照发，前端不再消费）。
+- **跟进（同日，用户"糯米 在线等你 这几个字也不需要了"）**：ChatWindow 整块删除 partner-bar（名字+状态文字），清理 layout.css 伙伴栏样式块（partner-bar/meta/name/status/pet-buddy/pet-float/status-pulse）；ChatWindow 去掉 useAuiState busy 依赖。通用模式主区 = 纯消息流 + 输入栏（侧栏"糯米/全能智能体"品牌区保留）。构建 + 浏览器实测通过。
+
+## 通用模式消息视觉升级：ChatGPT Clone 风格（2026-10-02，用户"不好看→用开源主题→A方案"）
+- **决策**：用户对消息显示不满意，要求直接用开源方案。评估 assistant-ui 官方 ChatGPT/Claude Clone 主题 / shadcn chat-kit（2026-06 新组件，需 Tailwind）/ Lobe UI（antd 体系重）三选一，用户选 **A：assistant-ui 官方 ChatGPT Clone 视觉**（零架构重构，纯 CSS 翻译）。
+- **Tailwind 结论**：AI 前端生态（Vercel AI Chatbot/assistant-ui 示例/shadcn）普遍 Tailwind，utility class 利于 AI 生成 UI 与快速迭代；但本项目已是成熟纯 CSS token 体系，为套主题迁 Tailwind 成本>收益，故用现有 CSS 变量实现 ChatGPT 风格，不引 Tailwind。
+- **改造（全用现有 token，仅新增 --radius-2xl:22px / --radius-3xl:28px 圆角 token）**：
+  - 用户气泡：深色高对比（var(--label) 底 + 白字，替代原蓝渐变）、22px 圆角、max-width 78%
+  - 助手消息：**无框流式**（透明底直排，靠排版区分，替代原白 86% 气泡）
+  - composer：28px 大圆角（--radius-3xl）、surface 92%
+  - 深度思考：浅面徽章（白 88% + 细边框 pill + 蓝 Sparkle），展开态 accent-soft + 蓝边线、body 纸感面板（白 94% + line-1 边框 + 蓝左线品牌）
+  - 工具调用：白 90% 卡片 + 12px 圆角 + 蓝图标 + 蓝等宽工具名（--font-mono）
+  - hero 空态：标题 24px/600（原 fs-hero/800）；thread-viewport 顶部留白 8px；.row padding 10→8
+- **验证**：tsc/build 通过；浏览器 computed style 实测：user 气泡 rgb(24,28,34)+22px、assistant 透明 0 圆角、composer 28px、tool 卡片 12px+蓝图标、reasoning 徽章生效；发"现在几点了"实测带深度思考+工具调用的回复正常渲染。
+- **遗留**：bu 截图工具本会话主区渲染异常（整页截图主区空白、ref 截图错位）——验证以 DOM/computed style 为准；用户消息 hover Copy/Edit 操作条（ChatGPT 特征，P2，可后续加）。
+
+## 工具调用卡片 v2：豆包式步骤卡片（2026-10-02，用户"样式丑+无思考+要看入参/结果"）
+- **用户反馈**：①工具调用样式丑 ②没看到深度思考 ③要能展开看工具入参和结果（截图对齐豆包工作台"每一步在干嘛+可折叠"）。确认 assistant-ui tool-call part 完全自定义渲染（开源支持，无需换库）。
+- **数据链路补齐（关键）**：原后端 tool 事件只有 name。新增 `_chunk_tool_events(chunk, acc)`（跨 chunk 累积 tool_call_chunks.args_fragment，按 index + sent 标记去重；updates 模式走 tool_calls 完整 args），tool 事件改 `{"name","args"}`；ToolMessage（team 子节点 / messages 模式 chunk）→ 新增 `tool_result` 事件 `{"name","result"}`。curl 实测：tool 带 `{"timezone":"Asia/Shanghai"}`、tool_result 带时间字符串。
+- **前端**：NuomiAdapter 的 tool 事件取 argsText、tool_result 挂 `tc.result`（ToolCallPart 类型加 result?）；ToolCallPart 组件重写为可展开卡片（折叠=图标+调用工具+工具名+状态点（执行中蓝脉冲/已完成绿点）+chevron；展开=入参/结果两个 pre 区）；i18n 新键 chat.toolCall/toolDone/toolRunning/toolArgs/toolResult/toolNoDetail；CSS .tool-card 系列（复用 status-pulse keyframes，--ok 绿点）。
+- **验证**：后端 143 passed；浏览器实测"现在几点了"→ 卡片"已完成"态 → 点开 → 入参 {"timezone":"Asia/Shanghai"} + 结果 "2026-10-02 20:00:59 星期五（Asia/Shanghai）"，同回复带深度思考 282 字折叠块。注意：模型是否调工具是随机的（同一问题有时直接答有时调），测试需多发几次或用必触发工具的提问。
+- **遗留**：bu 截图主区渲染异常依旧（DOM/computed 验证为准）；旧 .tool-row 样式已删。
+
+## 深度思考流式 + 正文真流式（2026-10-02，用户"没感觉到流式，思考应流式展示、完成自动折叠"）
+- **前端**：ReasoningPart 改为流式联动——`open = manual ?? isRunning`（useAuiState 的 thread.isRunning：思考进行中自动展开逐字滚动，输出完成自动折叠；用户手动点过徽章则以其选择为准）。思考中徽章加 .reasoning-caret 展开指示（脉冲动画）。i18n 新键 chat.deepThinking。
+- **根因（关键）**：正文"一次性出现"不是前端问题——团队模式走 stream_mode="updates"（每节点整轮输出，LLM 流被聚合，SSE 只有 1 个 token 事件）。curl 铁证：token 事件=1。修复：resolve() 团队模式改 stream_mode="messages"（LangGraph 会把 router 与子 Agent 的 LLM 逐 chunk 流出，ToolMessage 也走 messages 流）；main.py 团队分支按 meta.langgraph_node 过滤 router 节点（其 {"next": "..."} 路由决策会泄漏成正文 token，实测泄漏后修复）。
+- **踩坑**：①双模式 ["messages","updates"] 触发 `RustBindingsAPI object has no attribute bindings`（langchain-openai 新版与 langgraph 兼容问题）——绕开：纯 messages 模式，updates 分支删除；②meta 节点名实测是 "router"（不是 supervisor.py 的 build_supervisor 主图名）；③bu.fill_input 不触发 React onChange（点了发送但没提交）——浏览器输入改用 click textarea → bu.type(..., submit=True)。
+- **验证**：后端 curl——reasoning 29 个流式事件 + token 7 块（原 1 块）；浏览器采样 [98,True]→[216,True]→[-1,False]（思考中展开逐字增长 → 完成自动折叠）；最终 1428 字完整回复、无 router 泄漏；web 工具外网不通仍报 RetryError（环境限制，非回归）。
+
+## Markdown 渲染 + 历史回显补全（2026-10-02，用户"消息不支持md渲染、回显没有思考/工具、问时间没回"）
+- **Markdown**：TextPart 用 react-markdown（新依赖）渲染气泡；CSS .bubble :where() 系列（p/h1-6/ul/ol/code/pre/blockquote/a/hr/table，全用现有 token）；assistant 气泡 white-space 改 normal（pre-wrap 会破坏 md 排版）。实测：strong/h1/列表 25 个元素、无 ** 原文。踩坑：装新依赖后 vite dev server 必须重启（白屏），浏览器输入用 JS setter+input 事件同步 React（bu.type/fill_input 触发不了 onChange，发送按钮实际 disabled）。
+- **回显补全**：/api/threads/:id/messages 原来只返回 {role,content}——补 reasoning（_chunk_reasoning）、toolCalls[{name,args,result}]（tool_call_id 与 ToolMessage 配对）；工具调用轮（正文空）与回复轮合并为一条（豆包式卡片+正文同条）。前端 toThreadMessages 透传 argsText/result，ChatMsg.toolCalls 类型改对象数组。
+- **团队块式流式（关键修复）**：LangGraph 旧版（>=0.2.60）messages 模式对 subgraph 不流内部 chunk，产出**完整 AIMessage**（非 AIMessageChunk）→ 之前 isinstance 检查把正文/思考/工具全丢（done content 空！"现在几点了"没回的真因）。修复：团队分支接受 AIMessage + AIMessageChunk 两种形态统一处理；stream_subgraphs 参数不存在（旧版），双模式触 RustBindingsAPI.bindings 错误——团队模式=块式流（每轮一块），单 Agent=逐字流。实测：现在几点了→ reasoning+tool(args)+tool_result+token+done(content 非空)；工具风暴（Markdown 问题 5 轮工具）→ 5 tool 事件 + 8 tool_result + 3 token 块 + 645 字正文。
+- **重启纪律（教训）**：kill -9 $(lsof -ti tcp:8000) 有时杀不干净（uvicorn 子进程/竞态），新进程绑定失败悄悄退出、旧进程继续服务旧代码——必须 kill 后确认端口释放（lsof 空）再启动，或用 ps 核对 PID 启动时间。
+- 验证：回显"询问当前时间"会话→一条消息含 深度思考36字 + 工具卡get_current_time已完成 + 正文；Markdown 问题→渲染成功；后端全量 pytest 通过。
+
+## 工程化质量门禁（2026-10-02，对标 Octop/TencentCloud 的 make all 模式）
+- **动机**：对比 octop（TencentCloud 开源 agent 平台，637 py 文件/474 测试文件/9 套 CI）后落地的第一件事——补"机器闸门"：lint + 类型检查 + CI，把质量从"靠 AGENT.md 记坑"升级为"机器强制"。
+- **backend/pyproject.toml 新增**：
+  - dev 依赖：ruff>=0.4、mypy>=1.10（uv add --dev）
+  - [tool.ruff]：line-length 100、target py312、src=app/tests/scripts；lint select=E,F,W,I,B,UP,SIM,C4（ignore E501）；tests 下 per-file-ignore B011
+  - [tool.mypy]：python_version 3.12、files=app/scripts/sidecar_main.py、ignore_missing_imports=true（tests/plugins 暂不纳入 mypy）
+- **修复要点（mypy 44 错误清零）**：
+  - **方法名 list 遮蔽内建 list**：MemoryBackend/FileMemoryBackend 的 `def list` 导致类内后续 `list[...]` 注解解析成方法（valid-type/index 连环错）——把 `list` 移到类末尾（契约 API 不变，零调用方改动；注释已说明）
+  - composer.entries 从 dict[str, object] 改为 dict[str, ProfileEntry]（core/composition.py 已有 dataclass）；install() 的 type("E",...) 鸭子 entry 换成正牌 ProfileEntry
+  - `list` 方法重命名：NuomiComposer.list → list_plugins（main.py 2 处调用同步）
+  - MemoryFact.from_dict 显式构造（避免 **kwargs 无法核对）；_score overlap 显式 float
+  - Settings 新增私有字段 `_workspace_override: str | None = None`（pydantic 下划线=非环境字段）
+  - build_llm api_key 包 SecretStr；_iso_of 接受 int | None；module_from_spec 加 None 守卫；bytes f-string 显式 decode；SSE 回显 item 显式 dict[str, Any]；B904 全部补 raise ... from e / from None
+- **Makefile 新增**：`make check`（lint+format-check+typecheck+test）、lint、format、format-check、typecheck——对齐 Octop 的"make all 全绿才算 done"。注意 ruff 命令带 `--config pyproject.toml` 覆盖 plugins/（plugins 不在 backend 目录，默认找不到配置）。
+- **CI（.github/workflows/ci.yml）**：PR + main push 触发；backend job（setup-uv py3.12 + uv sync + make lint/format-check/typecheck/test）+ frontend job（node 22 + npm ci + tsc+vite build）；concurrency cancel-in-progress。
+- **lint 全量清理**：ruff --fix + format 覆盖 backend（app/tests/scripts）+ plugins 全部 .py（102 文件）；手工修 SIM105（suppress）、SIM102、C408、E741、UP042（FiberState→StrEnum）、B905（zip strict）、F841（测试删无用变量/`as client`）。
+- **验证（2026-10-02 全绿）**：make lint ✓ / make format-check ✓ / make typecheck ✓（34 源文件无错）/ make test ✓（143 passed）/ 前端 npm run build ✓。遗留 note（非错误）：mypy 未启用 check-untyped-defs（untyped 函数体不查）；前端 chunk >500kB 警告（历史遗留，非回归）。
+- **尚未提交**：本次改动（含 Makefile/.github/ruff 格式化 diff）+ 用户之前的 AGENT/README/.gitignore 改动都在工作区，未 commit。
+
+## 插件概念对齐 Octop（2026-10-02，v0.7 重构已执行）
+- **诊断**：plugins/ 下 22 个"插件"实际混了 4 类职责——tool 类 9 个（注册 LLM 工具）、skill 类 2 个（agent-companion/agent-researcher，文档资产）、hook 类 5 个（mood/robot/team/voice-input/memory-mem0，运行时钩子）、service 类 6 个（内核服务）。豆包"插件"=产品层能力组合、Octop=分发单元层、nuomi=内核层——一词多义是模糊根源。
+- **用户拍板**："直接重构吧。不需要 kind 去区分，插件就对齐 octop 中的插件，技能是专门的技能概念，我们暂时不增加技能包的概念，内置服务用模块的概念"→ **不用 kind，目录即分类**：
+  - `plugins/`（9）= 可选能力分发单元（datetime/fs/knowledge/mcp-notes/memory/pyfunc/shell/voice/web）
+  - `backend/app/modules/`（13）= 内核组成部分（service-* ×6 + hook 类 ×5：mood/robot/team/voice-input/memory-mem0 + agent-companion/agent-researcher）；builtin 判定=modules_dir 下存在
+  - `skills/`（仓库根，10）= 独立技能文档资产（SKILL.md 全量注入 system prompt，不随插件启停过滤）
+- **代码改动**：loader v0.7（scan_plugins 带 category / scan_skills / SkillDescriptor / collect_skill_catalog 吃技能列表）、lifecycle（build_plugin_list 技能关联展示、build_skill_tool 吃技能）、composer（modules_dir/_plugin_dir/list_entry/builtin）、main（build_app 三区参数 + lifespan 装配 plugins+skills）、config（skills_dir/modules_dir）、13 个测试适配、sidecar/spec 打包。
+- **关键踩坑（勿重试）**：①mypy Duplicate module "hook"→模块入口统一改名 `<目录名转下划线>.py`（不要改回 hook.py）；②Fiber 的 entry 参数此前从未生效（插件 entry:"tool.py" 是摆设，实际一直加载 hook.py）——composer 现读 plugin.json entry 真正生效，插件侧遗留 entry 字段已清理；③lifecycle._apply 的 PluginContext 缺 config（runtime 版未声明，fiber 用 core/context 版）→ 补声明+填充；④memory-mem0 的 Mem0Backend.list 遮蔽内建 list→移到类末尾；⑤测试污染（greet/calc/dup/weather 曾被失败测试装进真实 plugins/，已删，再出现即 bug）。
+- **验证（2026-10-02 全绿）**：make lint ✓ / format-check ✓（96 文件）/ typecheck ✓（48 源文件）/ test ✓（143 passed）；前端 api.ts 补 category 字段 + 插件页页头三区文案，npm run build ✓。
+- **语义变化**：停用插件不再影响技能目录与 skill_doc（技能独立，是设计非回归）；查 mood 等不在技能区的名字返回"未知技能"。
+- **方案全文**：docs/plugin-concept-alignment.md（已更新为 v0.7 实况，含迁移明细/踩坑/验证）。
+- **边界（不做）**：插件市场、octop_ui 前端渲染协议、8 分组、技能包（用户拍板暂缓）、多用户共享池。
+- **未 commit**：本次重构 + 前置工程化 + 用户自己的 AGENT/README/.gitignore 改动都在工作区，commit 前需与用户确认提交范围。
+
+## 概念→格式体系（2026-10-03，v0.7.1：三种概念三种清单，用户"都改"）
+- **用户提问**："插件/模块/技能是否应有各自格式？系统是否需按概念重设架构？Octop 领域设计合理"→ **判断：运行时机制不分（三区同构是优点，一套 Fiber/apply/ctx 引擎），但 manifest 格式分离**。用户拍板"都改"。
+- **三格式（格式随概念分离）**：
+  - 插件 `plugins/<name>/plugin.json`：能力导向（name/description/version + system_instruction/load/robust/approval，默认入口 hook.py）
+  - 模块 `backend/app/modules/<name>/module.json`：内核导向（name/description/version/entry + **provides[] 声明的 ctx 服务 + hooks[] 订阅的事件**，可选 load/system_instruction/settings/settings_key）
+  - 技能 `skills/<name>/SKILL.md`：frontmatter 即清单（不变）
+- **代码改动**：loader v0.7.1（MANIFEST_NAMES 双 manifest、scan_plugins 按 category 读 plugin.json/module.json、PluginDescriptor 增 provides/hooks 声明字段）、lifecycle._collect（服务/事件 = 声明 ∪ 运行时，_dedupe 保序去重）、fiber._merge_plugin_meta（module.json 优先，缺则 plugin.json）、composer（_read_manifest 双 manifest、_mount entry、list_entry 服务/事件声明∪运行时合并）；13 个模块 plugin.json → module.json（provides/hooks 全部来自探查真实 ctx.provide/ctx.on 调用，如 service-agent-loop 挂 5 个事件：settings/changed、plugin/toggled、plugins/loaded、plugin_toggled、llm/switched）。
+- **验证（2026-10-03 全绿）**：143 passed 一次通过（贡献视图值不变，无需测试适配）；make check 全绿（1 文件 format 后重跑通过）。
+- **决策要点**：模块 provides/hooks 是**声明式元数据**（扫描期即可见、不 import 入口）；apply 运行时 ctx.provide/ctx.on 仍执行，展示 = 声明 ∪ 运行时（保序去重）。插件不引入 provides/hooks（插件的能力面是工具，服务是模块职责）。
+- **未 commit**：v0.7 + 概念同步 + v0.7.1 + 用户自己的改动全在工作区，commit 前需与用户确认提交范围。

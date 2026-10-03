@@ -7,12 +7,11 @@
   3. 用户画像（USER.md，人工可编辑）
   4. 记忆事实（MemoryStore 检索/最近，每轮动态注入由中间件负责）
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-
-from ..config import REPO_ROOT
 
 
 @dataclass
@@ -26,7 +25,11 @@ class Partner:
 
     @property
     def user_profile_lines(self) -> list[str]:
-        return [l.strip("- ").strip() for l in self.sections.get("USER", "").splitlines() if l.strip()]
+        return [
+            line.strip("- ").strip()
+            for line in self.sections.get("USER", "").splitlines()
+            if line.strip()
+        ]
 
 
 def load_partner(partners_dir: str | Path, name: str) -> Partner:
@@ -75,8 +78,7 @@ def format_memory_facts(facts) -> str:
     return (
         "【你记得的关于用户的事】（长期记忆，下面每一条都来自真实记录，不是猜测）：\n"
         "当用户问起自己的事、或让你回忆说过的话/偏好/习惯时，必须优先从下面的记忆里找答案，"
-        "并直接引用；只有在记忆里确实没有时才说不知道。\n"
-        + "\n".join(lines)
+        "并直接引用；只有在记忆里确实没有时才说不知道。\n" + "\n".join(lines)
     )
 
 
@@ -91,7 +93,9 @@ def assemble_system_prompt(
     parts: list[str] = []
 
     if instructions:
-        parts.append("工具使用规则（最高优先级，必须遵守）：\n" + "\n".join(f"- {i}" for i in instructions))
+        parts.append(
+            "工具使用规则（最高优先级，必须遵守）：\n" + "\n".join(f"- {i}" for i in instructions)
+        )
 
     # 技能目录（对齐 Harness 会话目录：只含 name+description，正文经 skill_doc 工具按需读）
     if skill_catalog:

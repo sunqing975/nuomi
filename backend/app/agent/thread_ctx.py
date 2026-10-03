@@ -4,6 +4,7 @@
 （config 参数收到默认 None），因此改用 contextvars——agent.astream 在同一个
 asyncio task 内执行，工具调用在同一 task 栈，ContextVar 可传播。
 """
+
 from __future__ import annotations
 
 import contextvars
