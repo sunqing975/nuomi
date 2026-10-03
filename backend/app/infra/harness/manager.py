@@ -30,10 +30,29 @@ class HarnessManager:
     def workspace(self) -> Path:
         return settings.workspace_path
 
-    def get_agent(self, agent_id: str, *, name: str, system_prompt: str) -> HarnessAgent:
-        """按 agent_id 取实例；不存在则构造并缓存（start 语义）。"""
+    def get_agent(
+        self,
+        agent_id: str,
+        *,
+        name: str,
+        system_prompt: str,
+        plugin_tools: list | None = None,
+        skills_dir=None,
+        skills_disabled: frozenset[str] = frozenset(),
+    ) -> HarnessAgent:
+        """按 agent_id 取实例；不存在则构造并缓存（start 语义）。
+
+        plugin_tools / skills：随 agent 绑定变化；实例已存在时忽略（改绑定需重启实例）。
+        """
         if agent_id not in self._agents:
-            cfg = build_agent_config(self.workspace, name=name, system_prompt=system_prompt)
+            cfg = build_agent_config(
+                self.workspace,
+                name=name,
+                system_prompt=system_prompt,
+                plugin_tools=plugin_tools,
+                skills_dir=skills_dir,
+                skills_disabled=skills_disabled,
+            )
             self._agents[agent_id] = HarnessAgent(cfg)
         return self._agents[agent_id]
 

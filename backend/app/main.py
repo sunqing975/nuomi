@@ -40,8 +40,19 @@ def seed_default_agent() -> None:
 async def lifespan(_: FastAPI):
     init_db()
     seed_default_agent()
+    _sync_plugins()
     yield
     manager.close()
+
+
+def _sync_plugins() -> None:
+    """启动时加载工作区插件（失败不阻断启动，可在 /api/plugins/sync 重试）。"""
+    from app.domain.plugins.service import plugin_service
+
+    try:
+        plugin_service.sync()
+    except Exception:
+        pass
 
 
 app = FastAPI(title="nuomi", version="0.13.0", lifespan=lifespan)

@@ -15,6 +15,8 @@ from app.domain.agents.service import (
     STATE_STOPPED,
     agent_service,
 )
+from app.domain.plugins.service import plugin_service
+from app.domain.skills.service import skill_service
 from app.infra.harness.chat import PET_MOOD_RULE, format_sse, stream_chat
 from app.infra.harness.manager import manager
 
@@ -43,12 +45,16 @@ async def chat(agent_id: str, body: ChatBody, request: Request) -> StreamingResp
         raise HTTPException(status_code=400, detail="Agent 已停用")
 
     async def gen():
+        tools = plugin_service.tools_for_agent(agent_id)
         async for event in stream_chat(
             body.messages,
             body.thread_id,
             agent_id=agent_id,
             name=agent_row["name"],
             system_prompt=(agent_row["system_prompt"] or "") + PET_MOOD_RULE,
+            plugin_tools=tools,
+            skills_dir=skill_service.skills_dir(),
+            skills_disabled=skill_service.disabled_set(),
         ):
             if await request.is_disconnected():
                 break
@@ -131,7 +137,14 @@ async def start_agent(agent_id: str) -> dict:
         raise HTTPException(status_code=404, detail="Agent 不存在")
     if not row.get("enabled"):
         raise HTTPException(status_code=400, detail="Agent 已停用")
-    manager.get_agent(agent_id, name=row["name"], system_prompt=row["system_prompt"])
+    manager.get_agent(
+        agent_id,
+        name=row["name"],
+        system_prompt=row["system_prompt"],
+        plugin_tools=plugin_service.tools_for_agent(agent_id),
+        skills_dir=skill_service.skills_dir(),
+        skills_disabled=skill_service.disabled_set(),
+    )
     agent_service.set_state(agent_id, STATE_RUNNING)
     return {"ok": True, "state": STATE_RUNNING}
 
@@ -153,3 +166,78 @@ async def agent_status(agent_id: str) -> dict:
         raise HTTPException(status_code=404, detail="Agent 不存在")
     runtime = "running" if manager.has(agent_id) else "stopped"
     return {"agent_id": agent_id, "runtime": runtime, "last_state": row.get("last_state")}
+
+
+# ---------- 插件（能力域：对齐 Octop 插件概念） ----------
+
+
+class PluginPatchBody(BaseModel):
+    enabled: bool | None = None
+
+
+@router.get("/plugins")
+async def list_plugins() -> list[dict]:
+    return plugin_service.list()
+
+
+@router.post("/plugins/sync")
+async def sync_plugins() -> list[dict]:
+    """重新扫描工作区 plugins/ 并加载（新插件默认启用）。"""
+    return plugin_service.sync()
+
+
+@router.patch("/plugins/{plugin_id}")
+async def patch_plugin(plugin_id: str, body: PluginPatchBody) -> dict:
+    row = plugin_service.set_enabled(plugin_id, body.enabled) if body.enabled is not None else plugin_service.get(plugin_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="插件不存在")
+    return row
+
+
+class AgentPluginsBody(BaseModel):
+    plugin_ids: list[str] = Field(description="要绑定的插件 ID 列表（覆盖式）")
+
+
+@router.get("/agents/{agent_id}/plugins")
+async def list_agent_plugins(agent_id: str) -> list[dict]:
+    if agent_service.get(agent_id) is None:
+        raise HTTPException(status_code=404, detail="Agent 不存在")
+    return plugin_service.agent_bindings(agent_id)
+
+
+@router.put("/agents/{agent_id}/plugins")
+async def bind_agent_plugins(agent_id: str, body: AgentPluginsBody) -> list[dict]:
+    """覆盖式绑定：只保留列表中的插件（绑定即启用）。"""
+    if agent_service.get(agent_id) is None:
+        raise HTTPException(status_code=404, detail="Agent 不存在")
+    for existing in plugin_service.agent_bindings(agent_id):
+        if existing["plugin_id"] not in body.plugin_ids:
+            plugin_service.unbind(agent_id, existing["plugin_id"])
+    for plugin_id in body.plugin_ids:
+        if plugin_service.get(plugin_id) is None:
+            raise HTTPException(status_code=404, detail=f"插件不存在: {plugin_id}")
+        plugin_service.bind(agent_id, plugin_id)
+    return plugin_service.agent_bindings(agent_id)
+
+
+# ---------- 技能（能力域：对齐 Octop 技能概念） ----------
+
+
+class SkillPatchBody(BaseModel):
+    enabled: bool | None = None
+
+
+@router.get("/skills")
+async def list_skills() -> list[dict]:
+    return skill_service.list()
+
+
+@router.patch("/skills/{skill_name}")
+async def patch_skill(skill_name: str, body: SkillPatchBody) -> dict:
+    if body.enabled is not None:
+        row = skill_service.set_enabled(skill_name, body.enabled)
+    else:
+        row = next((s for s in skill_service.list() if s["name"] == skill_name), None)
+    if row is None:
+        raise HTTPException(status_code=404, detail="技能不存在")
+    return row

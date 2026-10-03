@@ -13,7 +13,7 @@ from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from app.domain.agents.seed import default_system_prompt
 from app.domain.agents.service import agent_service

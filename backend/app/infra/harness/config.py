@@ -5,6 +5,7 @@ HarnessAgentConfig，再由 manager 负责生命周期。
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 
 from octop_harness import HarnessAgentConfig, init_workspace
@@ -24,16 +25,29 @@ def build_provider() -> ProviderConfig:
     )
 
 
-def build_agent_config(workspace_dir: Path, *, name: str = "nuomi", system_prompt: str = "") -> HarnessAgentConfig:
+def build_agent_config(
+    workspace_dir: Path,
+    *,
+    name: str = "nuomi",
+    system_prompt: str = "",
+    plugin_tools: list | None = None,
+    skills_dir: str | Path | Sequence[str | Path] | None = None,
+    skills_disabled: frozenset[str] = frozenset(),
+) -> HarnessAgentConfig:
     """构造单个 Agent 的运行时配置（工作区按 harness init_workspace 布局）。
 
     model_ref 使用 "provider/model" 复合串（Octop resolve_explicit_default_model 形态）。
+    plugin_tools：插件注册的工具（build_plugin_tools 结果），经 cfg.tools 注入 agent。
+    skills_dir / skills_disabled：自定义技能目录与禁用集合。
     """
-    init_workspace(workspace_dir, language="zh", include_md_files=False, include_skills=False)
+    init_workspace(workspace_dir, language="zh", include_md_files=False, include_skills=True)
     return HarnessAgentConfig(
         name=name,
         workspace_dir=workspace_dir,
         providers=[build_provider()],
         default_model=f"llm/{settings.llm_model}",
         system_prompt=system_prompt or "你是糯米，一个住在用户电脑里的桌面 AI 人格。中文回答，简洁友好。",
+        tools=plugin_tools,
+        skills_dir=skills_dir,
+        skills_disabled=skills_disabled,
     )

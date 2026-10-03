@@ -36,6 +36,39 @@ CREATE TABLE IF NOT EXISTS agents (
 );
 """
 
+# —— 能力域：插件 / 技能（对齐 Octop 领域语言）——
+
+PLUGINS_DDL = """
+CREATE TABLE IF NOT EXISTS plugins (
+  plugin_id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  kind TEXT DEFAULT 'tool',
+  version TEXT DEFAULT '',
+  description TEXT DEFAULT '',
+  enabled INTEGER DEFAULT 1,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+"""
+
+AGENT_PLUGINS_DDL = """
+CREATE TABLE IF NOT EXISTS agent_plugins (
+  agent_id TEXT NOT NULL,
+  plugin_id TEXT NOT NULL,
+  enabled INTEGER DEFAULT 1,
+  tool_configs TEXT DEFAULT '{}',
+  PRIMARY KEY (agent_id, plugin_id)
+);
+"""
+
+SKILLS_DDL = """
+CREATE TABLE IF NOT EXISTS skills (
+  skill_name TEXT PRIMARY KEY,
+  enabled INTEGER DEFAULT 1,
+  description TEXT DEFAULT ''
+);
+"""
+
 
 def db_path() -> Path:
     """统一 SQLite 文件（单一数据根）。"""
@@ -59,6 +92,9 @@ def init_db() -> None:
     db_path().parent.mkdir(parents=True, exist_ok=True)
     with connect() as conn:
         conn.executescript(AGENTS_DDL)
+        conn.executescript(PLUGINS_DDL)
+        conn.executescript(AGENT_PLUGINS_DDL)
+        conn.executescript(SKILLS_DDL)
 
 
 def gen_agent_id() -> str:
