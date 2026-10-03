@@ -4,20 +4,15 @@ const path = require('path')
 const { ipcRenderer } = require('electron')
 const { TTSClient } = require('./js/tts-client')
 const { ASRProcessor } = require('./js/asr-client')
-const { PluginManager } = require('./js/core/plugin-manager.js')
 const { ModelInteractionController } = require('./js/model/model-interaction.js')
-const { LLMClient } = require('./js/llm-client')
 const { TTSStreamProcessor } = require('./js/tts-stream-processor')
 const { EmotionExpressionMapper } = require('./js/emotion-expression-mapper')
-const { ScreenshotManager } = require('./js/screenshot-manager')
 const { VRMModelSetup } = require('./js/model/vrm-model-setup.js')
 const { VRMInteractionController } = require('./js/model/vrm-model-interaction.js')
 const { UnifiedModelAdapter } = require('./js/model/unified-model-adapter.js')
 const { UnifiedInteractionController } = require('./js/model/unified-interaction-controller.js')
 const { appState } = require('./js/core/app-state.js')
 const { ModelScanner } = require('./js/model/model-scanner.js')
-const { DiaryManager } = require('./js/diary-manager')
-const { MCPManager } = require('./js/mcp/mcp-manager')
 const { logToTerminal } = require('./js/api-utils')
 
 // 情绪表情映射器
@@ -45,19 +40,13 @@ try {
 // 初始化TTS
 const tts = new TTSClient(config)
 
-// 初始化智能截图管理器
-const screenshotManager = new ScreenshotManager(config)
-
 // 初始化流式 TTS 处理器（延迟初始化，需要 modelCtrl）
 let ttsStreamProcessor = null
 
-// 对话历史（供插件系统使用）
+// 对话历史（发送给后端 LLM 的消息队列）
 const messages = [
     { role: 'system', content: config?.llm?.system_prompt || '你是一个可爱的AI桌宠助手。' }
 ]
-
-// === Skill 系统（顶层变量，LLM 调用时动态注入）===
-let _activeSkillContent = null  // { soul, skill }
 
 // === 情绪→表情自动映射（5秒后自动恢复）===
 let _currentEmotionExpressions = []  // 当前激活的表情参数列表
@@ -122,91 +111,15 @@ function _applyEmotionExpression(emotion) {
     }, 10000)
 }
 
-ipcRenderer.on('apply-skill', (event, skillContent) => {
-    // nuomi 壳模式：人设由后端 Octop 专家管理，Skill 注入停用
-    if (config.nuomi?.disable_skill_injection) {
-        log('nuomi 壳模式：Skill 注入停用（人设由后端专家管理）')
-        return
-    }
-    try {
-        if (skillContent && skillContent.soul) {
-            _activeSkillContent = skillContent
-            const nameMatch = skillContent.soul.match(/^#\s+(.+)/m)
-            const roleName = nameMatch ? nameMatch[1].trim() : 'AI'
-            log('Skill 已激活: ' + roleName)
-        }
-    } catch (e) {
-        log('Skill 激活失败: ' + e.message, 'error')
-    }
-})
+// ===== 持久化对话历史（已废除：记忆由后端 octop-harness 管理）=====
 
-ipcRenderer.on('remove-skill', () => {
-    _activeSkillContent = null
-    log('Skill 已停用')
-})
-
-// ===== 持久化对话历史 =====
-function getHistoryPath() {
-    const relativePath = config?.context?.history_file || 'AI记录室/对话历史.jsonl'
-    return path.join(__dirname, relativePath)
-}
-
-function loadConversationHistory() {
-    if (!config?.context?.persistent_history) return
-    const historyPath = getHistoryPath()
-    try {
-        if (fs.existsSync(historyPath)) {
-            const content = fs.readFileSync(historyPath, 'utf8')
-            const lines = content.trim().split('\n')
-            for (const line of lines) {
-                if (line.trim()) {
-                    try {
-                        const msg = JSON.parse(line)
-                        messages.push(msg)
-                    } catch (e) {
-                        console.error('解析对话历史行失败:', line.substring(0, 50))
-                    }
-                }
-            }
-            console.log(`已加载 ${messages.length - 1} 条历史对话`)
-        }
-    } catch (e) {
-        console.error('加载对话历史失败:', e)
-    }
-}
-
-function saveConversationHistory() {
-    if (!config?.context?.persistent_history) return
-    const historyPath = getHistoryPath()
-    try {
-        const dir = path.dirname(historyPath)
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
-
-        // 保存 user、assistant 和压缩摘要（system消息含[历史对话总结]）
-        const toSave = messages.filter(m => {
-            if (m.role === 'user' || m.role === 'assistant') return true
-            if (m.role === 'system' && m.content && m.content.includes('[历史对话总结]')) return true
-            return false
-        })
-        const lines = toSave.map(m => JSON.stringify(m)).join('\n') + '\n'
-        fs.writeFileSync(historyPath, lines, 'utf8')
-    } catch (e) {
-        console.error('保存对话历史失败:', e)
-    }
-}
-
-// 启动时加载历史
-loadConversationHistory()
-
-// 设置插件系统需要的全局变量
-const diaryManager = new DiaryManager(config)
-global.voiceChat = {
+// 设置全局对话环境（供桌宠表现层使用）
+const voiceChat = {
     messages: messages,
     API_URL: config?.llm?.api_url || '',
     API_KEY: config?.llm?.api_key || '',
     MODEL: config?.llm?.model || '',
     ttsProcessor: tts,
-    diaryManager: diaryManager,
     sendToLLM: async (content) => { await sendMessage(content) },
     setModel: (m) => { global.currentModel = m },
     setEmotionMapper: null
@@ -943,26 +856,11 @@ async function main() {
                     }
                 }
 
-                // MCP 启用状态热重载
-                const mcpEnabled = config?.mcp?.enabled || false
-                const oldMcpEnabled = oldConfig?.mcp?.enabled || false
-                if (mcpEnabled !== oldMcpEnabled) {
-                    log('MCP: ' + (mcpEnabled ? '启用' : '禁用'))
-                    logToTerminal('info', 'MCP: ' + (mcpEnabled ? '已启用' : '已禁用'))
-                    if (global.mcpManager) {
-                        global.mcpManager.isEnabled = mcpEnabled
-                    }
-                }
-
                 // BERT 分类热重载
                 const bertEnabled = config?.bert?.enabled || false
                 if (bertEnabled !== (oldConfig?.bert?.enabled || false)) {
                     log('BERT: ' + (bertEnabled ? '启用' : '禁用'))
                     logToTerminal('info', 'BERT: ' + (bertEnabled ? '已启用' : '已禁用'))
-                }
-                if (screenshotManager) {
-                    screenshotManager.bertEnabled = bertEnabled
-                    screenshotManager.bertUrl = config?.bert?.url || screenshotManager.bertUrl
                 }
 
                 // 同步 voiceChat API 信息（插件 callLLM 使用）
@@ -1095,52 +993,6 @@ async function main() {
         const showChatBox = config?.ui?.show_chat_box !== false
         chatContainer.style.display = showChatBox ? 'block' : 'none'
 
-        // 初始化插件系统（仅 loadAll，startAll 延后到子系统就绪后）
-        // nuomi 壳模式：插件能力由后端 Octop 管理，myspy 插件系统停用
-        let pluginManager
-        if (config.nuomi?.disable_plugins) {
-            log('nuomi 壳模式：插件系统停用（能力由后端 Octop 管理）')
-        } else {
-            try {
-                pluginManager = new PluginManager(config)
-                await pluginManager.loadAll()
-                global.pluginManager = pluginManager
-                logTool('插件系统加载完成')
-
-                // 写入插件运行状态到文件，并定期更新
-                const statusPath = path.join(__dirname, 'plugins', 'running_plugins.json')
-                const updateStatus = () => {
-                    const loaded = Array.from(pluginManager._plugins.keys())
-                    fs.writeFileSync(statusPath, JSON.stringify(loaded, null, 2))
-                }
-                updateStatus()
-                setInterval(updateStatus, 5000)
-            } catch (e) {
-                console.error('插件系统加载失败:', e)
-            }
-        }
-
-        // 初始化 MCP 系统
-        // nuomi 壳模式：MCP 服务由后端 Octop 管理，myspy MCP 停用
-        if (config.nuomi?.disable_mcp) {
-            log('nuomi 壳模式：MCP 系统停用（服务由后端 Octop 管理）')
-        } else {
-            try {
-                const mcpManager = new MCPManager(config)
-                await mcpManager.initialize()
-                global.mcpManager = mcpManager
-                logTool('MCP 系统加载完成')
-            } catch (e) {
-                console.error('MCP 系统加载失败:', e)
-            }
-        }
-
-        // 所有子系统就绪后，启动插件
-        if (pluginManager) {
-            await pluginManager.startAll()
-            logTool('插件系统已启动')
-        }
-
     } catch (e) {
         console.error('初始化失败:', e)
     }
@@ -1159,42 +1011,6 @@ function buildRequestBody(messages, tools) {
         body.temperature = config.llm.temperature || 0.7
     }
     return body
-}
-
-// 截图并返回 base64
-async function takeScreenshot() {
-    try {
-        const { ipcRenderer } = require('electron')
-        const base64 = await ipcRenderer.invoke('take-screenshot')
-        return base64 || null
-    } catch (e) {
-        log('截图失败: ' + e.message, 'warn')
-        return null
-    }
-}
-
-// 构建带图片的消息
-function buildMessagesWithImage(messages, screenshotBase64) {
-    if (!screenshotBase64) return messages
-
-    const result = messages.map(msg => ({ ...msg }))
-    // 找到最后一条用户消息，附加图片
-    for (let i = result.length - 1; i >= 0; i--) {
-        if (result[i].role === 'user') {
-            const existingContent = typeof result[i].content === 'string'
-                ? [{ type: 'text', text: result[i].content }]
-                : result[i].content
-            result[i] = {
-                role: 'user',
-                content: [
-                    ...existingContent,
-                    { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${screenshotBase64}` } }
-                ]
-            }
-            break
-        }
-    }
-    return result
 }
 
 // 清洗消息以兼容各种 LLM API
@@ -1220,48 +1036,11 @@ function cleanMessagesForAPI(messages) {
     })
 }
 
-// 调用 LLM API（非流式）
-async function callLLM(messages, tools = null, apiUrl = null, apiKey = null) {
-    const url = apiUrl || config.llm.api_url + '/chat/completions'
-    const key = apiKey || config.llm.api_key
-    // 动态注入 Skill 内容（完全替换系统消息）
-    let cleaned = cleanMessagesForAPI(messages)
-    if (_activeSkillContent && _activeSkillContent.soul) {
-        const nameMatch = _activeSkillContent.soul.match(/^#\s+(.+)/m)
-        const roleName = nameMatch ? nameMatch[1].trim() : 'AI'
-        const persona = `你是${roleName}。按以下规则与用户对话。回复要短(1-3 句),不要解释你的人格,直接说话。\n\n${_activeSkillContent.soul}\n\n${_activeSkillContent.skill || ''}\n\n你可以用情绪标签：<开心> <生气> <难过> <惊讶> <害羞> <俏皮>，自然地用就行，想用就用，不想用就不用。`
-        cleaned = cleaned.filter(m => m.role !== 'system')
-        cleaned.unshift({ role: 'system', content: persona })
-    }
-    const body = buildRequestBody(cleaned, tools)
-    log('LLM请求: ' + url + ' 消息数: ' + messages.length)
-    const r = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
-        body: JSON.stringify(body)
-    })
-    log('LLM响应状态: ' + r.status)
-    const result = await r.json()
-    if (result.error) {
-        log('LLM错误: ' + JSON.stringify(result.error), 'error')
-    }
-    return result
-}
-
 // 流式 LLM 调用 - 逐块返回文本
 async function callLLMStream(messages, tools = null, onChunk = null) {
     const url = config.llm.api_url + '/chat/completions'
     const key = config.llm.api_key
-    // 动态注入 Skill 内容到系统消息（完全替换）
     let cleaned = cleanMessagesForAPI(messages)
-    if (_activeSkillContent && _activeSkillContent.soul) {
-        const nameMatch = _activeSkillContent.soul.match(/^#\s+(.+)/m)
-        const roleName = nameMatch ? nameMatch[1].trim() : 'AI'
-        const persona = `你是${roleName}。按以下规则与用户对话。回复要短(1-3 句),不要解释你的人格,直接说话。\n\n${_activeSkillContent.soul}\n\n${_activeSkillContent.skill || ''}`
-        // 移除所有系统消息，只保留 Skill 的
-        cleaned = cleaned.filter(m => m.role !== 'system')
-        cleaned.unshift({ role: 'system', content: persona })
-    }
     const body = buildRequestBody(cleaned, tools)
     body.stream = true
 
@@ -1370,78 +1149,6 @@ async function sendMessage(text, options = {}) {
     trimMessages()
 
     try {
-        // 插件：用户输入钩子
-        if (global.pluginManager) {
-            const inputEvent = {
-                text,
-                messages,
-                _stopped: false,
-                _defaultPrevented: false,
-                source: 'user-input',
-                stopPropagation() { this._stopped = true },
-                preventDefault() { this._defaultPrevented = true },
-                setText(newText) { this.text = newText },
-                addContext(key, value) { if (!this._context) this._context = {}; this._context[key] = value },
-                getContextAdditions() { return this._context || {} }
-            }
-            await global.pluginManager.runUserInputHooks(inputEvent)
-            if (inputEvent._stopped) return
-        }
-
-        // 获取所有工具（MCP + 插件）
-        let allTools = []
-        if (global.mcpManager && global.mcpManager.isEnabled) {
-            const mcpTools = global.mcpManager.getToolsForLLM()
-            if (mcpTools && mcpTools.length > 0) {
-                allTools.push(...mcpTools)
-            }
-        }
-        if (global.pluginManager) {
-            const pluginTools = global.pluginManager.getAllTools()
-            if (pluginTools && pluginTools.length > 0) {
-                allTools.push(...pluginTools)
-            }
-        }
-
-        // 始终发送工具（跟原项目一致）
-        const shouldSendTools = allTools.length > 0
-
-        // BERT 智能截图判断（在 LLM 调用前）
-        let screenshotBase64 = null
-        if (screenshotManager) {
-            const needScreenshot = await screenshotManager.shouldTakeScreenshot(text)
-            if (needScreenshot) {
-                screenshotBase64 = await screenshotManager.takeScreenshot()
-                if (screenshotBase64) {
-                    logToTerminal('info', 'BERT 判断需要截图，已截取，长度: ' + screenshotBase64.length)
-                }
-            }
-        }
-
-        // 构建发送给 API 的消息（带图片）
-        let messagesForAPI = buildMessagesWithImage(messages, screenshotBase64)
-
-        // 如果有截图且开了视觉模型，先用视觉模型处理图片
-        const useVisionModel = config?.vision?.use_vision_model && config?.vision?.vision_model
-        if (screenshotBase64 && useVisionModel) {
-            log('使用视觉模型处理图片')
-            const visionApiUrl = config.vision.vision_model.api_url + '/chat/completions'
-            const visionApiKey = config.vision.vision_model.api_key
-            const visionD = await callLLM(messagesForAPI, null, visionApiUrl, visionApiKey)
-            const visionReply = visionD.choices?.[0]?.message?.content || ''
-
-            if (visionReply) {
-                // 视觉模型的结果作为上下文，让主模型生成桌宠口吻的回复
-                messages.push({ role: 'assistant', content: '[图片分析] ' + visionReply })
-                messagesForAPI = buildMessagesWithImage(messages, null) // 不再带图片
-            }
-        }
-
-        // 插件：LLM 请求钩子
-        if (global.pluginManager) {
-            await global.pluginManager.runLLMRequestHooks({ messages: messagesForAPI, tools: allTools })
-        }
-
         // 调用主 LLM（流式）
         let replyBuffer = ''
 

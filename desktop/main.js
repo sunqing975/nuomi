@@ -114,9 +114,6 @@ app.whenReady().then(() => {
     petWindow = createWindow()
     controlPanel = createControlPanel()
 
-    // 启动 Skill 目录监控
-    startSkillWatcher()
-
     // 关闭控制面板时退出整个应用
     controlPanel.on('closed', () => {
         app.quit()
@@ -135,16 +132,7 @@ app.whenReady().then(() => {
     console.log('myspy 启动完成')
 })
 
-// 删除插件状态文件的函数
-function cleanPluginStatus() {
-    const statusPath = path.join(app.getAppPath(), 'plugins', 'running_plugins.json')
-    try { fs.unlinkSync(statusPath); console.log('已删除插件状态文件') } catch (e) {}
-}
-
-app.on('before-quit', () => { stopSkillWatcher(); cleanPluginStatus() })
-app.on('will-quit', cleanPluginStatus)
 app.on('window-all-closed', () => {
-    cleanPluginStatus()
     if (process.platform !== 'darwin') {
         app.quit()
     }
@@ -189,12 +177,6 @@ ipcMain.on('start-pet', () => {
         petWindow.destroy()
     }
     petWindow = createWindow()
-    // 如果有暂存的 Skill，宠物窗口加载完成后发送
-    if (_pendingSkill) {
-        petWindow.webContents.on('did-finish-load', () => {
-            petWindow.webContents.send('apply-skill', _pendingSkill)
-        })
-    }
     // 如果 PTT 启用，重新注册全局快捷键
     try {
         let pttConfig = {}
@@ -214,8 +196,6 @@ ipcMain.on('stop-pet', () => {
     }
     // 注销 PTT 全局快捷键
     unregisterPTTShortcut()
-    // 清空插件运行状态
-    cleanPluginStatus()
 })
 
 // 获取桌宠状态
@@ -227,23 +207,6 @@ ipcMain.handle('get-pet-status', () => {
 ipcMain.on('switch-model', (event, modelPath) => {
     if (petWindow && !petWindow.isDestroyed()) {
         petWindow.webContents.send('switch-model', modelPath)
-    }
-})
-
-// Skill 人设切换（支持宠物窗口未创建时暂存）
-let _pendingSkill = null
-
-ipcMain.on('apply-skill', (event, skillContent) => {
-    _pendingSkill = skillContent
-    if (petWindow && !petWindow.isDestroyed()) {
-        petWindow.webContents.send('apply-skill', skillContent)
-    }
-})
-
-ipcMain.on('remove-skill', () => {
-    _pendingSkill = null
-    if (petWindow && !petWindow.isDestroyed()) {
-        petWindow.webContents.send('remove-skill')
     }
 })
 
@@ -345,7 +308,7 @@ ipcMain.handle('save-emotion-config', (event, data) => {
     }
 })
 
-// === Skill 管理 ===
+// === Skill 管理（已废除：技能由后端 Octop 管理，此处理器保留为空实现以免 webui 报错）===
 ipcMain.handle('scan-skills', () => {
     try {
         const skillsDir = path.join(__dirname, 'skills')
@@ -376,25 +339,6 @@ ipcMain.handle('scan-skills', () => {
         return []
     }
 })
-
-// === Skill 目录监控 ===
-let _skillWatcher = null
-function startSkillWatcher() {
-    const skillsDir = path.join(__dirname, 'skills')
-    if (!fs.existsSync(skillsDir)) return
-    try {
-        _skillWatcher = fs.watch(skillsDir, { recursive: true }, (eventType, filename) => {
-            if (filename && controlPanel && !controlPanel.isDestroyed()) {
-                controlPanel.webContents.send('skills-changed')
-            }
-        })
-    } catch (e) {
-        console.error('Skill 监控启动失败:', e.message)
-    }
-}
-function stopSkillWatcher() {
-    if (_skillWatcher) { _skillWatcher.close(); _skillWatcher = null }
-}
 
 ipcMain.handle('load-skill-content', (event, skillName) => {
     try {
