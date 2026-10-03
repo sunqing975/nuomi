@@ -70,21 +70,45 @@ function createWindow() {
     return win
 }
 
-// 创建控制面板窗口
+// 创建控制面板窗口（指向 nuomi 后端挂载的 React 控制台 /console/）
+function backendOrigin() {
+    try {
+        const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'))
+        const u = new URL(cfg.llm.api_url)
+        return u.origin
+    } catch (e) {
+        return 'http://127.0.0.1:8000'
+    }
+}
+
 function createControlPanel() {
     const panel = new BrowserWindow({
-        width: 900,
-        height: 600,
-        title: 'myspy 控制面板',
+        width: 1100,
+        height: 720,
+        title: 'Nuomi 控制台',
         icon: path.join(__dirname, 'icon.png'),
         webPreferences: {
-            nodeIntegration: true,
-            contextIsolation: false
+            nodeIntegration: false,
+            contextIsolation: true
         }
     })
 
     panel.setMenu(null)
-    panel.loadFile(path.join(__dirname, 'webui', 'index.html'))
+
+    // 后端可能尚未启动：加载失败则每 2s 重试（最多 30 次，约 1 分钟）
+    const origin = backendOrigin()
+    const panelUrl = origin + '/console/'
+    let retries = 0
+    const load = () => {
+        if (!panel.isDestroyed()) panel.loadURL(panelUrl)
+    }
+    panel.webContents.on('did-fail-load', () => {
+        retries += 1
+        if (retries <= 30) {
+            setTimeout(load, 2000)
+        }
+    })
+    load()
 
     return panel
 }
