@@ -8,7 +8,7 @@
 |---|---|---|
 | 大脑（机制层） | [octop-harness](https://pypi.org/project/octop-harness/) | Agent 运行时（LangChain Deep Agents）：循环/工具/记忆/checkpointer/技能/MCP |
 | 业务层 | Python + FastAPI | 专家/会话/能力领域服务（自研） |
-| 形象层（桌宠） | myspy（Electron + Live2D/VRM） | 二次开发中：情绪表情、流式字幕、TTS |
+| 形象层（桌宠壳） | desktop/（基于 myspy，MIT） | 纯表现层：Live2D 渲染、情绪表情、流式字幕、输入；大脑全在 backend（详见 [desktop/README.md](desktop/README.md)） |
 | 存储 | SQLite | agents/threads/messages（对齐 Octop schema，规划中） |
 
 ## 快速开始（当前为后端最小对话）
