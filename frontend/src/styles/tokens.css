@@ -6,6 +6,56 @@
    - 间距：8 级刻度；动效：缓动 + 时长 token；圆角 / 阴影体系
    ============================================================ */
 :root {
+  /* ---- 色板 · 浅色（默认，学豆包白底）---- */
+  --dsw-bg-base: rgb(247, 248, 250);
+  --dsw-bg-layer-2: rgb(255, 255, 255);
+  --dsw-sidebar-fill: rgb(241, 243, 247);
+  --surface-2: rgb(233, 236, 241);
+  --dsw-label: rgb(24, 28, 34);
+  --dsw-label-2: rgb(92, 100, 112);
+  --dsw-label-3: rgb(140, 148, 160);
+  --dsw-border-1: rgba(20, 28, 46, 0.08);
+  --dsw-border-2: rgba(20, 28, 46, 0.13);
+  --dsw-border-3: rgba(20, 28, 46, 0.19);
+  --dsw-hover: rgba(20, 28, 46, 0.055);
+  --dsw-active: rgba(20, 28, 46, 0.11);
+  --dsw-blue-400: rgb(122, 170, 255);
+  --dsw-blue-450: rgb(86, 134, 254);
+  --dsw-blue-500: rgb(65, 118, 230);
+  --dsw-blue-soft: rgba(86, 134, 254, 0.12);
+  --accent-glow: rgba(86, 134, 254, 0.26);
+  --accent-strong: rgb(64, 112, 238);
+  --danger: #dc3545;
+  --aurora-a: rgba(86, 134, 254, 0.1);
+  --aurora-b: rgba(122, 170, 255, 0.07);
+  --aurora-c: rgba(86, 134, 254, 0.05);
+  --noise-opacity: 0.02;
+  --shadow-pop: 0 12px 40px rgba(15, 23, 42, 0.14);
+  --shadow-float: 0 8px 24px rgba(15, 23, 42, 0.1);
+  --shadow-glow: 0 6px 20px var(--accent-glow);
+  /* ---- 语义别名（深浅主题自动跟随：:root 定义，dark 覆盖 dsw 色板后自动变深）---- */
+  --bg: var(--dsw-bg-base);
+  --bg-container: var(--dsw-bg-layer-2); /* PageShell 内容卡片底 */
+  --surface: var(--dsw-bg-layer-2);
+  --label: var(--dsw-label);
+  --label-2: var(--dsw-label-2);
+  --label-3: var(--dsw-label-3);
+  --line-1: var(--dsw-border-1);
+  --line-2: var(--dsw-border-2);
+  --line-3: var(--dsw-border-3);
+  --accent: var(--dsw-blue-450);
+  --accent-strong: var(--dsw-blue-400);
+  --accent-soft: var(--dsw-blue-soft);
+  --accent-glow: rgba(86, 134, 254, 0.36);
+  --ok: #4ade96;
+  --warn: #ffbe3c;
+  --danger: #f56565;
+  color-scheme: light;
+}
+
+/* 深色主题（data-theme="dark" 覆盖回深色 bluish 中性风） */
+[data-theme="dark"] {
+
   /* ---- 色板 · 深色（默认）---- */
   --dsw-bg-base: rgb(17, 18, 21);          /* bluish-950 · 页面底 */
   --dsw-bg-layer-2: rgb(26, 28, 33);       /* bluish-880 · 卡片面 */
@@ -24,22 +74,6 @@
   --dsw-blue-500: rgb(65, 118, 230);       /* deepseek-500 */
   --dsw-blue-soft: rgba(86, 134, 254, 0.14);
 
-  /* ---- 语义别名（深浅主题自动跟随）---- */
-  --bg: var(--dsw-bg-base);
-  --surface: var(--dsw-bg-layer-2);
-  --label: var(--dsw-label);
-  --label-2: var(--dsw-label-2);
-  --label-3: var(--dsw-label-3);
-  --line-1: var(--dsw-border-1);
-  --line-2: var(--dsw-border-2);
-  --line-3: var(--dsw-border-3);
-  --accent: var(--dsw-blue-450);
-  --accent-strong: var(--dsw-blue-400);
-  --accent-soft: var(--dsw-blue-soft);
-  --accent-glow: rgba(86, 134, 254, 0.36);   /* 主按钮 / 焦点辉光 */
-  --ok: #4ade96;
-  --warn: #ffbe3c;
-  --danger: #f56565;
 
   /* ---- 环境背景（极光 + 噪点，app::before/::after）---- */
   --aurora-a: rgba(86, 134, 254, 0.16);
@@ -113,7 +147,7 @@
   --composer-clearance: 20px;
 
   color-scheme: dark;
-}
+}}
 
 /* ---- 全局渲染基线 ---- */
 * {

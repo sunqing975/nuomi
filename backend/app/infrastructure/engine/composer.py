@@ -277,6 +277,8 @@ class NuomiComposer:
             "id": entry_id,
             "name": meta.get("name", e.plugin),
             "plugin": e.plugin,
+            # v0.12：能力 = 插件（领域语言一等公民）；模块属机制层不再对外透出
+            "category": "plugin",
             "description": meta.get("description", ""),
             "version": meta.get("version", ""),
             "builtin": bool(meta.get("builtin", False))

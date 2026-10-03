@@ -414,6 +414,8 @@ export interface ProjectInfo {
 export interface ThreadInfo {
   id: string;
   project_id: number;
+  /** 归属的 Agent 实例 id（rail 按专家维度分组；null = 默认专家会话） */
+  agent: string | null;
   title: string;
   created_at: string;
   updated_at: string;
@@ -649,5 +651,61 @@ export async function cloneExpert(name: string, displayName: string): Promise<{ 
 
 export async function deleteExpert(name: string): Promise<void> {
   const res = await fetch(`/api/experts/${encodeURIComponent(name)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+}
+
+// ---------- Agent 实例生命周期（对齐 Octop /api/agents） ----------
+
+export interface AgentInfo {
+  id: string;
+  name: string;
+  display_name: string;
+  expert: string;
+  description: string;
+  icon_name: string;
+  color: string;
+  status: "running" | "stopped";
+  created_at: string;
+  updated_at: string;
+}
+
+export async function fetchAgents(): Promise<{ agents: AgentInfo[]; current: string | null }> {
+  const res = await fetch("/api/agents");
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as { agents: AgentInfo[]; current: string | null };
+}
+
+export async function createAgent(expert: string, displayName: string): Promise<AgentInfo> {
+  const res = await fetch("/api/agents", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ expert, display_name: displayName }),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as AgentInfo;
+}
+
+export async function updateAgent(id: string, patch: { display_name?: string; description?: string }): Promise<AgentInfo> {
+  const res = await fetch(`/api/agents/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as AgentInfo;
+}
+
+export async function startAgent(id: string): Promise<void> {
+  const res = await fetch(`/api/agents/${encodeURIComponent(id)}/start`, { method: "POST" });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+}
+
+export async function stopAgent(id: string): Promise<void> {
+  const res = await fetch(`/api/agents/${encodeURIComponent(id)}/stop`, { method: "POST" });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+}
+
+export async function deleteAgent(id: string): Promise<void> {
+  const res = await fetch(`/api/agents/${encodeURIComponent(id)}`, { method: "DELETE" });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
 }

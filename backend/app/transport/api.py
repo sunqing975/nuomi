@@ -270,6 +270,16 @@ def _sanitize_plugin_name(name: str) -> str:
     return cleaned
 
 
+def _current_agent_id() -> str | None:
+    """当前 Agent 实例 id（rail 按专家维度组织会话时写入线程归属）。"""
+    from ..domain.agents.agent import agents_path, current_agent_id
+
+    try:
+        return current_agent_id(agents_path(settings.workspace_dir))
+    except Exception:
+        return None
+
+
 def build_router(app: FastAPI) -> APIRouter:
     """装配全部 HTTP 路由到 app（服务对象一律从 app.state 取）。"""
     router = APIRouter()
@@ -878,6 +888,112 @@ def build_router(app: FastAPI) -> APIRouter:
             raise HTTPException(status_code=404, detail="文档不存在")
         return {"ok": True}
 
+    # --- Agent 实例生命周期（对齐 Octop /api/agents：create/start/stop/edit/delete） ---
+
+    @router.get("/api/agents")
+    async def agents_list():
+        """Agent 实例清单（领域语义：Agent = 专家模板的实例化，带生命周期状态）。"""
+        from ..domain.agents.agent import agents_path, current_agent_id, list_agents
+
+        path = agents_path(settings.workspace_dir)
+        return {
+            "agents": [a.__dict__ for a in list_agents(path)],
+            "current": current_agent_id(path),
+        }
+
+    @router.post("/api/agents")
+    async def agent_create(payload: dict):
+        """从专家模板创建 Agent 实例（对齐 Octop create-from-template）。"""
+        from ..domain.agents.agent import agents_path, create_agent
+        from ..domain.experts.expert import list_experts
+
+        expert = str(payload.get("expert", "")).strip()
+        display_name = str(payload.get("display_name", "")).strip()
+        if not expert or expert not in list_experts(settings.experts_dir):
+            from fastapi import HTTPException
+
+            raise HTTPException(status_code=404, detail="专家模板不存在")
+        if not display_name:
+            from fastapi import HTTPException
+
+            raise HTTPException(status_code=422, detail="display_name 不能为空")
+        try:
+            agent = create_agent(
+                agents_path(settings.workspace_dir),
+                expert,
+                display_name,
+                description=str(payload.get("description", "")).strip(),
+                icon_name=str(payload.get("icon_name", "")).strip(),
+                color=str(payload.get("color", "")).strip(),
+            )
+        except ValueError as e:
+            from fastapi import HTTPException
+
+            raise HTTPException(status_code=422, detail=str(e)) from None
+        return agent.__dict__
+
+    @router.patch("/api/agents/{agent_id}")
+    async def agent_update(agent_id: str, payload: dict):
+        """编辑 Agent 实例（改名/改描述）。"""
+        from ..domain.agents.agent import agents_path, update_agent
+
+        try:
+            agent = update_agent(
+                agents_path(settings.workspace_dir),
+                agent_id,
+                display_name=(
+                    str(payload["display_name"]).strip() if "display_name" in payload else None
+                ),
+                description=(
+                    str(payload["description"]).strip() if "description" in payload else None
+                ),
+            )
+        except ValueError as e:
+            from fastapi import HTTPException
+
+            raise HTTPException(status_code=422, detail=str(e)) from None
+        if agent is None:
+            from fastapi import HTTPException
+
+            raise HTTPException(status_code=404, detail="Agent 不存在")
+        return agent.__dict__
+
+    @router.post("/api/agents/{agent_id}/start")
+    async def agent_start(agent_id: str):
+        """启动 Agent：设为当前运行实例（重启生效，nuomi 单运行时语义）。"""
+        from ..domain.agents.agent import agents_path, get_agent, set_current
+
+        if get_agent(agents_path(settings.workspace_dir), agent_id) is None:
+            from fastapi import HTTPException
+
+            raise HTTPException(status_code=404, detail="Agent 不存在")
+        set_current(agents_path(settings.workspace_dir), agent_id)
+        return {"ok": True, "current": agent_id}
+
+    @router.post("/api/agents/{agent_id}/stop")
+    async def agent_stop(agent_id: str):
+        """停止 Agent：清空当前运行实例，回落默认专家。"""
+        from ..domain.agents.agent import agents_path, current_agent_id, get_agent, set_current
+
+        if get_agent(agents_path(settings.workspace_dir), agent_id) is None:
+            from fastapi import HTTPException
+
+            raise HTTPException(status_code=404, detail="Agent 不存在")
+        if current_agent_id(agents_path(settings.workspace_dir)) == agent_id:
+            set_current(agents_path(settings.workspace_dir), None)
+        return {"ok": True, "current": None}
+
+    @router.delete("/api/agents/{agent_id}")
+    async def agent_delete(agent_id: str):
+        """删除 Agent 实例（当前运行的实例自动先停止）。"""
+        from ..domain.agents.agent import agents_path, delete_agent
+
+        if not delete_agent(agents_path(settings.workspace_dir), agent_id):
+            from fastapi import HTTPException
+
+            raise HTTPException(status_code=404, detail="Agent 不存在")
+        return {"ok": True}
+
     @router.get("/api/connectors")
     async def connectors_list():
         """连接器清单（领域语义：外部能力连接，如 MCP server；对齐 Octop /connectors）。
@@ -940,7 +1056,9 @@ def build_router(app: FastAPI) -> APIRouter:
 
     @router.post("/api/threads")
     async def threads_create(req: NewThreadRequest):
-        return app.state.projects.create_thread(req.project_id, req.title)
+        return app.state.projects.create_thread(
+            req.project_id, req.title, agent=_current_agent_id()
+        )
 
     @router.patch("/api/threads/{thread_id}")
     async def threads_rename(thread_id: str, req: RenameThreadRequest):
@@ -1020,7 +1138,7 @@ def build_router(app: FastAPI) -> APIRouter:
             store.touch_thread(req.thread_id)
         elif req.thread_id:
             # 兼容旧 thread_id（外部传入的 key）：原样注册，不重新生成
-            store.upsert_thread(req.thread_id, req.project_id)
+            store.upsert_thread(req.thread_id, req.project_id, agent=_current_agent_id())
             is_new = True
         else:
             t = store.create_thread(req.project_id)

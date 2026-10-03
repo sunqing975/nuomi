@@ -1,7 +1,7 @@
 /** pages/ChatPage：聊天页（对齐 Octop /chat）。
  *  布局：左侧会话/项目树 rail（SideBar）+ 主区（顶栏 + ChatWindow + InputBar）+ 右栏文件树。
  *  聊天核心逻辑（assistant-ui runtime / SSE 桥接 / 命令系统）在 App 根持有，本页只做布局组装。 */
-import type { ModelProvider, ProjectInfo, ThreadInfo } from "../api";
+import type { AgentInfo, ModelProvider, ProjectInfo, ThreadInfo } from "../api";
 import { useNavigate } from "react-router-dom";
 import type { CommandDef } from "../modules/ui-input/commands";
 import ChatWindow from "../modules/ui-chat/ChatWindow";
@@ -14,20 +14,18 @@ import { t } from "../i18n";
 
 export interface ChatPageProps {
   onOpenRobot: () => void;
-  // 项目 / 会话
+  // 专家 / 会话（rail 按 Agent 维度组织）
+  agents: AgentInfo[];
   projects: ProjectInfo[];
   threads: ThreadInfo[];
   currentProjectId: number | null;
   currentThreadId: string | null;
   threadTitle: string | null;
   onNewThread: () => void;
-  onNewThreadIn: (pid: number | null) => void;
   onSelectThread: (id: string) => void;
   onSelectProject: (id: number | null) => void;
-  onCreateProject: (name: string, directory?: string) => Promise<void>;
   onRenameThread: (id: string, title: string) => Promise<void>;
   onDeleteThread: (id: string) => void;
-  onDeleteProject: (id: number) => void;
   // 能力状态
   robotEnabled: boolean;
   teamMode: boolean;
@@ -65,26 +63,16 @@ export default function ChatPage(p: ChatPageProps) {
     <div className={`app ${p.filesOpen ? "right-open" : ""}`}>
       <SideBar
         tab="chat"
-        projects={p.projects}
+        agents={p.agents}
         threads={p.threads}
-        currentProjectId={p.currentProjectId}
         currentThreadId={p.currentThreadId}
         onTab={() => {}}
         onOpenSettings={() => navigate("/settings")}
         onNewThread={p.onNewThread}
-        onNewThreadIn={p.onNewThreadIn}
         onSelectThread={p.onSelectThread}
         onSelectProject={p.onSelectProject}
-        onCreateProject={async (name, directory) => {
-          try {
-            await p.onCreateProject(name, directory);
-          } catch (e) {
-            // 错误已由根组件提示
-          }
-        }}
         onRenameThread={p.onRenameThread}
         onDeleteThread={p.onDeleteThread}
-        onDeleteProject={p.onDeleteProject}
       />
 
       <main className="main">

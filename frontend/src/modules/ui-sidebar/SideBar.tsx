@@ -1,11 +1,11 @@
-/** ui-sidebar：单栏侧边栏（工作区对齐 dsh ui-workspace WorkspaceBrowser）。
- *  自上而下：品牌行 → 新会话 → 导航（插件）→ 工作区浏览器（会话视图）
+/** ui-sidebar：单栏侧边栏（对齐 Octop chatHistoryRail 按专家维度组织会话）。
+ *  自上而下：品牌行 → 新会话 → 导航（插件）→ 会话视图（Agent 组 + 自定义组 + 未分组）
  *  → 底部设置。
- *  会话视图：项目（Workspace）直接铺为可折叠分组（无下拉），未分组会话为独立组；
- *  组内会话默认 5 条 + 展开其余/收起、置顶（本地持久化）、全局搜索、空标题未命名。
- *  文件树已移出侧栏：主区右上角按钮展开当前项目的文件树抽屉（2026-10-02）。 */
+ *  会话归属 Agent 实例（threads.agent，服务端写入当前 Agent）；组内会话默认 5 条
+ *  + 展开其余/收起、置顶、移动自定义组、全局搜索、空标题未命名。
+ *  文件树已移出侧栏：主区右上角按钮展开当前项目（存储单元）的文件树抽屉。 */
 import { useEffect, useState } from "react";
-import type { ProjectInfo, ThreadInfo } from "../../api";
+import type { AgentInfo, ThreadInfo } from "../../api";
 import { t as tr } from "../../i18n";
 import ConfirmDialog, { type ConfirmState } from "../ui-confirm/ConfirmDialog";
 import PromptDialog, { type PromptState } from "../ui-confirm/PromptDialog";
@@ -14,7 +14,6 @@ import {
   FolderPlusIcon,
   GearIcon,
   LogoMark,
-  MoreIcon,
   PencilIcon,
   PinIcon,
   PlusIcon,
@@ -62,43 +61,34 @@ function loadJson<T>(key: string, fallback: T): T {
 interface Group {
   key: string;
   name: string;
-  projectId: number | null;
+  agentId: string | null;
   threads: ThreadInfo[];
 }
 
 export default function SideBar({
   tab,
-  projects,
+  agents,
   threads,
-  currentProjectId,
   currentThreadId,
   onTab,
   onOpenSettings,
   onNewThread,
-  onNewThreadIn,
   onSelectThread,
   onSelectProject,
-  onCreateProject,
   onRenameThread,
   onDeleteThread,
-  onDeleteProject,
 }: {
   tab: "chat" | "plugins";
-  projects: ProjectInfo[];
+  agents: AgentInfo[];
   threads: ThreadInfo[];
-  currentProjectId: number | null;
   currentThreadId: string | null;
   onTab: (t: "chat" | "plugins") => void;
   onOpenSettings: () => void;
   onNewThread: () => void;
-  /** 在指定项目（null=未分组）下新建会话 */
-  onNewThreadIn: (projectId: number | null) => void;
   onSelectThread: (id: string) => void;
   onSelectProject: (id: number | null) => void;
-  onCreateProject: (name: string, directory?: string) => void;
   onRenameThread: (id: string, title: string) => void;
   onDeleteThread: (id: string) => void;
-  onDeleteProject: (id: number) => void;
 }) {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameText, setRenameText] = useState("");
@@ -111,9 +101,6 @@ export default function SideBar({
   const [groupOpen, setGroupOpen] = useState<Record<string, boolean>>(() => loadJson(GROUP_KEY, {}));
   /** 自定义分组：组名 → 会话 id 列表（localStorage 持久化） */
   const [customGroups, setCustomGroups] = useState<Record<string, string[]>>(() => loadJson(CUSTOM_KEY, {}));
-  /** 当前打开「更多操作」下拉的项目组 key */
-  const [moreKey, setMoreKey] = useState<string | null>(null);
-
   useEffect(() => localStorage.setItem(PIN_KEY, JSON.stringify(pinned)), [pinned]);
   useEffect(() => localStorage.setItem(EXPANDED_KEY, JSON.stringify(expanded)), [expanded]);
   useEffect(() => localStorage.setItem(GROUP_KEY, JSON.stringify(groupOpen)), [groupOpen]);
@@ -122,37 +109,36 @@ export default function SideBar({
   const searching = search.trim().length > 0;
   const q = search.trim().toLowerCase();
 
-  // 分组树：项目（含空项目）+ 未分组（dsh Ungrouped，最后）
+  // 分组树：Agent 实例（对齐 Octop rail 按专家维度）+ 自定义组 + 未分组（最后）
   const grouped = new Map<string, ThreadInfo[]>();
   for (const t of threads) {
-    const key = t.project_id != null ? `p:${t.project_id}` : UNGROUPED_KEY;
+    const key = t.agent != null ? `a:${t.agent}` : UNGROUPED_KEY;
     const arr = grouped.get(key);
     if (arr) arr.push(t);
     else grouped.set(key, [t]);
   }
   const byId = new Map(threads.map((t) => [t.id, t]));
   const groups: Group[] = [
-    ...projects.map((p) => ({ key: `p:${p.id}`, name: p.name, projectId: p.id, threads: grouped.get(`p:${p.id}`) ?? [] })),
+    ...agents.map((a) => ({ key: `a:${a.id}`, name: a.display_name, agentId: a.id, threads: grouped.get(`a:${a.id}`) ?? [] })),
     ...Object.entries(customGroups)
       .filter(([, ids]) => ids.length > 0)
       .map(([name, ids]) => ({
         key: `c:${name}`,
         name,
-        projectId: null,
+        agentId: null,
         threads: ids.map((id) => byId.get(id)).filter((t): t is ThreadInfo => Boolean(t)),
       })),
-    { key: UNGROUPED_KEY, name: tr("sidebar.ungrouped"), projectId: null, threads: grouped.get(UNGROUPED_KEY) ?? [] },
-  ].filter((g) => g.threads.length > 0 || (g.projectId !== null && !g.key.startsWith("c:")));
+    { key: UNGROUPED_KEY, name: tr("sidebar.ungrouped"), agentId: null, threads: grouped.get(UNGROUPED_KEY) ?? [] },
+  ].filter((g) => g.threads.length > 0);
 
   const isGroupOpen = (g: Group) => (searching ? true : groupOpen[g.key] ?? true);
 
   const toggleGroup = (g: Group) => {
     setGroupOpen((o) => ({ ...o, [g.key]: !(o[g.key] ?? true) }));
-    setMoreKey(null);
   };
 
   const renderThreads = (g: Group) => {
-    const storageKey = g.projectId !== null ? `p:${g.projectId}` : g.key;
+    const storageKey = g.agentId !== null ? `a:${g.agentId}` : g.key;
     const pinnedIds = new Set(pinned[storageKey] ?? []);
     const sorted = [...g.threads].sort((a, b) => {
       const ap = pinnedIds.has(a.id) ? 0 : 1;
@@ -184,7 +170,7 @@ export default function SideBar({
               key={t.id}
               className={`thread-item ${t.id === currentThreadId ? "on" : ""}`}
               onClick={() => {
-                onSelectProject(g.projectId);
+                onSelectProject(t.project_id ?? null);
                 onSelectThread(t.id);
                 onTab("chat");
               }}
@@ -280,7 +266,7 @@ export default function SideBar({
             </div>
           );
         })}
-        {filtered.length === 0 && !searching && g.projectId !== null && (
+        {filtered.length === 0 && !searching && g.agentId !== null && (
           <div className="thread-empty">{tr("sidebar.noThreads")}</div>
         )}
         {!searching && hiddenCount > 0 && (
@@ -338,24 +324,6 @@ export default function SideBar({
           >
             <SearchIcon />
           </button>
-          <button
-            className="icon-btn"
-            title={tr("sidebar.newProjectIcon")}
-            onClick={() =>
-              setPrompt({
-                message: tr("sidebar.newProjectName"),
-                placeholder: tr("sidebar.newProjectPlaceholder"),
-                field2: {
-                  label: tr("sidebar.projectDirLabel"),
-                  placeholder: tr("sidebar.projectDirPlaceholder"),
-                },
-                confirmText: tr("common.confirm"),
-                onSubmit: (name, dir) => onCreateProject(name, dir),
-              })
-            }
-          >
-            <FolderPlusIcon />
-          </button>
         </span>
       </div>
 
@@ -372,7 +340,7 @@ export default function SideBar({
         <div className="group-list">
           {groups.map((g) => {
             const open = isGroupOpen(g);
-            const on = g.projectId === currentProjectId;
+            const on = false;
             const count = searching
               ? g.threads.filter((t) => t.title.toLowerCase().includes(q)).length
               : g.threads.length;
@@ -395,7 +363,7 @@ export default function SideBar({
                   <span className="group-icon"><FolderIcon /></span>
                   <span className="group-title">{g.name}</span>
                   <span className="group-count">{count}</span>
-                  {g.key.startsWith("c:") ? (
+                  {g.key.startsWith("c:") && (
                     <button
                       className="icon-btn group-more-btn"
                       title={tr("sidebar.deleteGroup")}
@@ -410,50 +378,6 @@ export default function SideBar({
                     >
                       <XIcon />
                     </button>
-                  ) : (
-                    <button
-                      className="group-new"
-                      title={tr("sidebar.newThreadIn")}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onNewThreadIn(g.projectId);
-                      }}
-                    >
-                      <PlusIcon size={12} />
-                    </button>
-                  )}
-                  {g.projectId !== null && (
-                    <div className="group-more">
-                      <button
-                        className={`icon-btn group-more-btn ${moreKey === g.key ? "on" : ""}`}
-                        title={tr("sidebar.moreActions")}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setMoreKey((k) => (k === g.key ? null : g.key));
-                        }}
-                      >
-                        <MoreIcon />
-                      </button>
-                      {moreKey === g.key && (
-                        <div className="group-menu">
-                          <button
-                            className="group-menu-item danger"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setMoreKey(null);
-                              setConfirm({
-                                message: tr("sidebar.deleteProjectConfirm", { name: g.name }),
-                                danger: true,
-                                onConfirm: () => onDeleteProject(g.projectId as number),
-                              });
-                            }}
-                          >
-                            <TrashIcon size={13} />
-                            {tr("sidebar.deleteProject")}
-                          </button>
-                        </div>
-                      )}
-                    </div>
                   )}
                 </div>
                 {open && renderThreads(g)}

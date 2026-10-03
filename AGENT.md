@@ -625,3 +625,17 @@ models.py 删除 BUILTIN_PROVIDERS（deepseek/doubao/local）与 PROVIDERS/MODEL
 - **H3 会话 rail 自定义分组**：SideBar 新增 localStorage `nuomi.sidebar.customGroups`（组名→会话 id[]），渲染插在项目组之后/未分组之前；会话行加「移至分组」按钮（PromptDialog：输入已有组名/新建，留空=移出所有自定义组）；自定义组头 X 删除组（会话移回未分组）；pinned/expanded storageKey 统一为 `p:{id}`/`u`/`c:{名}` 前缀（旧数字 key 展开/置顶状态会重置一次，可接受）。
 - **修 bug**：`experts_list` 里 `load_expert(n, dir)` 参数顺序错（应为 dir, n）→ display_name 变目录路径；已修正（v0.10 遗留）。
 - **验证（2026-10-03）**：后端 make check 143 passed；ruff 全过（B904 均 from None）；curl 冒烟 clone→重启持久→delete、connectors=mcp-notes、knowledge docs 空列表；前端 tsc/build 全绿；浏览器冒烟：连接器页/知识库页 PageShell 渲染、专家库 Tab「+模板资产」→ Drawer 打开、chat rail 无回归。
+
+## Agent 实例生命周期（I 系列：用户"需要"确认 Octop agents 语义后实施）
+- **参照**：Octop `src/octop/api/routers/agents.py`（GET/POST /api/agents、PATCH/DELETE /{agent_id}、POST /{agent_id}/start|stop|reload、GET /{agent_id}/status；start=加载进 harness、stop=卸载并持久 last_state=stopped、reload=热重载不重启服务器）+ manager.py `_start_agent`（约 2472 行，加锁幂等 + 失败置 failed）。
+- **nuomi 语义（单实例）**：Agent = 专家模板的实例化（复制人格与能力资产）；`workspace/agents.json` = `{"current": id|null, "agents": {id: {...}}}`；create：slug `agent-{中文名}` 重名 -2 递增、status=running|stopped；start=set_current(id)（重启生效）、stop=set_current(None) 回落默认；兼容旧 `workspace/experts.json` 的 expert_name。文件：`app/domain/agents/agent.py`（agents_path/current_agent_id/list/create/update/delete + current_expert_name），`api.py` +6 端点，`main.py` `_expert_override` 改走 current_expert_name（agents 优先）。
+- **前端**：api.ts AgentInfo + 6 函数；ExpertsPage 全量重写为 Agent 语义——「我的专家」= AgentCard（display_name+expert 徽标+运行状态 Tag+启动/停止/编辑/删除）、「专家库」= ExpertCard 模板卡（footer「专家模板」+「从模板创建」）、CreateFromExpertDrawer/EditAgentDrawer；App Header 显示 currentAgentName ?? currentExpert。i18n agents.* 键。
+- **验证**：tests/test_agents.py 4 passed（全量 147）；curl create→start→patch→stop→delete 全通、重启持久化正常；浏览器空态/专家库/创建 Drawer 正常。
+
+## v0.12 领域页面对齐（2026-10-03：用户"聊天按专家维度、去项目、能力只透插件、工作区改存储、深蓝改豆包白"）
+- **会话 rail 按 Agent 维度（对齐 Octop chatHistoryRail）**：threads 表 +`agent` 列（ALTER 迁移，容错）；create_thread/upsert_thread 增 agent 参数，transport 用 `_current_agent_id()`（读 agents.json current）自动写入归属；前端 ThreadInfo +agent。SideBar 重写分组：项目分组 → **Agent 实例组**（agents 列表按 display_name 分组）+ 自定义组 + 未分组；删「新建项目」按钮/项目更多操作/onNewThreadIn（组头无 + 号，全局「新会话」按钮），会话点击切项目改 `t.project_id`（文件树跟随）；App 持 agents 全量状态传入 ChatPage→SideBar。pinned/expanded storageKey `a:{id}` 前缀。
+- **能力页只透插件**：CapabilitiesPage 删「内核模块」区块（模块属机制层不透出）；后端 composer.list_entry 补 `category: "plugin"`（此前 21 项全 None 导致前端过滤后空白）。
+- **工作区→存储**：nav.workspace 文案改「存储」；workspace.subtitle 改「存储（Octop 对齐：项目 = 会话文件与目录的存放单元）」（键名保留 nav.workspace，仅值变）；项目 = 存储单元（会话文件与目录）。
+- **白色主题（学豆包）**：App 默认 theme light（nuomi-theme 无值或非 dark 即 light）；tokens.css :root 改浅色白底（rgb(247,248,250) 页面/纯白卡片/浅灰侧栏），深色值移入 `[data-theme="dark"]` 覆盖块；**语义别名（--bg/--surface/--bg-container 等）必须留在 :root**（dark 只覆盖 dsw 色板，var 引用自动跟随——上次误移入 dark 块导致浅色下 --bg 未定义）；PageShell 内容卡 background `var(--bg-container, #17181c)` 新增 --bg-container token（浅色 = dsw-bg-layer-2，深色 = rgb(26,28,33)）。
+- **踩坑**：HMR 多次 504/500 后 vite 状态损坏（页面渲染残缺但无 console error）→ 重启 vite dev server 干净验证；antd v6 `Space direction` 已废弃（warning 无害）。
+- **验证（2026-10-03）**：后端 make check 147 passed（含 test_agents 4）；curl 冒烟 thread agent 注入（start agent 后创建 thread agent=id，清理）；前端 tsc/build 全绿；浏览器：导航「存储」、能力页 21 插件卡（无模块区块）、rail 仅「未分组」（无项目组）、白色主题（body #f7f8fa + 内容卡 #fff）。

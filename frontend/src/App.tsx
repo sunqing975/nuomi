@@ -15,7 +15,6 @@ import SettingsPage from "./pages/SettingsPage";
 import { brandTokens, DEFAULT_PALETTE, isPaletteId, PALETTES, PALETTE_STORAGE_KEY, type PaletteId } from "./themes";
 import {
   activateModel,
-  createProject,
   createThread,
   deleteProject,
   deleteThread,
@@ -29,6 +28,8 @@ import {
   renameThread,
   saveThreadId,
   setGlobalSetting,
+  fetchAgents,
+  type AgentInfo,
   fetchExperts,
   type BootstrapStatus,
   type ModelProvider,
@@ -91,6 +92,7 @@ export default function App() {
   // 项目 / 会话
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [threads, setThreads] = useState<ThreadInfo[]>([]);
+  const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [currentProjectId, setCurrentProjectId] = useState<number | null>(null);
   const [currentThreadId, setCurrentThreadId] = useState<string | null>(null);
   const [threadTitle, setThreadTitle] = useState<string | null>(null);
@@ -98,10 +100,10 @@ export default function App() {
   const [activeProvider, setActiveProvider] = useState<string | null>(null);
   const [activeModelKey, setActiveModelKey] = useState<string | null>(null);
   const [effort, setEffort] = useState<string | null>(null);
-  // 主题（深/浅，localStorage 持久化，默认深色对齐 dsh）
+  // 主题（深/浅，localStorage 持久化；默认浅色白色，学豆包）
   const [theme, setTheme] = useState<"dark" | "light">(() => {
     const saved = localStorage.getItem("nuomi-theme");
-    return saved === "light" ? "light" : "dark";
+    return saved === "dark" ? "dark" : "light";
   });
   // 品牌色板（对齐 Octop 8 色板，localStorage 持久化，默认 rose）
   const [palette, setPalette] = useState<PaletteId>(() => {
@@ -121,11 +123,19 @@ export default function App() {
     root.style.setProperty("--accent-soft", paletteColor + "2e");
   }, [paletteColor]);
 
-  // 当前专家（领域语言：专家 = 人格 + 能力模板资产）
+  // 当前运行实体（领域语言：Agent 实例优先，专家 = 人格模板；无 Agent 时回落默认专家名）
   const [currentExpert, setCurrentExpert] = useState<string | null>(null);
+  const [currentAgentName, setCurrentAgentName] = useState<string | null>(null);
   const refreshExpert = useCallback(() => {
     fetchExperts()
       .then((r) => setCurrentExpert(r.current))
+      .catch(() => {});
+    fetchAgents()
+      .then((r) => {
+        setAgents(r.agents);
+        const cur = r.agents.find((x) => x.id === r.current);
+        setCurrentAgentName(cur ? cur.display_name : null);
+      })
       .catch(() => {});
   }, []);
   // 计划模式（对齐 dsh /plan：软约束引导「先计划后执行」，发送时注入提示）
@@ -304,19 +314,6 @@ export default function App() {
   };
 
   /** 在指定项目（null=未分组）下新建会话 */
-  const newThreadIn = async (projectId: number | null) => {
-    try {
-      setCurrentProjectId(projectId);
-      const t = await createThread(projectId);
-      setCurrentThreadId(t.id);
-      setThreadTitle(t.title);
-      runtime.thread.reset([]);
-      saveThreadId(t.id);
-      refreshThreads();
-    } catch (e) {
-      setError(t("app.newThreadFailed", { msg: String(e instanceof Error ? e.message : e) }));
-    }
-  };
 
   const selectThread = async (id: string) => {
     setCurrentThreadId(id);
@@ -580,7 +577,7 @@ export default function App() {
                 path="/"
                 element={
                   <MainLayout
-                    expertDisplayName={currentExpert ?? "—"}
+                    expertDisplayName={currentAgentName ?? currentExpert ?? "—"}
                     theme={theme}
                     palette={palette}
                     robotEnabled={robotEnabled}
@@ -596,25 +593,15 @@ export default function App() {
                   element={
                     <ChatPage
                       onOpenRobot={() => setMode("robot")}
+                      agents={agents}
                       projects={projects}
                       threads={threads}
                       currentProjectId={currentProjectId}
                       currentThreadId={currentThreadId}
                       threadTitle={threadTitle}
                       onNewThread={() => void newThread()}
-                      onNewThreadIn={(pid) => void newThreadIn(pid)}
                       onSelectThread={(id) => void selectThread(id)}
                       onSelectProject={(id) => void selectProject(id)}
-                      onCreateProject={async (name, directory) => {
-                        try {
-                          const p = await createProject(name, directory);
-                          refreshProjects();
-                          setFilesTick((n) => n + 1);
-                          selectProject(p.id);
-                        } catch (e) {
-                          setError(t("app.newProjectFailed", { msg: String(e instanceof Error ? e.message : e) }));
-                        }
-                      }}
                       onRenameThread={async (id, title) => {
                         try {
                           await renameThread(id, title);
@@ -625,7 +612,6 @@ export default function App() {
                         }
                       }}
                       onDeleteThread={(id) => void removeThread(id)}
-                      onDeleteProject={(id) => void removeProject(id)}
                       robotEnabled={robotEnabled}
                       teamMode={teamMode}
                       voiceEnabled={voiceEnabled}

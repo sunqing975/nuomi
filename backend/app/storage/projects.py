@@ -64,6 +64,10 @@ class ProjectStore:
             cols = [r["name"] for r in self._conn.execute("PRAGMA table_info(projects)").fetchall()]
             if "directory" not in cols:
                 self._conn.execute("ALTER TABLE projects ADD COLUMN directory TEXT")
+            # 迁移：会话归属 Agent 实例（v0.12 对齐 Octop：rail 按专家维度组织会话）
+            tcols = [r["name"] for r in self._conn.execute("PRAGMA table_info(threads)").fetchall()]
+            if "agent" not in tcols:
+                self._conn.execute("ALTER TABLE threads ADD COLUMN agent TEXT")
 
     # ---------- 项目 ----------
     def list_projects(self) -> list[dict]:
@@ -153,7 +157,7 @@ class ProjectStore:
 
     # ---------- 会话 ----------
     def list_threads(self, project_id: int | None = None) -> list[dict]:
-        q = "SELECT id, project_id, title, created_at, updated_at FROM threads"
+        q = "SELECT id, project_id, agent, title, created_at, updated_at FROM threads"
         args: list[Any] = []
         if project_id is not None:
             q += " WHERE project_id = ?"
@@ -163,18 +167,21 @@ class ProjectStore:
             rows = self._conn.execute(q, args).fetchall()
         return [dict(r) for r in rows]
 
-    def create_thread(self, project_id: int | None, title: str = "") -> dict:
+    def create_thread(
+        self, project_id: int | None, title: str = "", agent: str | None = None
+    ) -> dict:
         pid = project_id or self.ensure_default_project()["id"]
         thread_id = _new_thread_id()
         now = _iso()
         with self._conn:
             self._conn.execute(
-                "INSERT INTO threads (id, project_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-                (thread_id, pid, title, now, now),
+                "INSERT INTO threads (id, project_id, agent, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (thread_id, pid, agent, title, now, now),
             )
         return {
             "id": thread_id,
             "project_id": pid,
+            "agent": agent,
             "title": title,
             "created_at": now,
             "updated_at": now,
@@ -183,19 +190,21 @@ class ProjectStore:
     def get_thread(self, thread_id: str) -> dict | None:
         with self._conn:
             row = self._conn.execute(
-                "SELECT id, project_id, title, created_at, updated_at FROM threads WHERE id = ?",
+                "SELECT id, project_id, agent, title, created_at, updated_at FROM threads WHERE id = ?",
                 (thread_id,),
             ).fetchone()
         return dict(row) if row else None
 
-    def upsert_thread(self, thread_id: str, project_id: int | None = None) -> dict:
+    def upsert_thread(
+        self, thread_id: str, project_id: int | None = None, agent: str | None = None
+    ) -> dict:
         """以指定 id 注册会话（兼容旧 thread_id / 外部传入的 checkpointer key）。"""
         pid = project_id or self.ensure_default_project()["id"]
         now = _iso()
         with self._conn:
             self._conn.execute(
-                "INSERT OR IGNORE INTO threads (id, project_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-                (thread_id, pid, "", now, now),
+                "INSERT OR IGNORE INTO threads (id, project_id, agent, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (thread_id, pid, agent, "", now, now),
             )
         return self.get_thread(thread_id)  # type: ignore[return-value]
 

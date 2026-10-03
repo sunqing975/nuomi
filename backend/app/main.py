@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import secrets
 import sys
@@ -74,12 +73,10 @@ def make_prompt_builder(
 
 
 def _expert_override(settings) -> str | None:
-    """读取 workspace/experts.json 的专家覆盖（专家选择器持久化，重启生效）。"""
-    f = Path(settings.workspace_dir) / "experts.json"
-    try:
-        return json.loads(f.read_text(encoding="utf-8")).get("expert_name")
-    except (OSError, ValueError):
-        return None
+    """当前运行的专家名：Agent 实例（agents.json current → 其 expert）优先，兼容旧 experts.json。"""
+    from .domain.agents.agent import current_expert_name
+
+    return current_expert_name(settings.workspace_dir, settings.expert_name)
 
 
 def build_app(
@@ -103,7 +100,7 @@ def build_app(
     pl_dir = plugins_dir or settings.plugins_dir
     dr_roots = domain_roots or settings.domain_roots
     skl_dir = skills_dir or settings.skills_dir
-    # 专家来源优先级：启动参数 > workspace 覆盖（专家选择器写入 experts.json）> 默认
+    # 专家来源优先级：启动参数 > Agent 实例（agents.json current → expert）> 默认
     p_name = expert_name or _expert_override(settings) or settings.expert_name
     p_dir = experts_dir or settings.experts_dir
     mem_file = memory_file or str(settings.memory_file)

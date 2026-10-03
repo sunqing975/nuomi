@@ -1,5 +1,5 @@
 /** pages/CapabilitiesPage：能力页（对齐 Octop 连接器/插件管理面，PageShell 外壳）。
- *  领域语义：能力 = 插件（可选能力分发单元）+ 模块（内核组成部分，默认常驻）。 */
+ *  领域语义：能力 = 插件（可选能力分发单元）；模块属机制层，不透出。 */
 import { useState } from "react";
 import { Alert, Card, Empty, Skeleton, Space, Switch, Tag, Typography, message } from "antd";
 import { Puzzle } from "lucide-react";
@@ -8,7 +8,7 @@ import { togglePlugin } from "../api";
 import { t } from "../i18n";
 import PageShell from "./shared/PageShell";
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 export default function CapabilitiesPage({
   plugins,
@@ -38,7 +38,6 @@ export default function CapabilitiesPage({
 
   // 外部插件（能力导向，用户可启停）；内核模块带 category=module 标记
   const external = plugins.filter((p) => p.category === "plugin");
-  const modules = plugins.filter((p) => p.category === "module");
 
   return (
     <PageShell
@@ -89,33 +88,6 @@ export default function CapabilitiesPage({
               </Card>
             ))}
           </Space>
-
-          {modules.length > 0 && (
-            <>
-              <Title level={5} style={{ marginTop: 24 }}>
-                {t("capabilities.modulesTitle")}
-              </Title>
-              <Space direction="vertical" size={8} style={{ width: "100%" }}>
-                {modules.map((p) => (
-                  <Card key={p.id} size="small" styles={{ body: { padding: "10px 16px" } }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-                      <div style={{ minWidth: 0 }}>
-                        <Space size={6}>
-                          <Text>{p.name}</Text>
-                          {p.services.length > 0 && (
-                            <Text type="secondary" style={{ fontSize: 12 }}>
-                              {t("capabilities.servicesLabel")}：{p.services.join("、")}
-                            </Text>
-                          )}
-                        </Space>
-                      </div>
-                      <Switch checked={!p.disabled} disabled size="small" onChange={() => void doToggle(p.name)} />
-                    </div>
-                  </Card>
-                ))}
-              </Space>
-            </>
-          )}
         </>
       )}
     </PageShell>
