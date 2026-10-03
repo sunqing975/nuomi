@@ -1,7 +1,8 @@
-"""对话桥：ChatRequest → 标准化事件流（token / tool / usage / done）。
+"""对话桥：ChatRequest → 标准化事件流（token / emotion / tool / usage / done）。
 
 事件结构（前端桌宠消费）：
     {"type": "token",       "content": "你"}
+    {"type": "emotion",     "name": "开心"}                 # 情绪事件（驱动表情）
     {"type": "tool_call",   "name": "what_to_eat", "args": "{...}"}
     {"type": "tool_result", "name": "what_to_eat", "content": "..."}
     {"type": "usage",       "input_tokens": 1, "output_tokens": 2}
@@ -10,12 +11,29 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import AsyncIterator
 
 from octop_harness import ChatRequest
 from octop_harness.protocols.langgraph import AgentEventType
 
 from app.infra.harness.manager import manager
+
+# 桌宠情绪标签规范：与 openai_compat.MOOD_TAG_RULE 保持一致
+MOOD_TAGS = ("开心", "生气", "难过", "惊讶", "害羞", "俏皮")
+_MOOD_RE = re.compile(r"<(" + "|".join(MOOD_TAGS) + r")>")
+
+# 追加到专家 system_prompt，驱动桌宠表情（原生对话端点也使用）
+PET_MOOD_RULE = (
+    "\n\n回复规范：每句话开头用情绪标签表达当前心情，选最符合的放句首："
+    "<开心> <生气> <难过> <惊讶> <害羞> <俏皮>。不加标签就没有表情动画。"
+)
+
+
+def extract_emotion(answer: str) -> str | None:
+    """从回复文本中提取第一个情绪标签；无标签返回 None。"""
+    m = _MOOD_RE.search(answer)
+    return m.group(1) if m else None
 
 
 async def stream_chat(
@@ -49,7 +67,11 @@ async def stream_chat(
         elif kind == AgentEventType.USAGE.value:
             yield {"type": "usage", **{k: v for k, v in (event.get("usage") or {}).items() if k in ("input_tokens", "output_tokens")}}
 
-    yield {"type": "done", "answer": "".join(text_parts).strip()}
+    answer = "".join(text_parts).strip()
+    emotion = extract_emotion(answer)
+    if emotion:
+        yield {"type": "emotion", "name": emotion}
+    yield {"type": "done", "answer": answer}
 
 
 def format_sse(event: dict) -> str:

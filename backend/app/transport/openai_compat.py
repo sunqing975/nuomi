@@ -17,15 +17,15 @@ from pydantic import BaseModel, Field
 
 from app.domain.agents.seed import default_system_prompt
 from app.domain.agents.service import agent_service
-from app.infra.harness.chat import stream_chat
+from app.infra.harness.chat import PET_MOOD_RULE, stream_chat
 
 router = APIRouter(prefix="/api/v1", tags=["openai"])
 
-# 桌宠情绪标签规范：追加到系统提示词，驱动 Live2D 表情
-MOOD_TAG_RULE = (
-    "\n\n回复规范：每句话开头用情绪标签表达当前心情，选最符合的放句首："
-    "<开心> <生气> <难过> <惊讶> <害羞> <俏皮>。不加标签就没有表情动画。"
-)
+
+def _system_prompt_for(agent: dict) -> str:
+    """专家人设 + 桌宠情绪标签规范（仅桌面 OpenAI 端点追加）。"""
+    base = agent["system_prompt"] or default_system_prompt()
+    return base + PET_MOOD_RULE
 
 
 class OpenAIChatMessage(BaseModel):
@@ -54,12 +54,6 @@ def _resolve_agent(model: str) -> dict:
     row = agent_service.get(default_id)
     assert row is not None
     return row
-
-
-def _system_prompt_for(agent: dict) -> str:
-    """专家人设 + 桌宠情绪标签规范（仅桌面 OpenAI 端点追加）。"""
-    base = agent["system_prompt"] or default_system_prompt()
-    return base + MOOD_TAG_RULE
 
 
 def _last_user_text(messages: list[OpenAIChatMessage]) -> str:

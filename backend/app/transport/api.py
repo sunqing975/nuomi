@@ -2,7 +2,7 @@
 
 对话协议（桌宠前端消费）：
     POST /api/agents/{agent_id}/chat   body={"messages": "...", "thread_id": "..."}
-    → SSE 事件流：token / tool_call / tool_result / usage / done
+    → SSE 事件流：token / emotion / tool_call / tool_result / usage / done
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from app.domain.agents.service import (
     STATE_STOPPED,
     agent_service,
 )
-from app.infra.harness.chat import format_sse, stream_chat
+from app.infra.harness.chat import PET_MOOD_RULE, format_sse, stream_chat
 from app.infra.harness.manager import manager
 
 router = APIRouter(prefix="/api", tags=["chat"])
@@ -48,7 +48,7 @@ async def chat(agent_id: str, body: ChatBody, request: Request) -> StreamingResp
             body.thread_id,
             agent_id=agent_id,
             name=agent_row["name"],
-            system_prompt=agent_row["system_prompt"],
+            system_prompt=(agent_row["system_prompt"] or "") + PET_MOOD_RULE,
         ):
             if await request.is_disconnected():
                 break
