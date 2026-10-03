@@ -33,12 +33,15 @@ def build_agent_config(
     plugin_tools: list | None = None,
     skills_dir: str | Path | Sequence[str | Path] | None = None,
     skills_disabled: frozenset[str] = frozenset(),
+    mcp_server_configs: dict | None = None,
+    mcp_default_servers: list[str] | None = None,
 ) -> HarnessAgentConfig:
     """构造单个 Agent 的运行时配置（工作区按 harness init_workspace 布局）。
 
     model_ref 使用 "provider/model" 复合串（Octop resolve_explicit_default_model 形态）。
     plugin_tools：插件注册的工具（build_plugin_tools 结果），经 cfg.tools 注入 agent。
     skills_dir / skills_disabled：自定义技能目录与禁用集合。
+    mcp_server_configs / mcp_default_servers：MCP 服务器（对话请求经 mcp_use_default 启用）。
     """
     init_workspace(workspace_dir, language="zh", include_md_files=False, include_skills=True)
     return HarnessAgentConfig(
@@ -50,4 +53,6 @@ def build_agent_config(
         tools=plugin_tools,
         skills_dir=skills_dir,
         skills_disabled=skills_disabled,
+        mcp_server_configs=mcp_server_configs or {},
+        mcp_default_servers=mcp_default_servers,
     )

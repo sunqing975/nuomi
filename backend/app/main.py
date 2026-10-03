@@ -47,12 +47,12 @@ async def lifespan(_: FastAPI):
 
 def _sync_plugins() -> None:
     """启动时加载工作区插件（失败不阻断启动，可在 /api/plugins/sync 重试）。"""
+    from contextlib import suppress
+
     from app.domain.plugins.service import plugin_service
 
-    try:
+    with suppress(Exception):
         plugin_service.sync()
-    except Exception:
-        pass
 
 
 app = FastAPI(title="nuomi", version="0.13.0", lifespan=lifespan)

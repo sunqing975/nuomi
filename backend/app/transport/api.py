@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from app.config import settings
 from app.domain.agents.service import (
     STATE_RUNNING,
     STATE_STOPPED,
@@ -55,6 +56,8 @@ async def chat(agent_id: str, body: ChatBody, request: Request) -> StreamingResp
             plugin_tools=tools,
             skills_dir=skill_service.skills_dir(),
             skills_disabled=skill_service.disabled_set(),
+            mcp_server_configs=settings.mcp_servers,
+            mcp_default_servers=list(settings.mcp_servers.keys()) or None,
         ):
             if await request.is_disconnected():
                 break
@@ -144,6 +147,8 @@ async def start_agent(agent_id: str) -> dict:
         plugin_tools=plugin_service.tools_for_agent(agent_id),
         skills_dir=skill_service.skills_dir(),
         skills_disabled=skill_service.disabled_set(),
+        mcp_server_configs=settings.mcp_servers,
+        mcp_default_servers=list(settings.mcp_servers.keys()) or None,
     )
     agent_service.set_state(agent_id, STATE_RUNNING)
     return {"ok": True, "state": STATE_RUNNING}
@@ -241,3 +246,20 @@ async def patch_skill(skill_name: str, body: SkillPatchBody) -> dict:
     if row is None:
         raise HTTPException(status_code=404, detail="技能不存在")
     return row
+
+
+# ---------- MCP 服务器（对齐 Octop：配置在 settings，对话经 mcp_use_default 启用） ----------
+
+
+@router.get("/mcp")
+async def list_mcp_servers() -> list[dict]:
+    """MCP 服务器列表（配置来自 settings.mcp_servers）。"""
+    return [
+        {
+            "name": name,
+            "transport": spec.get("transport", "stdio"),
+            "command": spec.get("command", ""),
+            "args": spec.get("args", []),
+        }
+        for name, spec in settings.mcp_servers.items()
+    ]

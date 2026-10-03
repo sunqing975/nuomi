@@ -46,6 +46,8 @@ async def stream_chat(
     plugin_tools: list | None = None,
     skills_dir=None,
     skills_disabled: frozenset[str] = frozenset(),
+    mcp_server_configs: dict | None = None,
+    mcp_default_servers: list[str] | None = None,
 ) -> AsyncIterator[dict]:
     """流式对话：把 harness 事件翻译成 nuomi 标准化事件。"""
     agent = manager.get_agent(
@@ -55,8 +57,14 @@ async def stream_chat(
         plugin_tools=plugin_tools,
         skills_dir=skills_dir,
         skills_disabled=skills_disabled,
+        mcp_server_configs=mcp_server_configs,
+        mcp_default_servers=mcp_default_servers,
     )
-    request = ChatRequest(messages=messages, thread_id=thread_id)
+    request = ChatRequest(
+        messages=messages,
+        thread_id=thread_id,
+        mcp_use_default=bool(mcp_default_servers),
+    )
 
     text_parts: list[str] = []
     async for event in agent.stream(request):

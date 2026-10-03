@@ -51,6 +51,12 @@ class Settings(BaseSettings):
     # --- CORS（桌宠前端 dev） ---
     cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
+    # --- MCP 服务器（langchain-mcp-adapters 连接格式，JSON env NUOMI_MCP_SERVERS） ---
+    mcp_servers: dict[str, dict] = Field(
+        default_factory=dict,
+        validation_alias=AliasChoices("NUOMI_MCP_SERVERS", "MCP_SERVERS"),
+    )
+
     @property
     def data_root(self) -> Path:
         if self.nuomi_home:
