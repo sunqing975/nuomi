@@ -30,7 +30,7 @@
   "context": {
     "enable_limit": false,
     "max_messages": 17,
-    "persistent_history": true,
+    "persistent_history": false,
     "history_file": "AI记录室/对话历史.jsonl"
   },
   "asr": {
@@ -59,5 +59,12 @@
     "config_path": "./mcp/mcp_config.json",
     "startup_timeout": 20000,
     "auto_start_servers": true
+  },
+  "nuomi": {
+    "shell_only": true,
+    "disable_plugins": true,
+    "disable_mcp": true,
+    "disable_skill_injection": true,
+    "disable_history": true
   }
 }

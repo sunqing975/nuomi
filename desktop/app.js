@@ -123,6 +123,11 @@ function _applyEmotionExpression(emotion) {
 }
 
 ipcRenderer.on('apply-skill', (event, skillContent) => {
+    // nuomi 壳模式：人设由后端 Octop 专家管理，Skill 注入停用
+    if (config.nuomi?.disable_skill_injection) {
+        log('nuomi 壳模式：Skill 注入停用（人设由后端专家管理）')
+        return
+    }
     try {
         if (skillContent && skillContent.soul) {
             _activeSkillContent = skillContent
@@ -1091,33 +1096,43 @@ async function main() {
         chatContainer.style.display = showChatBox ? 'block' : 'none'
 
         // 初始化插件系统（仅 loadAll，startAll 延后到子系统就绪后）
+        // nuomi 壳模式：插件能力由后端 Octop 管理，myspy 插件系统停用
         let pluginManager
-        try {
-            pluginManager = new PluginManager(config)
-            await pluginManager.loadAll()
-            global.pluginManager = pluginManager
-            logTool('插件系统加载完成')
+        if (config.nuomi?.disable_plugins) {
+            log('nuomi 壳模式：插件系统停用（能力由后端 Octop 管理）')
+        } else {
+            try {
+                pluginManager = new PluginManager(config)
+                await pluginManager.loadAll()
+                global.pluginManager = pluginManager
+                logTool('插件系统加载完成')
 
-            // 写入插件运行状态到文件，并定期更新
-            const statusPath = path.join(__dirname, 'plugins', 'running_plugins.json')
-            const updateStatus = () => {
-                const loaded = Array.from(pluginManager._plugins.keys())
-                fs.writeFileSync(statusPath, JSON.stringify(loaded, null, 2))
+                // 写入插件运行状态到文件，并定期更新
+                const statusPath = path.join(__dirname, 'plugins', 'running_plugins.json')
+                const updateStatus = () => {
+                    const loaded = Array.from(pluginManager._plugins.keys())
+                    fs.writeFileSync(statusPath, JSON.stringify(loaded, null, 2))
+                }
+                updateStatus()
+                setInterval(updateStatus, 5000)
+            } catch (e) {
+                console.error('插件系统加载失败:', e)
             }
-            updateStatus()
-            setInterval(updateStatus, 5000)
-        } catch (e) {
-            console.error('插件系统加载失败:', e)
         }
 
         // 初始化 MCP 系统
-        try {
-            const mcpManager = new MCPManager(config)
-            await mcpManager.initialize()
-            global.mcpManager = mcpManager
-            logTool('MCP 系统加载完成')
-        } catch (e) {
-            console.error('MCP 系统加载失败:', e)
+        // nuomi 壳模式：MCP 服务由后端 Octop 管理，myspy MCP 停用
+        if (config.nuomi?.disable_mcp) {
+            log('nuomi 壳模式：MCP 系统停用（服务由后端 Octop 管理）')
+        } else {
+            try {
+                const mcpManager = new MCPManager(config)
+                await mcpManager.initialize()
+                global.mcpManager = mcpManager
+                logTool('MCP 系统加载完成')
+            } catch (e) {
+                console.error('MCP 系统加载失败:', e)
+            }
         }
 
         // 所有子系统就绪后，启动插件
