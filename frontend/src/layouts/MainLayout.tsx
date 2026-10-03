@@ -4,12 +4,14 @@
 import { useState } from "react";
 import { Avatar, Button, Dropdown, Layout, Menu, Switch, Tooltip, type MenuProps } from "antd";
 import {
+  BookMarked,
   BookOpen,
+  Bot,
+  Cable,
   GraduationCap,
   HardDrive,
   MessageSquareText,
   Puzzle,
-  Bot,
   SlidersHorizontal,
 } from "lucide-react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
@@ -23,6 +25,8 @@ const NAV_ITEMS: { key: string; path: string; icon: React.ReactNode; label: stri
   { key: "experts", path: "/experts", icon: <GraduationCap size={16} />, label: t("nav.experts") },
   { key: "capabilities", path: "/capabilities", icon: <Puzzle size={16} />, label: t("nav.capabilities") },
   { key: "skills", path: "/skills", icon: <BookOpen size={16} />, label: t("nav.skills") },
+  { key: "connectors", path: "/connectors", icon: <Cable size={16} />, label: t("nav.connectors") },
+  { key: "knowledge-bases", path: "/knowledge-bases", icon: <BookMarked size={16} />, label: t("nav.knowledgeBases") },
   { key: "workspace", path: "/workspace", icon: <HardDrive size={16} />, label: t("nav.workspace") },
   { key: "settings", path: "/settings", icon: <SlidersHorizontal size={16} />, label: t("nav.settings") },
 ];

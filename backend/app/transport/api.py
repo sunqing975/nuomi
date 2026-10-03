@@ -793,6 +793,45 @@ def build_router(app: FastAPI) -> APIRouter:
             "skills": [{"name": s.name, "description": s.description} for s in app.state.skills]
         }
 
+    @router.post("/api/experts/{name}/clone")
+    async def expert_clone(name: str, payload: dict):
+        """从专家模板创建自定义专家（对齐 Octop create-from-template）。"""
+        from ..domain.experts.expert import clone_expert
+
+        display_name = str(payload.get("display_name", "")).strip()
+        if not display_name:
+            from fastapi import HTTPException
+
+            raise HTTPException(status_code=422, detail="display_name 不能为空")
+        try:
+            new_name = clone_expert(settings.experts_dir, name, display_name)
+        except ValueError as e:
+            from fastapi import HTTPException
+
+            raise HTTPException(status_code=404, detail=str(e)) from None
+        return {"name": new_name, "display_name": display_name}
+
+    @router.delete("/api/experts/{name}")
+    async def expert_delete(name: str):
+        """删除自定义专家（内置默认专家不可删除）。"""
+        from ..domain.experts.expert import delete_expert
+
+        if name == app.state.expert.name:
+            from fastapi import HTTPException
+
+            raise HTTPException(status_code=409, detail="不能删除当前激活的专家")
+        try:
+            ok = delete_expert(settings.experts_dir, name)
+        except ValueError as e:
+            from fastapi import HTTPException
+
+            raise HTTPException(status_code=403, detail=str(e)) from None
+        if not ok:
+            from fastapi import HTTPException
+
+            raise HTTPException(status_code=404, detail="专家不存在")
+        return {"ok": True}
+
     @router.get("/api/experts")
     async def experts_list():
         """专家库清单（领域语义：专家 = 人格 + 能力模板资产，对齐 Octop 专家库）。"""
@@ -803,7 +842,7 @@ def build_router(app: FastAPI) -> APIRouter:
         out = []
         for n in sorted(names):
             try:
-                ex = load_expert(n, settings.experts_dir)
+                ex = load_expert(settings.experts_dir, n)
             except Exception:
                 ex = None
             out.append(
@@ -822,6 +861,43 @@ def build_router(app: FastAPI) -> APIRouter:
                 }
             )
         return {"experts": out, "current": current.name}
+
+    @router.get("/api/knowledge/documents")
+    async def knowledge_documents():
+        """知识库文档清单（领域语义：RAG 存储的内容资产）。"""
+        store = app.state.knowledge
+        return {"store": app.state.kb_type, "documents": store.list_documents()}
+
+    @router.delete("/api/knowledge/documents/{doc_id}")
+    async def knowledge_document_delete(doc_id: str):
+        """删除一条知识库文档。"""
+        store = app.state.knowledge
+        if not store.delete_document(doc_id):
+            from fastapi import HTTPException
+
+            raise HTTPException(status_code=404, detail="文档不存在")
+        return {"ok": True}
+
+    @router.get("/api/connectors")
+    async def connectors_list():
+        """连接器清单（领域语义：外部能力连接，如 MCP server；对齐 Octop /connectors）。
+        识别口径：插件运行时注册的服务/元数据带 mcp 标记，或插件名含 mcp。"""
+        out = []
+        for p in app.state.plugins:
+            joined = " ".join(p.services).lower()
+            is_mcp = "mcp" in joined or "mcp" in p.name.lower()
+            if not is_mcp:
+                continue
+            out.append(
+                {
+                    "name": p.name,
+                    "description": p.description,
+                    "type": "mcp",
+                    "services": list(p.services),
+                    "state": "active" if not p.error else "failed",
+                }
+            )
+        return {"connectors": out}
 
     @router.get("/api/bootstrap")
     async def bootstrap():

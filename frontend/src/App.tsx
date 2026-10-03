@@ -8,6 +8,8 @@ import ChatPage from "./pages/ChatPage";
 import CapabilitiesPage from "./pages/CapabilitiesPage";
 import SkillsPage from "./pages/SkillsPage";
 import WorkspacePage from "./pages/WorkspacePage";
+import ConnectorsPage from "./pages/ConnectorsPage";
+import KnowledgeBasesPage from "./pages/KnowledgeBasesPage";
 import ExpertsPage from "./pages/ExpertsPage";
 import SettingsPage from "./pages/SettingsPage";
 import { brandTokens, DEFAULT_PALETTE, isPaletteId, PALETTES, PALETTE_STORAGE_KEY, type PaletteId } from "./themes";
@@ -664,6 +666,8 @@ export default function App() {
                   }
                 />
                 <Route path="skills" element={<SkillsPage />} />
+                <Route path="connectors" element={<ConnectorsPage />} />
+                <Route path="knowledge-bases" element={<KnowledgeBasesPage />} />
                 <Route
                   path="workspace"
                   element={

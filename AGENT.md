@@ -618,3 +618,10 @@ models.py 删除 BUILTIN_PROVIDERS（deepseek/doubao/local）与 PROVIDERS/MODEL
 - **聊天页 rail 视觉统一**：.sidebar/.right-panel 从磨砂玻璃（backdrop-filter + color-mix）改为 antd 观感（--bg-container solid + rgba(128,128,128,.12) 分隔线，与 MainLayout Sider/Header 一致）。
 - **验证（2026-10-03）**：tsc/build 全绿；浏览器：专家页双 Tab 切换（我的专家/专家库+模板资产 footer）、四页 PageShell 外壳、聊天页 rail 视觉统一；后端 make check 143 passed。
 - **commit**：`0f2f1fe`（v0.9）后续接本批（v0.10，未提交时并入下一次 commit）。
+
+## 剩余对齐项一次做完（2026-10-03，H1–H4：用户"剩下的都做一下"）
+- **H1 专家→从模板创建（对齐 Octop CreateFromExpertDrawer）**：后端 `expert.py` +clone_expert（复制目录+改写 manifest：新 id/name、display_name、default=False、slug=`custom-{名}` 重名加 -2/-3）与 +delete_expert（内置 default 拒删）；`api.py` +POST /api/experts/{name}/clone、DELETE /api/experts/{name}（当前激活 409/内置 403/不存在 404）。前端专家库 Tab 卡片「+ 模板资产」→ Drawer（Input display_name + 模板说明）→ POST clone → 刷新；我的专家 Tab 自定义专家（非默认非当前）显示删除（Modal.confirm）。
+- **H2 连接器页 + 知识库页（对齐 Octop /connectors /knowledge-bases）**：KnowledgeStore（Chroma/Lexical）+list_documents/delete_document；api.py +GET /api/knowledge/documents、DELETE /api/knowledge/documents/{id}、GET /api/connectors（识别口径=插件 services 或 name 含 "mcp"，返回 name/description/type/services/state）；前端新增 `pages/ConnectorsPage.tsx`（连接器卡片+状态 Tag）、`pages/KnowledgeBasesPage.tsx`（文档卡片+分类 Tag+Popconfirm 删除）、MainLayout NAV_ITEMS 扩为 8 项（Cable 连接器 / BookMarked 知识库）+ App 路由 + i18n。
+- **H3 会话 rail 自定义分组**：SideBar 新增 localStorage `nuomi.sidebar.customGroups`（组名→会话 id[]），渲染插在项目组之后/未分组之前；会话行加「移至分组」按钮（PromptDialog：输入已有组名/新建，留空=移出所有自定义组）；自定义组头 X 删除组（会话移回未分组）；pinned/expanded storageKey 统一为 `p:{id}`/`u`/`c:{名}` 前缀（旧数字 key 展开/置顶状态会重置一次，可接受）。
+- **修 bug**：`experts_list` 里 `load_expert(n, dir)` 参数顺序错（应为 dir, n）→ display_name 变目录路径；已修正（v0.10 遗留）。
+- **验证（2026-10-03）**：后端 make check 143 passed；ruff 全过（B904 均 from None）；curl 冒烟 clone→重启持久→delete、connectors=mcp-notes、knowledge docs 空列表；前端 tsc/build 全绿；浏览器冒烟：连接器页/知识库页 PageShell 渲染、专家库 Tab「+模板资产」→ Drawer 打开、chat rail 无回归。

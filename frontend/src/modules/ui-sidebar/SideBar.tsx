@@ -21,6 +21,7 @@ import {
   PuzzleIcon,
   SearchIcon,
   TrashIcon,
+  XIcon,
 } from "../icons";
 
 export type Tab = "chat" | "plugins";
@@ -28,6 +29,8 @@ export type Tab = "chat" | "plugins";
 const PIN_KEY = "nuomi.sidebar.pinned";
 const EXPANDED_KEY = "nuomi.sidebar.expanded";
 const GROUP_KEY = "nuomi.sidebar.groupExpanded";
+/** 自定义分组（纯本地）：组名 → 会话 id 列表。对齐 Octop 会话 rail 的自定义分组。 */
+const CUSTOM_KEY = "nuomi.sidebar.customGroups";
 const COLLAPSED_SESSION_LIMIT = 5;
 const UNGROUPED_KEY = "u";
 
@@ -103,15 +106,18 @@ export default function SideBar({
   const [prompt, setPrompt] = useState<PromptState | null>(null);
   const [search, setSearch] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
-  const [pinned, setPinned] = useState<Record<number, string[]>>(() => loadJson(PIN_KEY, {}));
-  const [expanded, setExpanded] = useState<Record<number, boolean>>(() => loadJson(EXPANDED_KEY, {}));
+  const [pinned, setPinned] = useState<Record<string, string[]>>(() => loadJson(PIN_KEY, {}));
+  const [expanded, setExpanded] = useState<Record<string, boolean>>(() => loadJson(EXPANDED_KEY, {}));
   const [groupOpen, setGroupOpen] = useState<Record<string, boolean>>(() => loadJson(GROUP_KEY, {}));
+  /** 自定义分组：组名 → 会话 id 列表（localStorage 持久化） */
+  const [customGroups, setCustomGroups] = useState<Record<string, string[]>>(() => loadJson(CUSTOM_KEY, {}));
   /** 当前打开「更多操作」下拉的项目组 key */
   const [moreKey, setMoreKey] = useState<string | null>(null);
 
   useEffect(() => localStorage.setItem(PIN_KEY, JSON.stringify(pinned)), [pinned]);
   useEffect(() => localStorage.setItem(EXPANDED_KEY, JSON.stringify(expanded)), [expanded]);
   useEffect(() => localStorage.setItem(GROUP_KEY, JSON.stringify(groupOpen)), [groupOpen]);
+  useEffect(() => localStorage.setItem(CUSTOM_KEY, JSON.stringify(customGroups)), [customGroups]);
 
   const searching = search.trim().length > 0;
   const q = search.trim().toLowerCase();
@@ -124,10 +130,19 @@ export default function SideBar({
     if (arr) arr.push(t);
     else grouped.set(key, [t]);
   }
+  const byId = new Map(threads.map((t) => [t.id, t]));
   const groups: Group[] = [
     ...projects.map((p) => ({ key: `p:${p.id}`, name: p.name, projectId: p.id, threads: grouped.get(`p:${p.id}`) ?? [] })),
+    ...Object.entries(customGroups)
+      .filter(([, ids]) => ids.length > 0)
+      .map(([name, ids]) => ({
+        key: `c:${name}`,
+        name,
+        projectId: null,
+        threads: ids.map((id) => byId.get(id)).filter((t): t is ThreadInfo => Boolean(t)),
+      })),
     { key: UNGROUPED_KEY, name: tr("sidebar.ungrouped"), projectId: null, threads: grouped.get(UNGROUPED_KEY) ?? [] },
-  ].filter((g) => g.threads.length > 0 || g.projectId !== null);
+  ].filter((g) => g.threads.length > 0 || (g.projectId !== null && !g.key.startsWith("c:")));
 
   const isGroupOpen = (g: Group) => (searching ? true : groupOpen[g.key] ?? true);
 
@@ -137,7 +152,8 @@ export default function SideBar({
   };
 
   const renderThreads = (g: Group) => {
-    const pinnedIds = new Set(pinned[g.projectId ?? 0] ?? []);
+    const storageKey = g.projectId !== null ? `p:${g.projectId}` : g.key;
+    const pinnedIds = new Set(pinned[storageKey] ?? []);
     const sorted = [...g.threads].sort((a, b) => {
       const ap = pinnedIds.has(a.id) ? 0 : 1;
       const bp = pinnedIds.has(b.id) ? 0 : 1;
@@ -145,17 +161,17 @@ export default function SideBar({
       return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
     });
     const filtered = searching ? sorted.filter((t) => t.title.toLowerCase().includes(q)) : sorted;
-    const groupExpanded = Boolean(expanded[g.projectId ?? 0]);
+    const groupExpanded = Boolean(expanded[storageKey]);
     const visible = searching || groupExpanded ? filtered : filtered.slice(0, COLLAPSED_SESSION_LIMIT);
     const hiddenCount = filtered.length - visible.length;
 
     const togglePin = (id: string) => {
-      const key = g.projectId ?? 0;
+      const key = storageKey;
       const cur = pinned[key] ?? [];
       const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
       setPinned((p) => ({ ...p, [key]: next }));
     };
-    const toggleExpanded = () => setExpanded((e) => ({ ...e, [g.projectId ?? 0]: !groupExpanded }));
+    const toggleExpanded = () => setExpanded((e) => ({ ...e, [storageKey]: !groupExpanded }));
 
     return (
       <div className="thread-list">
@@ -205,6 +221,34 @@ export default function SideBar({
                       }}
                     >
                       <PinIcon />
+                    </button>
+                    <button
+                      title={tr("sidebar.moveToGroup")}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPrompt({
+                          message: tr("sidebar.moveToGroupPrompt"),
+                          placeholder: tr("sidebar.moveToGroupPlaceholder"),
+                          confirmText: tr("common.confirm"),
+                          onSubmit: (name) => {
+                            const target = name.trim();
+                            setCustomGroups((g) => {
+                              const next: Record<string, string[]> = {};
+                              for (const [k, ids] of Object.entries(g)) {
+                                const rest = ids.filter((x) => x !== t.id);
+                                if (rest.length) next[k] = rest;
+                              }
+                              if (target) {
+                                const cur = next[target] ?? [];
+                                if (!cur.includes(t.id)) next[target] = [...cur, t.id];
+                              }
+                              return next;
+                            });
+                          },
+                        });
+                      }}
+                    >
+                      <FolderPlusIcon />
                     </button>
                     <button
                       title={tr("sidebar.rename")}
@@ -351,16 +395,33 @@ export default function SideBar({
                   <span className="group-icon"><FolderIcon /></span>
                   <span className="group-title">{g.name}</span>
                   <span className="group-count">{count}</span>
-                  <button
-                    className="group-new"
-                    title={tr("sidebar.newThreadIn")}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onNewThreadIn(g.projectId);
-                    }}
-                  >
-                    <PlusIcon size={12} />
-                  </button>
+                  {g.key.startsWith("c:") ? (
+                    <button
+                      className="icon-btn group-more-btn"
+                      title={tr("sidebar.deleteGroup")}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setCustomGroups((cur) => {
+                          const next = { ...cur };
+                          delete next[g.name];
+                          return next;
+                        });
+                      }}
+                    >
+                      <XIcon />
+                    </button>
+                  ) : (
+                    <button
+                      className="group-new"
+                      title={tr("sidebar.newThreadIn")}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onNewThreadIn(g.projectId);
+                      }}
+                    >
+                      <PlusIcon size={12} />
+                    </button>
+                  )}
                   {g.projectId !== null && (
                     <div className="group-more">
                       <button

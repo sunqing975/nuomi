@@ -82,6 +82,62 @@ def list_experts(experts_dir: str | Path) -> list[str]:
     return sorted(p.name for p in root.iterdir() if (p / "manifest.json").exists())
 
 
+def clone_expert(experts_dir: str | Path, src_name: str, display_name: str) -> str:
+    """从专家模板创建自定义专家（对齐 Octop create-from-template）：
+    复制目录（manifest + 人格文档）→ 改写 manifest（新 id/name、display_name、default=False）。
+    返回新专家 name。"""
+    import json
+    import re
+    from datetime import datetime
+
+    root = Path(experts_dir)
+    src = root / src_name
+    if not (src / "manifest.json").exists():
+        raise ValueError(f"专家模板不存在：{src_name}")
+
+    base = re.sub(r"[^0-9A-Za-z一-鿿]", "", display_name).strip() or "custom"
+    slug = f"custom-{base}"
+    target = root / slug
+    n = 2
+    while target.exists():
+        target = root / f"{slug}-{n}"
+        n += 1
+
+    target.mkdir(parents=True, exist_ok=False)
+    for item in src.iterdir():
+        if item.is_file():
+            (target / item.name).write_bytes(item.read_bytes())
+
+    meta_path = target / "manifest.json"
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    meta["id"] = target.name
+    meta["name"] = target.name
+    meta["display_name"] = display_name
+    meta["default"] = False
+    meta.setdefault("description", "")
+    if not meta["description"]:
+        meta["description"] = f"由 {src_name} 模板创建（{datetime.now():%Y-%m-%d}）"
+    meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    return target.name
+
+
+def delete_expert(experts_dir: str | Path, name: str) -> bool:
+    """删除自定义专家（内置 default 专家禁止删除）。返回是否删除成功。"""
+    import shutil
+
+    root = Path(experts_dir)
+    edir = root / name
+    if not (edir / "manifest.json").exists():
+        return False
+    meta = edir / "manifest.json"
+    import json
+
+    if bool(json.loads(meta.read_text(encoding="utf-8")).get("default", False)):
+        raise ValueError("内置默认专家不可删除")
+    shutil.rmtree(edir)
+    return True
+
+
 def format_memory_facts(facts) -> str:
     """把记忆事实列表格式化为提示词片段。facts 元素需有 content/category/created_at。"""
     if not facts:

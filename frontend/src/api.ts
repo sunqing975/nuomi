@@ -599,3 +599,55 @@ export async function fetchSkills(): Promise<SkillInfo[]> {
   const body = (await res.json()) as { skills: SkillInfo[] };
   return body.skills ?? [];
 }
+
+// ---------- 连接器 / 知识库（领域语义，对齐 Octop /connectors /knowledge-bases） ----------
+
+export interface ConnectorInfo {
+  name: string;
+  description: string;
+  type: string;
+  services: string[];
+  state: "active" | "failed";
+}
+
+export async function fetchConnectors(): Promise<ConnectorInfo[]> {
+  const res = await fetch("/api/connectors");
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const body = (await res.json()) as { connectors: ConnectorInfo[] };
+  return body.connectors ?? [];
+}
+
+export interface KnowledgeDocument {
+  id: string;
+  content: string;
+  category: string;
+  ts: number;
+}
+
+export async function fetchKnowledgeDocuments(): Promise<{ store: string; documents: KnowledgeDocument[] }> {
+  const res = await fetch("/api/knowledge/documents");
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as { store: string; documents: KnowledgeDocument[] };
+}
+
+export async function deleteKnowledgeDocument(id: string): Promise<void> {
+  const res = await fetch(`/api/knowledge/documents/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+}
+
+// ---------- 专家克隆 / 删除（对齐 Octop create-from-template） ----------
+
+export async function cloneExpert(name: string, displayName: string): Promise<{ name: string; display_name: string }> {
+  const res = await fetch(`/api/experts/${encodeURIComponent(name)}/clone`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ display_name: displayName }),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as { name: string; display_name: string };
+}
+
+export async function deleteExpert(name: string): Promise<void> {
+  const res = await fetch(`/api/experts/${encodeURIComponent(name)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+}

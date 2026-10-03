@@ -92,6 +92,33 @@ class ChromaStore:
     def count(self) -> int:
         return self._collection().count()
 
+    def list_documents(self) -> list[dict]:
+        col = self._collection()
+        if not col.count():
+            return []
+        res = col.get(include=["documents", "metadatas"])
+        out = []
+        for i, (doc, meta) in enumerate(
+            zip(res.get("documents", []), res.get("metadatas", []), strict=False)
+        ):
+            out.append(
+                {
+                    "id": res.get("ids", [""] * (i + 1))[i] if res.get("ids") else str(i),
+                    "content": doc,
+                    "category": meta.get("category", ""),
+                    "ts": float(meta.get("ts", 0)),
+                }
+            )
+        out.sort(key=lambda x: x["ts"], reverse=True)
+        return out
+
+    def delete_document(self, doc_id: str) -> bool:
+        col = self._collection()
+        if not col.count():
+            return False
+        col.delete(ids=[doc_id])
+        return True
+
 
 class LexicalStore:
     """确定性词法实现：CJK 二元组打分 + JSON 持久化（离线/测试/兜底）。"""
@@ -148,6 +175,28 @@ class LexicalStore:
 
     def count(self) -> int:
         return len(self.items)
+
+    def list_documents(self) -> list[dict]:
+        return [
+            {
+                "id": str(i),
+                "content": it["content"],
+                "category": it["category"],
+                "ts": float(it.get("ts", 0)),
+            }
+            for i, it in enumerate(self.items)
+        ][::-1]
+
+    def delete_document(self, doc_id: str) -> bool:
+        try:
+            idx = int(doc_id)
+        except ValueError:
+            return False
+        if idx < 0 or idx >= len(self.items):
+            return False
+        del self.items[idx]
+        self._save()
+        return True
 
 
 def build_knowledge_store(store_type: str, root: str | Path) -> object:

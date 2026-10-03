@@ -3,9 +3,9 @@
  *  Tab 2「专家库」：全部专家模板资产（对齐 Octop ExpertCard：accent 图标 + 名称 + 描述 + footer 徽标）。
  *  领域语义：专家 = 人格 + 能力模板资产（manifest.json + IDENTITY/SOUL/USER.md），切换写 workspace 覆盖，重启生效。 */
 import { useCallback, useEffect, useState } from "react";
-import { Alert, Button, Col, Empty, Row, Skeleton, Tag, Tabs, message } from "antd";
-import { BookOpen, CheckCircle, GraduationCap, RefreshCw } from "lucide-react";
-import { activateExpert, fetchExperts, type ExpertInfo } from "../api";
+import { Alert, Button, Col, Drawer, Empty, Input, Modal, Row, Skeleton, Space, Tag, Tabs, message } from "antd";
+import { BookOpen, CheckCircle, GraduationCap, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { activateExpert, cloneExpert, deleteExpert, fetchExperts, type ExpertInfo } from "../api";
 import { t } from "../i18n";
 import PageShell from "./shared/PageShell";
 
@@ -15,17 +15,24 @@ function ExpertCard({
   isCurrent,
   switching,
   onSwitch,
+  onOpenCreate,
+  canDelete,
+  onDelete,
   libraryMode,
 }: {
   expert: ExpertInfo;
   isCurrent: boolean;
   switching: boolean;
   onSwitch: (name: string) => void;
+  onOpenCreate: (expert: ExpertInfo) => void;
+  canDelete: boolean;
+  onDelete: (name: string) => void;
   libraryMode: boolean;
 }) {
   const accent = expert.color || "var(--accent, #4B74FA)";
   return (
     <div
+      onClick={libraryMode ? () => onSwitch(expert.name) : undefined}
       style={{
         background: "var(--bg-primary, #1b1d22)",
         border: isCurrent ? "2px solid var(--accent, #4B74FA)" : "2px solid rgba(128,128,128,.14)",
@@ -35,7 +42,7 @@ function ExpertCard({
         flexDirection: "column",
         gap: 10,
         minHeight: 172,
-        cursor: "default",
+        cursor: libraryMode ? "pointer" : "default",
         position: "relative",
         transition: "border-color .2s, background .2s, transform .2s",
         boxSizing: "border-box",
@@ -89,17 +96,45 @@ function ExpertCard({
         ) : (
           <span />
         )}
-        {!libraryMode && (
-          <Button
-            size="small"
-            type={isCurrent ? "default" : "primary"}
-            disabled={isCurrent}
-            loading={switching}
-            onClick={() => onSwitch(expert.name)}
-          >
-            {isCurrent ? t("settings.experts.current") : t("settings.experts.switch")}
-          </Button>
-        )}
+        <Space size={4}>
+          {libraryMode && (
+            <Button
+              size="small"
+              type="primary"
+              ghost
+              icon={<Plus size={12} />}
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenCreate(expert);
+              }}
+            >
+              {t("experts.createFromTemplate")}
+            </Button>
+          )}
+          {!libraryMode && (
+            <Button
+              size="small"
+              type={isCurrent ? "default" : "primary"}
+              disabled={isCurrent}
+              loading={switching}
+              onClick={() => onSwitch(expert.name)}
+            >
+              {isCurrent ? t("settings.experts.current") : t("settings.experts.switch")}
+            </Button>
+          )}
+          {canDelete && (
+            <Button
+              size="small"
+              danger
+              type="text"
+              icon={<Trash2 size={13} />}
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(expert.name);
+              }}
+            />
+          )}
+        </Space>
       </div>
     </div>
   );
@@ -110,6 +145,10 @@ export default function ExpertsPage() {
   const [current, setCurrent] = useState<string | null>(null);
   const [switching, setSwitching] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  /** 从模板创建的 Drawer 草稿（对齐 Octop CreateFromExpertDrawer） */
+  const [draft, setDraft] = useState<ExpertInfo | null>(null);
+  const [createName, setCreateName] = useState("");
+  const [creating, setCreating] = useState(false);
 
   const load = useCallback(() => {
     setErr(null);
@@ -137,6 +176,34 @@ export default function ExpertsPage() {
     }
   };
 
+  const createFromTemplate = async () => {
+    if (!draft || !createName.trim()) return;
+    setCreating(true);
+    setErr(null);
+    try {
+      await cloneExpert(draft.name, createName.trim());
+      message.success(t("experts.created"));
+      setDraft(null);
+      setCreateName("");
+      await load();
+    } catch (e) {
+      setErr(t("settings.experts.switchFailed", { msg: String(e instanceof Error ? e.message : e) }));
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const removeExpert = async (name: string) => {
+    setErr(null);
+    try {
+      await deleteExpert(name);
+      message.success(t("common.delete"));
+      await load();
+    } catch (e) {
+      setErr(t("settings.experts.switchFailed", { msg: String(e instanceof Error ? e.message : e) }));
+    }
+  };
+
   const grid = (libraryMode: boolean) =>
     experts === null ? (
       <Skeleton active paragraph={{ rows: 4 }} />
@@ -151,6 +218,17 @@ export default function ExpertsPage() {
               isCurrent={ex.name === current}
               switching={switching === ex.name}
               onSwitch={(n) => void switchExpert(n)}
+              onOpenCreate={(e) => setDraft(e)}
+              canDelete={!libraryMode && !ex.default && ex.name !== current}
+              onDelete={(n) => {
+                Modal.confirm({
+                  title: t("experts.deleteConfirm"),
+                  okText: t("common.delete"),
+                  cancelText: t("common.cancel"),
+                  okButtonProps: { danger: true },
+                  onOk: () => removeExpert(n),
+                });
+              }}
               libraryMode={libraryMode}
             />
           </Col>
@@ -195,6 +273,43 @@ export default function ExpertsPage() {
           },
         ]}
       />
+      <Drawer
+        title={
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            <Plus size={14} />
+            {t("experts.createFromTemplateTitle")}
+          </span>
+        }
+        width={420}
+        open={draft !== null}
+        onClose={() => setDraft(null)}
+        destroyOnClose
+        footer={
+          <div style={{ textAlign: "right" }}>
+            <Button style={{ marginRight: 8 }} onClick={() => setDraft(null)}>
+              {t("common.cancel")}
+            </Button>
+            <Button type="primary" loading={creating} disabled={!createName.trim()} onClick={() => void createFromTemplate()}>
+              {t("experts.createFromTemplateTitle")}
+            </Button>
+          </div>
+        }
+      >
+        {draft && (
+          <Space direction="vertical" size={12} style={{ width: "100%" }}>
+            <div style={{ fontSize: 13, color: "var(--label-2, #9aa0a6)" }}>
+              {t("experts.createFromTemplateSource", { name: draft.display_name })}
+            </div>
+            <Input
+              placeholder={t("experts.createFromTemplatePlaceholder")}
+              value={createName}
+              onChange={(e) => setCreateName(e.target.value)}
+              onPressEnter={() => void createFromTemplate()}
+              autoFocus
+            />
+          </Space>
+        )}
+      </Drawer>
     </PageShell>
   );
 }
