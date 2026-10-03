@@ -6,11 +6,13 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
-from app.config import settings
+from app.config import REPO_ROOT, settings
 from app.domain.agents.seed import default_system_prompt, default_welcome_message
 from app.domain.agents.service import agent_service
 from app.infra.harness.manager import manager
@@ -64,3 +66,10 @@ app.add_middleware(
 )
 app.include_router(router)
 app.include_router(openai_router)
+
+# —— 前端控制台（frontend/dist 静态挂载，同源零 CORS；浏览器或壳内都访问 /console/）——
+_FRONTEND_DIR = REPO_ROOT / "frontend" / "dist"
+if not _FRONTEND_DIR.is_dir():
+    _FRONTEND_DIR = REPO_ROOT / "frontend"  # 未构建时退回源码根（仅 dev 辅助）
+if _FRONTEND_DIR.is_dir():
+    app.mount("/console", StaticFiles(directory=_FRONTEND_DIR, html=True), name="console")

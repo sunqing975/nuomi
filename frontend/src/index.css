@@ -1,0 +1,6 @@
+/* 控制台全局样式：浅色简洁 */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif;
+  background: #f7f8fa;
+}

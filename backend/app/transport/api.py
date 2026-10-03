@@ -263,3 +263,23 @@ async def list_mcp_servers() -> list[dict]:
         }
         for name, spec in settings.mcp_servers.items()
     ]
+
+
+# ---------- 存储 / 工作区总览 ----------
+
+
+@router.get("/workspace")
+async def workspace_overview() -> dict:
+    """工作区与能力总览（控制台「存储」板块）。"""
+    from app.domain.skills.service import skill_service
+
+    return {
+        "workspace": str(settings.workspace_path),
+        "data_root": str(settings.data_root),
+        "counts": {
+            "experts": len(agent_service.list()),
+            "plugins": len(plugin_service.list()),
+            "skills": len(skill_service.list()),
+            "mcp_servers": len(settings.mcp_servers),
+        },
+    }
