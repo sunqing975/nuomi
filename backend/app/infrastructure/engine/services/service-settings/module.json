@@ -1,9 +1,0 @@
-{
-  "name": "service-settings",
-  "version": "1.0.0",
-  "description": "ctx.settings：设置服务（全局 + 每插件设置，JSON 持久化，变更事件驱动插件热更新）",
-  "entry": "service_settings.py",
-  "provides": [
-    "settings"
-  ]
-}

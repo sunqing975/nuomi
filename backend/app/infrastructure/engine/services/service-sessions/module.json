@@ -1,9 +1,0 @@
-{
-  "name": "service-sessions",
-  "version": "1.0.0",
-  "description": "ctx.sessions：会话持久化（SQLite checkpointer，对话刷新不丢、可断点续跑）",
-  "entry": "service_sessions.py",
-  "provides": [
-    "sessions"
-  ]
-}

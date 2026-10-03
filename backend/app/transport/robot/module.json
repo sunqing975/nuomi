@@ -1,9 +1,0 @@
-{
-  "name": "robot",
-  "version": "0.1.0",
-  "description": "机器人模式：全屏机器人脸 + 纯语音对话（本地 STT/TTS）。停用后机器人模式入口隐藏，不影响通用模式与智能体能力。",
-  "entry": "robot.py",
-  "hooks": [
-    "plugin_toggled"
-  ]
-}

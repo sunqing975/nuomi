@@ -1,9 +1,0 @@
-{
-  "name": "service-system-prompt",
-  "version": "1.0.0",
-  "description": "ctx.systemPrompt：提示词组装服务（伙伴人设 + 插件指令 + 技能目录 + 记忆事实）",
-  "entry": "service_system_prompt.py",
-  "provides": [
-    "systemPrompt"
-  ]
-}
