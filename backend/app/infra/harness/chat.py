@@ -67,6 +67,7 @@ async def stream_chat(
     )
 
     text_parts: list[str] = []
+    seen_tool_results: set[tuple] = set()
     async for event in agent.stream(request):
         ev_type = event.get("type")
         kind = getattr(ev_type, "value", ev_type)
@@ -81,7 +82,12 @@ async def stream_chat(
             for m in event.get("messages") or []:
                 content = getattr(m, "content", None)
                 if content:
+                    key = (getattr(m, "name", None), str(content)[:200])
+                    if key in seen_tool_results:
+                        break  # langgraph 会对同一工具结果重复发事件，去重
+                    seen_tool_results.add(key)
                     yield {"type": "tool_result", "name": getattr(m, "name", None), "content": str(content)[:500]}
+                    break  # messages 可能含多个带 content 的消息，只透出首个结果
         elif kind == AgentEventType.USAGE.value:
             yield {"type": "usage", **{k: v for k, v in (event.get("usage") or {}).items() if k in ("input_tokens", "output_tokens")}}
 

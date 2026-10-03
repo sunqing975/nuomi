@@ -66,7 +66,7 @@ class ModelInteractionController {
             if (Math.abs(e.clientX - modelCenterX) < modelW &&
                 Math.abs(e.clientY - modelCenterY) < modelH) {
                 try {
-                    this.model.motion('Tap')
+                    this.model.motion('touch_body')
                     this.model.expression()
                 } catch (err) {
                     console.log('动作触发失败:', err)

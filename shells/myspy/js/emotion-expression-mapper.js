@@ -173,7 +173,7 @@ class EmotionExpressionMapper {
     playMotion(index) {
         if (!this.model) return false;
         try {
-            this.model.motion('Tap', index);
+            this.model.motion('touch_body', index);
             return true;
         } catch (e) {
             console.error('播放动作失败:', e.message);

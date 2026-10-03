@@ -1036,6 +1036,104 @@ function cleanMessagesForAPI(messages) {
     })
 }
 
+// ============ Nuomi 后端模式（SSE）：后端统一执行工具，壳只消费事件流播放 ============
+
+// 动作映射表：pet_action 工具参数 → 壳可播放的 motion（aidang 分组）/ 表情组合
+// aidang 可用分组：idle/home/login/mail/main_1~3/mission/mission_complete/complete/wedding/touch_body/touch_head/touch_special
+const PET_ACTION_MAP = {
+    heart:     { motion: 'touch_special', expressions: ['开心', '害羞'], text: '比心' },
+    wave:      { motion: 'main_1', expressions: ['开心'], text: '挥手' },
+    dance:     { motion: 'main_2', expressions: ['开心'], text: '跳舞' },
+    sleep:     { motion: 'idle', expressions: [], text: '睡觉' },
+    nod:       { motion: 'main_3', expressions: [], text: '点头' },
+    shake_head:{ motion: 'touch_head', expressions: [], text: '摇头' },
+    blow_kiss: { motion: 'touch_special', expressions: ['开心', '害羞'], text: '飞吻' }
+}
+
+// 桌宠动作播放：表情组合（5s 自动恢复）+ 动作（Tap 兜底）
+function playPetAction(action) {
+    const cfg = PET_ACTION_MAP[action] || { motion: 'Tap', expressions: ['开心'], text: action }
+    log('桌宠动作: ' + (cfg.text || action), 'info')
+    try {
+        if (cfg.expressions && cfg.expressions.length > 0) {
+            for (const e of cfg.expressions) {
+                if (_applyEmotionExpression) _applyEmotionExpression(e)
+            }
+        }
+        if (cfg.motion && model) model.motion(cfg.motion)
+    } catch (e) {
+        log('动作播放失败: ' + e.message, 'warn')
+    }
+}
+
+// tool_result → 播放器（pet_action 动作 / set_emotion 表情）
+function handleNuomiToolResult(name, content) {
+    let data = {}
+    try { data = JSON.parse(content || '{}') } catch (e) { return }
+    if (name === 'pet_action' && data.action) {
+        playPetAction(data.action)
+    } else if (name === 'set_emotion' && data.emotion) {
+        log('桌宠表情: ' + data.emotion + (data.intensity ? '/' + data.intensity : ''), 'info')
+        try {
+            emotionMapper.triggerByEmotion(data.emotion)
+            if (_applyEmotionExpression) _applyEmotionExpression(data.emotion)
+        } catch (e) { log('表情应用失败: ' + e.message, 'warn') }
+    }
+}
+
+// 调用后端 /api/agents/{id}/chat SSE 流：token→字幕 / emotion→表情 / tool_result→播放器 / done→结束
+async function callNuomiSSE(text, onChunk = null) {
+    const agentId = config.nuomi.agent_id
+    const base = String(config.llm.api_url || '').replace(/\/api\/v1\/?$/, '') || 'http://127.0.0.1:8000'
+    const url = base + '/api/agents/' + agentId + '/chat'
+    log('Nuomi SSE 请求: ' + url)
+
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: text })
+    })
+    if (!response.ok) {
+        const errText = await response.text()
+        throw new Error('Nuomi API ' + response.status + ': ' + errText)
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder('utf-8')
+    let buffer = ''
+    while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+        for (const line of lines) {
+            const t = line.trim()
+            if (!t.startsWith('data:')) continue
+            let ev
+            try { ev = JSON.parse(t.slice(5).trim()) } catch (e) { continue }
+            switch (ev.type) {
+                case 'token':
+                    if (onChunk) onChunk(ev.content || '')
+                    break
+                case 'emotion':
+                    if (ev.name) {
+                        try {
+                            emotionMapper.triggerByEmotion(ev.name)
+                            if (_applyEmotionExpression) _applyEmotionExpression(ev.name)
+                        } catch (e) { log('情绪表情应用失败: ' + e.message, 'warn') }
+                    }
+                    break
+                case 'tool_result':
+                    if (ev.name) handleNuomiToolResult(ev.name, ev.content || '')
+                    break
+                case 'done':
+                    return
+            }
+        }
+    }
+}
+
 // 流式 LLM 调用 - 逐块返回文本
 async function callLLMStream(messages, tools = null, onChunk = null) {
     const url = config.llm.api_url + '/chat/completions'
@@ -1149,6 +1247,33 @@ async function sendMessage(text, options = {}) {
     trimMessages()
 
     try {
+        // —— Nuomi 后端模式：后端统一执行工具（插件/MCP），壳只消费 SSE 事件流播放 ——
+        if (config.nuomi && config.nuomi.enabled && config.nuomi.agent_id) {
+            let nuomiBuffer = ''
+            if (ttsStreamProcessor) ttsStreamProcessor.reset()
+            await callNuomiSSE(text, (chunk) => {
+                nuomiBuffer += chunk
+                const clean = emotionMapper.removeEmotionTags(chunk)
+                if (!ttsStreamProcessor) {
+                    updateSubtitle(emotionMapper.removeEmotionTags(nuomiBuffer))
+                }
+                if (ttsStreamProcessor) ttsStreamProcessor.addStreamingText(clean)
+            })
+            if (ttsStreamProcessor) ttsStreamProcessor.finalizeStreamingText()
+            const assistantContent = emotionMapper.removeEmotionTags(nuomiBuffer)
+            if (assistantContent) {
+                messages.push({ role: 'assistant', content: assistantContent })
+                if (!ttsStreamProcessor) updateSubtitle(assistantContent, true)
+            }
+            setTimeout(() => {
+                const container = document.getElementById('subtitle-container')
+                if (container) container.style.display = 'none'
+            }, 5000)
+            saveConversationHistory()
+            if (model) { try { model.motion('Tap') } catch (e) {} }
+            return
+        }
+
         // 调用主 LLM（流式）
         let replyBuffer = ''
 

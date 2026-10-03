@@ -11,6 +11,11 @@
 | 形象层（桌宠壳） | desktop/（基于 myspy，MIT） | 纯表现层：Live2D 渲染、情绪表情、流式字幕、输入；大脑全在 backend（详见 [desktop/README.md](desktop/README.md)） |
 | 存储 | SQLite | agents/threads/messages（对齐 Octop schema，规划中） |
 
+> **桌宠模型版权说明**：当前桌宠模型 `2D/aidang/` 来自游戏《碧蓝航线》提取的 Live2D 资产
+> （来源 [Eikanya/Live2d-model](https://github.com/Eikanya/Live2d-model)，Cubism 3，14 个动作）。
+> 该资产仅限个人自用，**不可商用、不可再分发**，因此不入库（见 `.gitignore`）；
+> 若需分发项目请替换为官方宽松 License 的模型（如 Live2D 官方示例）。
+
 ## 快速开始（当前为后端最小对话）
 
 ```bash

@@ -164,7 +164,7 @@ class ModelInteractionController {
         // 鼠标点击事件
         this.model.on('click', () => {
             if (this.model.containsPoint(this.app.renderer.plugins.interaction.mouse.global) && this.model.internalModel) {
-                this.model.motion("Tap");
+                this.model.motion("touch_body");
                 this.model.expression();
             }
         });

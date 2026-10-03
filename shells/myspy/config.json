@@ -15,12 +15,12 @@
   "ui": {
     "intro_text": "你好，我是糯米。",
     "model_type": "live2d",
-    "model_path": "2D/hiyori/Hiyori.model3.json",
+    "model_path": "2D/aidang/aidang_2.model3.json",
     "show_chat_box": true,
     "show_model": true,
     "model_x": 1200.9863603945507,
     "model_y": 614.6615249418455,
-    "model": "hiyori"
+    "model": "aidang"
   },
   "subtitle_labels": {
     "enabled": true,
@@ -61,10 +61,7 @@
     "auto_start_servers": true
   },
   "nuomi": {
-    "shell_only": true,
-    "disable_plugins": true,
-    "disable_mcp": true,
-    "disable_skill_injection": true,
-    "disable_history": true
+    "enabled": true,
+    "agent_id": "6a3b128b89e9"
   }
 }

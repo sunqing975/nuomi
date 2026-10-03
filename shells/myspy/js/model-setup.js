@@ -40,8 +40,8 @@ class ModelSetup {
 
         console.log('正在加载Live2D模型...')
 
-        // 加载Live2D模型
-        const model = await PIXI.live2d.Live2DModel.from('2D/feiniu/hiyori_pro_t11.model3.json')
+        // 加载Live2D模型（试装：碧蓝航线 aidang，Cubism 3 + 14 动作）
+        const model = await PIXI.live2d.Live2DModel.from('2D/aidang/aidang_2.model3.json')
         app.stage.addChild(model)
         console.log('Live2D模型加载完成')
 

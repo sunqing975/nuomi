@@ -292,7 +292,7 @@ class VRMInteractionController {
                     const dy = e.clientY - mouseDownPos.y;
                     if (Math.sqrt(dx * dx + dy * dy) < 5) {
                         if (model.isPointOverModel(e.clientX, e.clientY)) {
-                            model.motion('Tap');
+                            model.motion('touch_body');
                             model.expression();
                         }
                     }
