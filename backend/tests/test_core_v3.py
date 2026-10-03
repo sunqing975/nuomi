@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
-from app.core import (
+from app.infrastructure.engine import (
     EventBus,
     Fiber,
     FiberState,

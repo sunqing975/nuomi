@@ -6,7 +6,7 @@ import shutil
 from pathlib import Path
 
 import pytest
-from app.plugins.robust import apply_robust
+from app.infrastructure.engine.robust import apply_robust
 
 from .conftest import applied_app
 

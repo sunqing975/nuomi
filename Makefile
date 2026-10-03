@@ -169,7 +169,10 @@ test:
 	@cd $(ROOT)/backend && .venv/bin/python -m pytest -q
 
 # ---- 质量门禁（对齐 Octop make all 模式：提交前 make check 全绿） ----
-check: lint format-check typecheck test
+check: layers lint format-check typecheck test
+
+layers:
+	@cd $(ROOT)/backend && .venv/bin/python scripts/check_layering.py
 
 lint:
 	@cd $(ROOT)/backend && .venv/bin/ruff check app tests scripts ../plugins --config pyproject.toml

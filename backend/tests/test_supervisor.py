@@ -6,7 +6,7 @@ import asyncio
 from pathlib import Path
 
 import pytest
-from app.agent.supervisor import build_supervisor
+from app.domain.experts.supervisor import build_supervisor
 from app.main import build_app
 from fastapi.testclient import TestClient
 from langchain_core.messages import HumanMessage

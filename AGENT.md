@@ -586,3 +586,18 @@ models.py 删除 BUILTIN_PROVIDERS（deepseek/doubao/local）与 PROVIDERS/MODEL
 - **验证（2026-10-03 全绿）**：143 passed 一次通过（贡献视图值不变，无需测试适配）；make check 全绿（1 文件 format 后重跑通过）。
 - **决策要点**：模块 provides/hooks 是**声明式元数据**（扫描期即可见、不 import 入口）；apply 运行时 ctx.provide/ctx.on 仍执行，展示 = 声明 ∪ 运行时（保序去重）。插件不引入 provides/hooks（插件的能力面是工具，服务是模块职责）。
 - **未 commit**：v0.7 + 概念同步 + v0.7.1 + 用户自己的改动全在工作区，commit 前需与用户确认提交范围。
+
+## 领域设计对齐 Octop：专家化 + 四层架构（2026-10-03，v0.8 整体重构，用户"全部一起干"）
+- **用户主线**：Octop 的每个概念都是领域语言（Expert/Channel/Connector/Workspace/Gateway），nuomi 是机制语言（Fiber/Scope/Registry/Composer/三级加载）→ 验证 Octop 后端确为领域实现（class Expert / class Gateway / BaseChannel，机制词隔离在 octop-harness/octop-gateway/octop-memory）→ 用户拍板"整个架构重构，不偷懒"。
+- **用户拍板 5 决策**：①去"伙伴"改"专家（Expert）"；②糯米=默认专家（品牌保留）；③PetBuddy 不降级、仅糯米专属；④mood 情绪=专家人格层（保留）；⑤preset（agent-companion/agent-researcher）→专家库模板资产。专家库位置=仓库根 `experts/`。
+- **P0 专家化**：`partners/nuomi/`→`experts/nuomi/`（git mv 保历史）；`partner.json`→`manifest.json`（id/name/display_name/label/description/welcome_message/avatar/icon_name/color/default/version/prompt_files/quick_prompts）；`app/agent/partner.py`→Expert 模型 + load_expert/list_experts/assemble_system_prompt（文件名 P2 归位时处理）；config `experts_dir/expert_name`；main `expert_name/experts_dir` 参数、`app.state.expert`、/health 键 `partner`→`expert`。
+- **P1 engine 机制库下沉**：`app/core/` 7 文件 + `app/plugins/` 机制 6 文件 → `app/infrastructure/engine/`（13 文件），删 `app/core/`、`app/plugins/`；engine `__init__` docstring 定位"机制基础库（≈ octop-harness）"。踩坑：批量脚本只改绝对导入漏相对导入（`.plugins.approval`）→ 12 collection 失败；composer 残留 `from ..core`。
+- **P2 领域归位**：`app/agent/` 7 文件 → `app/domain/experts/`；`app/modules/` 13 个按领域解散：agent-companion/agent-researcher/team→domain/experts/（provides 值 preset:companion/preset:researcher 保留）、service-memory/memory-mem0→domain/memory/、mood→domain/behavior/、robot/voice-input→transport/、service-*×5→infrastructure/engine/services/；`app/modules/` 删除。
+- **P4 扫描领域化**：`config.domain_roots` 5 领域根；`NuomiComposer` 收 `domain_roots`（`_plugin_dir` 先领域根再 plugins/，builtin 判定 `any((root/e.plugin).is_dir())`）；main 装配 `mod_scans += scan_plugins(root, category="module")`。踩坑：main.py 相对层级算错（`from .domain.experts` 写成 `from ..domain.experts`）；data 文件 `..config`→`...config`。
+- **P3 transport 拆分**：main.py 的 token_guard + 39 路由 + 15 pydantic 模型 + 辅助函数 → `app/transport/api.py` `build_router(app)` 工厂；main 只留 `include_router(build_router(app))`。踩坑链：路由块嵌套进 token_guard（dedent 4 空格）、闭包变量逐名补 import/挂 state、`_sanitize_plugin_name`/`_trace_turn`/`_tar_root` 搬运、PydanticUserError 缺 Any。
+- **P5 能力域 + 依赖规则**：新建 `app/domain/capabilities/service.py` `CapabilityService`（list/toggle/install/uninstall 领域 API，挂 app.state.capabilities），5 个能力路由改走领域服务，transport 不再碰 composer；新建 `backend/scripts/check_layering.py`（AST 扫 import，硬规则 5 条）接入 `make check` 首步 `layers`。
+- **P6 前端专家化**：api.ts fetchExperts/activateExpert；i18n heroTitle "果冻小猫专家" + settings.experts.* 键；SettingsModal 通用区专家选择器（列表+当前+切换+重启提示）；PetBuddy 注释"糯米专属"；后端新增 GET /api/experts + POST /api/experts/{name}/activate（写 workspace/experts.json，重启生效，main.py `_expert_override` 优先级：启动参数 > 覆盖 > 默认）。
+- **P7 文档**：concepts.md → v0.8（专家概念行 + 1.3 四层架构依赖表 + 1.4 领域语言映射 + 第 3 章模块按领域根归位 + 第 5 章口径）；README 目录树四层化 + 专家叙事（历史 Phase 原话保留）。
+- **验证（2026-10-03 全绿）**：make check = layers → lint → format-check → typecheck → test，143 passed；前端 npm run build 通过（chunk 大小 warning 原有）。
+- **依赖规则（机器阻断，勿违背）**：transport 禁 import main；domain 禁 import transport；engine 机制库（顶层 13 文件）禁 import domain/transport/storage；storage 禁 import domain/transport/infrastructure；engine/services 允许消费 domain；除 main.py 外禁 import main。composer 签名 `domain_roots: Sequence[str|Path]|None`（mypy 方差，Sequence 从 collections.abc import）。
+- **未 commit**：v0.8 全部改动 + 用户自己的改动在工作区，commit 前与用户确认范围。

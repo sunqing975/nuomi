@@ -46,7 +46,7 @@ def test_memory_facts_loaded_and_searchable(tmp_path):
         assert app.state.memory.search("咖啡")[0].content == "用户喜欢美式咖啡"
         body = client.get("/health").json()
         assert body["memory_facts"] == 1
-        assert body["partner"] == "糯米"
+        assert body["expert"] == "糯米"
 
 
 def test_middleware_injects_persona_prompt(tmp_path, monkeypatch):

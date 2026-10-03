@@ -15,6 +15,9 @@ import {
   fetchAvailableModels,
   setGlobalSetting,
   updateCustomProvider,
+  activateExpert,
+  fetchExperts,
+  type ExpertInfo,
 } from "../../api";
 import { CheckIcon, ChevronDownIcon, CpuIcon, EyeIcon, EyeOffIcon, GearIcon, InboxIcon, PlusIcon, ShieldIcon, WarnIcon, XIcon } from "../icons";
 
@@ -323,6 +326,10 @@ export default function SettingsModal({
     setExpandedKeys((ks) => (ks.includes(key) ? ks.filter((k) => k !== key) : [...ks, key]));
   const [health, setHealth] = useState<"checking" | "ok" | "down">("checking");
   const [teamEnabled, setTeamEnabled] = useState<boolean | null>(null);
+  const [experts, setExperts] = useState<ExpertInfo[] | null>(null);
+  const [currentExpert, setCurrentExpert] = useState<string | null>(null);
+  const [switching, setSwitching] = useState<string | null>(null);
+  const [expertHint, setExpertHint] = useState<string | null>(null);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -345,6 +352,30 @@ export default function SettingsModal({
       })
       .catch(() => setHealth("down"));
   }, []);
+
+  useEffect(() => {
+    fetchExperts()
+      .then((r) => {
+        setExperts(r.experts);
+        setCurrentExpert(r.current);
+      })
+      .catch(() => setExperts([]));
+  }, []);
+
+  const switchExpert = async (name: string) => {
+    setSwitching(name);
+    setErr(null);
+    setExpertHint(null);
+    try {
+      const r = await activateExpert(name);
+      setCurrentExpert(r.name);
+      setExpertHint(t("settings.experts.restartHint"));
+    } catch (e) {
+      setErr(t("settings.experts.switchFailed").replace("{msg}", e instanceof Error ? e.message : String(e)));
+    } finally {
+      setSwitching(null);
+    }
+  };
 
   const saveGlobal = async (key: string, value: unknown) => {
     setErr(null);
@@ -422,6 +453,35 @@ export default function SettingsModal({
                     ))}
                   </div>
                 </div>
+              </div>
+
+              <div className="setting-group">
+                <div className="setting-group-title">{t("settings.experts.title")}</div>
+                {experts === null ? (
+                  <div className="hint-sub">{t("settings.experts.loadFailed")}</div>
+                ) : (
+                  <div className="setting-field">
+                    <span className="setting-label">{t("settings.experts.current")}</span>
+                    <span className="field-note">{currentExpert ?? "—"}</span>
+                  </div>
+                )}
+                {experts !== null &&
+                  experts.map((ex) => (
+                    <div className="setting-field" key={ex.id}>
+                      <span className="setting-label">
+                        {ex.display_name}
+                        {ex.default && <span className="expert-default"> {t("settings.experts.default")}</span>}
+                      </span>
+                      <button
+                        className="settings-small-btn"
+                        disabled={switching !== null || ex.name === currentExpert}
+                        onClick={() => switchExpert(ex.name)}
+                      >
+                        {switching === ex.name ? "…" : t("settings.experts.switch")}
+                      </button>
+                    </div>
+                  ))}
+                {expertHint && <div className="hint-sub">{expertHint}</div>}
               </div>
 
               <div className="setting-group">

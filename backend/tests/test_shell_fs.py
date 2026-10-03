@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 from app.config import settings
-from app.plugins.loader import collect_tools
+from app.infrastructure.engine.loader import collect_tools
 
 from .conftest import applied_app
 

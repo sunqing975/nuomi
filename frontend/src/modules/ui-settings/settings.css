@@ -662,3 +662,29 @@
   .settings-nav { width: 132px; }
   .settings-body { padding: 18px; }
 }
+
+/* ---------- 专家选择器（对齐 Octop 专家库概念） ---------- */
+.expert-default {
+  font-size: 11px;
+  opacity: 0.7;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  padding: 0 5px;
+  margin-left: 6px;
+}
+.settings-small-btn {
+  font-size: 12px;
+  padding: 3px 10px;
+  border: 1px solid var(--border, rgba(128, 128, 128, 0.35));
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.settings-small-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.settings-small-btn:not(:disabled):hover {
+  background: rgba(128, 128, 128, 0.12);
+}

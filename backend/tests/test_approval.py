@@ -5,8 +5,8 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+from app.infrastructure.engine.approval import ApprovalGate
 from app.main import build_app
-from app.plugins.approval import ApprovalGate
 from fastapi.testclient import TestClient
 from langchain_core.tools import tool
 

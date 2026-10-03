@@ -1,4 +1,4 @@
-/** 糯米伙伴 · 开源表情组件（react-ai-pet：果冻身体 + 17 表情 + 思考特效 + 眼睛跟随光标）。
+/** 糯米专属（默认专家）表情组件（react-ai-pet：果冻身体 + 17 表情 + 思考特效 + 眼睛跟随光标）。
  *   shape=mochi（米糕）——名字"糯米"正合。mood → expression + reaction 映射。
  *   v0.5：mood 插件情绪（excited/happy/curious/surprised/shy/proud/sad）→ 表情播放后回 idle。 */
 import { PetAvatar } from "react-ai-pet";

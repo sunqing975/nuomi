@@ -59,7 +59,7 @@ def _ensure_table(conn: sqlite3.Connection) -> None:
         """
         CREATE TABLE IF NOT EXISTS facts (
             id TEXT PRIMARY KEY,
-            partner TEXT NOT NULL DEFAULT 'nuomi',
+            expert TEXT NOT NULL DEFAULT 'nuomi',
             content TEXT NOT NULL,
             category TEXT NOT NULL DEFAULT 'fact',
             created_at REAL NOT NULL,
@@ -71,9 +71,9 @@ def _ensure_table(conn: sqlite3.Connection) -> None:
 
 
 class MemoryStore:
-    def __init__(self, db_path: str | Path, partner: str = "nuomi"):
+    def __init__(self, db_path: str | Path, expert: str = "nuomi"):
         self.db_path = Path(db_path)
-        self.partner = partner
+        self.expert = expert
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         # check_same_thread=False：lifespan（事件循环线程）创建、工具/测试线程使用；
         # 写操作统一走 _lock 串行化。
@@ -89,7 +89,7 @@ class MemoryStore:
     # ---------- 读写 ----------
 
     def _load(self):
-        rows = self.db.execute("SELECT * FROM facts WHERE partner = ?", (self.partner,)).fetchall()
+        rows = self.db.execute("SELECT * FROM facts WHERE expert = ?", (self.expert,)).fetchall()
         self.facts = [
             MemoryFact(
                 id=r["id"],
@@ -105,15 +105,15 @@ class MemoryStore:
     def _save(self):
         """全量落库（接口兼容：调用方语义不变）。"""
         with self._lock, self.db:
-            self.db.execute("DELETE FROM facts WHERE partner = ?", (self.partner,))
+            self.db.execute("DELETE FROM facts WHERE expert = ?", (self.expert,))
             self.db.executemany(
                 "INSERT OR REPLACE INTO facts "
-                "(id, partner, content, category, created_at, updated_at, access_count) "
+                "(id, expert, content, category, created_at, updated_at, access_count) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 [
                     (
                         f.id,
-                        self.partner,
+                        self.expert,
                         f.content,
                         f.category,
                         f.created_at,

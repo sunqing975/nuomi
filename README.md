@@ -2,18 +2,18 @@
 
 **有温度的全能智能体**：会干活，也记得你。
 
-糯米是一个桌面个人智能体。内核对齐 DeepSeek Harness 方向——打字为核心、能力全部插件化——具备完整的执行能力（shell/fs 沙箱）、上下文工程与记忆/知识/协作；同时保留 v1 的陪伴人格层（情绪、表情、伙伴记忆），让你面对的不仅是一个冷工具，而是一个记得你的助手。
+糯米是一个桌面个人智能体。内核对齐 DeepSeek Harness 方向——打字为核心、能力全部插件化——具备完整的执行能力（shell/fs 沙箱）、上下文工程与记忆/知识/协作。架构对齐 Octop 领域设计：**专家（Expert）是领域语言一等公民**，糯米为默认专家（果冻小猫人格 + 陪伴情绪层），机制语言（Fiber/Scope/Registry/Composer）全部下沉基础库。
 
 主线技术栈：**LangChain / LangGraph + FastAPI + React**，前后端分离 + Cordis 风格扩展内核（v0.7 三区：插件=可选能力 / 模块=内核组成部分 / 技能=独立文档资产）+ 执行能力（shell/fs）+ 上下文工程 + 记忆/知识/协作。聊天界面接入 **assistant-ui**（headless primitives + LocalRuntime）渲染流式回复、深度思考（推理过程折叠块）与工具调用卡片。
 
-> 定位沿革：v1/v2 曾是陪伴型智能体（伙伴人格 + 情绪表情）；2026-10-01 起转型为全能智能体；2026-10-02 桌面化定稿。陪伴资产从"主定位"转为"人格层"，构成与 Harness 类冷工具的关键差异——**能干活的 agent 很多，记得你的只有一个糯米。**
+> 定位沿革：v1/v2 曾是陪伴型智能体（伙伴人格 + 情绪表情）；2026-10-01 起转型为全能智能体；2026-10-02 桌面化定稿；2026-10-03 对齐 Octop 领域设计整体重构（专家化 + 四层架构）。陪伴资产从"伙伴"转为"专家人格层"（糯米=默认专家，PetBuddy 仅糯米专属），构成与 Harness 类冷工具的关键差异——**能干活的 agent 很多，记得你的只有一个糯米。**
 
 ## 分阶段路线图
 
 | 阶段 | 内容 | 状态 |
 |---|---|---|
 | Phase 0 | 打字核心：LangGraph agent + SQLite 持久化 + SSE 流式 + React 打字页 + skills/ 目录 | ✅ 完成 |
-| Phase 1 | 伙伴人设 + 记忆 + 上下文压缩 | ✅ 完成 |
+| Phase 1 | 专家人设 + 记忆 + 上下文压缩 | ✅ 完成 |
 | Phase 2 | 插件化技能系统（三级加载 / @tool / MCP / RAG 可插拔 / adapter）★核心亮点 | ✅ 完成 |
 | Phase 3 | 工程健壮：重试/fallback、human-in-the-loop、Eval 评测、日志可观测 | ✅ 完成 |
 | Phase 4 | 部署 + 扩展：Docker、多智能体 Supervisor、语音、模型管理（~~多用户 JWT / PostgreSQL~~，2026-10-02 移除：桌面单用户化） | ✅ 完成 |
@@ -26,14 +26,14 @@ Phase 0→2 是主线；Phase 3 面试必补；Phase 5 当前推进（对齐 dee
 ```
 nuomi/
 ├── backend/            FastAPI + LangGraph（Python 3.12，uv 管理）
-│   ├── app/
-│   │   ├── main.py     POST /api/chat（SSE 流式）+ /api/plugins /api/settings /api/projects…
-│   │   ├── config.py   环境变量配置（NUOMI_HOME 单一数据根 / LLM 密钥）
-│   │   ├── agent/      智能体组装：graph（create_agent + checkpointer）/ middleware / supervisor / partner / thread_ctx / models
-│   │   ├── plugins/    插件内核：loader（插件/模块扫描 + 技能扫描）/ lifecycle / runtime / composer / approval / robust
-│   ├── modules/    内核模块目录：service-*（运行时服务）/ mood·team·robot·voice-input（钩子/模式）/ agent-*（Agent preset）
-│   │   ├── storage/    统一存储层：db（ensure_database 迁移 + 版本化）/ projects / memory / knowledge / trace
-│   │   ├── core/       V3 内核：events（5 分发）/ scope / context / fiber / composition / skill
+│   ├── app/            四层架构（transport → domain → infrastructure/storage，依赖只允许向内）
+│   │   ├── main.py     装配根：只组装、不写业务（build_app + include_router）
+│   │   ├── transport/  接入层：薄，只做协议（api.py 39 路由 + robot + voice-input 入口模块）
+│   │   ├── domain/     领域核心：业务唯一所在地（experts 专家 / memory 记忆 / behavior 情绪 / capabilities 能力）
+│   │   ├── infrastructure/engine   机制基础库（Fiber/Scope/Registry/Composer，≈ octop-harness）
+│   │   │   └── services/           内核服务模块（service-*，允许消费领域）
+│   │   ├── storage/    存储 repos：db / projects / memory / knowledge / trace（只做 SQL）
+│   │   ├── config.py   环境变量配置（NUOMI_HOME 单一数据根 / LLM 密钥 / domain_roots）
 │   │   └── sse.py      SSE 事件协议封装
 │   ├── sidecar_main.py 桌面 sidecar 入口（PyInstaller 打包后端时使用）
 │   ├── tests/          143 项假模型端到端测试（不花 API 费用）
@@ -50,8 +50,9 @@ nuomi/
 │   ├── web/            http_get 网页正文抓取
 │   └── voice/          语音 TTS + 本地 STT
 ├── skills/             技能区：独立文档资产（SKILL.md 说明书，全量注入 system prompt，不随插件启停）
-├── backend/app/modules/  模块区：内核组成部分（service-* 服务 / mood·team·robot·voice-input·memory-mem0 钩子模式 / agent-* Agent preset）
-├── partners/           伙伴人格目录（v1 陪伴资产，保留为可选人格层）
+├── experts/            专家库：人格 + 能力模板资产（manifest.json + IDENTITY/SOUL/USER.md；默认专家糯米）
+│   ├── nuomi/          糯米（默认专家：果冻小猫人格 + 陪伴情绪层）
+│   └── library/        专家库模板（对齐 Octop experts/library 结构）
 ├── scripts/smoke.sh    冒烟测试脚本
 └── .env.example        环境变量示例
 ```
@@ -94,7 +95,7 @@ NUOMI_HOME/
 ```
 
 - **工作区**：`WORKSPACE_DIR`（默认 `~/Documents/Nuomi`，首启自动创建）——shell/fs 等工具的文件操作根目录，与程序数据分离；优先级 `NUOMI_WORKSPACE`/`WORKSPACE_DIR` env > 运行时设置 > 默认路径。侧栏"文件"视图展示工作区目录树（`/api/workspace/tree`），新建项目无绑定目录时自动在工作区创建同名目录。
-- **资源目录**：`PLUGINS_DIR` / `SKILLS_DIR` / `PARTNERS_DIR` 可覆盖（打包时指向 PyInstaller 内嵌只读区；源码运行默认指向仓库 `plugins/`、`skills/`、`partners/`）。模块 `backend/app/modules/` 随 Python 代码打包，不走资源覆盖。
+- **资源目录**：`PLUGINS_DIR` / `SKILLS_DIR` / `EXPERTS_DIR` 可覆盖（打包时指向 PyInstaller 内嵌只读区；源码运行默认指向仓库 `plugins/`、`skills/`、`experts/`）。模块按领域根（`config.domain_roots`：domain/、transport/、engine/services/）随 Python 代码打包，不走资源覆盖。
 - **首启向导**：全新环境（未配置任何 LLM 供应商）启动时全屏引导：选择工作区路径 → 配置 OpenAI 兼容模型服务并激活（`/api/bootstrap` + `POST /api/bootstrap/workspace`）。
 - **本地 API 守卫（桌面形态）**：Tauri 壳每次启动生成随机 token（`NUOMI_TOKEN` env 传入后端），后端中间件校验 `X-Nuomi-Token`（`/api/health` 放行）；仅绑定 `127.0.0.1` 回环。前端 fetch 自动带 token，web dev（vite proxy）不受影响。
 - **单用户**：JWT / PostgreSQL / 多用户命名空间已移除（2026-10-02）；`backend/data/` 遗留数据已废弃（不迁移，桌面版全新环境）。
@@ -151,10 +152,11 @@ NUOMI_HOME/
 ## 概念体系（v0.7，三区）
 
 **插件**（`plugins/`）= 可选能力分发单元：目录 + plugin.json，入口（`hook.py`，`apply(ctx)`）向 LLM 注册工具，可安装 / 卸载 / 启停 / 配参数。
-**模块**（`backend/app/modules/`）= 内核组成部分：运行时服务（service-*）、钩子/模式（mood/team/robot/voice-input/memory-mem0）、Agent preset（agent-companion/agent-researcher），随系统启动（builtin）。
+**模块**（按领域根归位）= 内核组成部分：运行时服务（service-*）、钩子/模式（mood/team/robot/voice-input/memory-mem0）、专家库模板资产（agent-companion/agent-researcher），随系统启动（builtin）。
+**专家**（`experts/`）= 人格 + 能力模板资产：manifest.json + IDENTITY/SOUL/USER.md，用户面对的角色；糯米为默认专家（品牌保留）。
 **技能**（`skills/`）= 独立文档资产：SKILL.md 说明书，全量注入 system prompt，不随插件/模块启停过滤。
 
-- 判定：给 LLM 加可调用能力 → 插件；运行时基础设施/钩子/模式 → 模块；教 LLM 用能力的文档 → 技能。目录即分类，无 `kind`/`type` 字段。
+- 判定：给 LLM 加可调用能力 → 插件；运行时基础设施/钩子/服务/模式 → 模块（按领域归位）；教 LLM 用能力的文档 → 技能；用户面对的角色 → 专家。目录即分类，无 `kind`/`type` 字段。
 - 关联：插件与技能**同名即关联展示**（如插件 `memory` ↔ 技能 `memory`），但技能区独立可用。
 - 未引入：`kind`（目录即分类）、技能包（多技能聚合，暂缓）、插件市场。
 - 权威口径与完整清单：见 [`docs/concepts.md`](docs/concepts.md)。
@@ -165,7 +167,7 @@ NUOMI_HOME/
 plugins/<name>/        # 插件：可选能力（能力导向清单）
 ├── plugin.json        # name / description / version / system_instruction(可选) / load(可选) / robust(可选) / approval(可选)
 └── hook.py            # 入口：apply(ctx) 注册工具（TOOLS 形态亦兼容）
-backend/app/modules/<name>/   # 模块：内核组成部分（内核导向清单）
+app/domain|transport|engine/services/<name>/   # 模块：内核组成部分，按领域根归位（内核导向清单）
 ├── module.json        # name / description / version / entry + provides[](声明的 ctx 服务) / hooks[](订阅的事件)；可选 load/system_instruction/settings
 └── <name>.py          # 唯一入口：apply(ctx) provide/on（入口名 = 目录名转下划线）
 skills/<name>/SKILL.md        # 技能：frontmatter(name/description/when_to_use) + 正文
@@ -234,7 +236,7 @@ Phase 1 的 `partners/nuomi/` 人设素材。
 
 ## Phase 1 设计说明（面试表达）
 
-- **多伙伴 = 多目录**：`partners/<name>/` 一份配置（partner.json + 4 个 markdown），引擎与技能全复用——"预置可爱/御姐伙伴只是加配置文件"。
+- **多专家 = 多目录**：`experts/<name>/` 一份配置（manifest.json + 人格 markdown），引擎与技能全复用——"预置可爱/御姐专家只是加配置文件"；默认专家糯米，选择器切换（重启生效）。
 - **记忆是插件**：`plugins/memory/` 提供 memory_write/memory_read 工具，底层走 MemoryStore（SQLite facts 表，CJK 二元组检索，300 条上限淘汰）。换向量库 = 换 search 实现，接口不变。
 - **记忆双通道**：模型主动写（记忆插件） + 系统被动注入（每轮按用户消息检索记忆重建 system prompt），跨会话也能想起。
 - **上下文压缩**：NuomiMiddleware 的 `awrap_model_call` 直接构造模型输入；历史超阈值时较早消息压成摘要、只留最近 N 条原文，token 有界，摘要增量缓存。
@@ -261,7 +263,7 @@ Phase 1 的 `partners/nuomi/` 人设素材。
 
 ## Phase 4 设计说明（部署 + 扩展）
 
-**多智能体**（`backend/app/agent/supervisor.py`）：LangGraph Supervisor 模式——LLM 路由器 → companion（陪伴：记忆/时间/便签）或 researcher（研究：知识库/计算/便签）子 Agent（create_agent 作为 subgraph 节点），主图持 checkpointer。入口 `POST /api/supervisor/chat`（SSE），`GET /api/supervisor/info` 看子 Agent 工具集。
+**多智能体**（`backend/app/domain/experts/supervisor.py`）：LangGraph Supervisor 模式——LLM 路由器 → companion（陪伴：记忆/时间/便签）或 researcher（研究：知识库/计算/便签）子 Agent（create_agent 作为 subgraph 节点），主图持 checkpointer。入口 `POST /api/supervisor/chat`（SSE），`GET /api/supervisor/info` 看子 Agent 工具集。
 
 **语音 + Web 插件**（`plugins/voice`、`plugins/web`）：语音 = macOS say TTS 合成 mp3 + STT 接口化占位（可换 Whisper/豆包语音 API，adapter 形态）；Web = `http_get` 抓网页正文（stdlib，robust 由 plugin.json 配置；换浏览器/MCP 版=换插件）。
 

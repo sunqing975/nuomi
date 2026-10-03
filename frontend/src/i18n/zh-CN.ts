@@ -113,7 +113,7 @@ const zhCN = {
   "chat.charCount": "{n} 字",
   "chat.typing": "正在打字…",
   "chat.pondering": "让我想想…",
-  "chat.heroTitle": "我是糯米，一只果冻小猫伙伴",
+  "chat.heroTitle": "我是糯米，一只果冻小猫专家",
   "chat.files": "项目文件",
   "chat.heroSub": "点一下试试，或者直接输入你的问题",
   "chat.toolCall": "调用工具",
@@ -201,6 +201,13 @@ const zhCN = {
   "plugin.uninstallConfirm": "确定卸载插件「{name}」？将删除其在插件目录中的文件。",
 
   // ---- 设置 ----
+  "settings.experts.title": "专家",
+  "settings.experts.current": "当前专家",
+  "settings.experts.default": "默认",
+  "settings.experts.switch": "切换",
+  "settings.experts.restartHint": "切换后重启应用生效",
+  "settings.experts.loadFailed": "专家列表加载失败",
+  "settings.experts.switchFailed": "切换失败：{msg}",
   "settings.title": "设置",
   "settings.saveChanges": "保存修改",
   "settings.general.appearance": "外观",

@@ -553,3 +553,32 @@ export async function saveBootstrapWorkspace(workspace: string): Promise<{ ok: b
   }
   return res.json() as Promise<{ ok: boolean; workspace: string }>;
 }
+
+// ---------- 专家库（对齐 Octop 专家概念：人格 + 能力模板资产） ----------
+
+export interface ExpertInfo {
+  id: string;
+  name: string;
+  display_name: string;
+  default: boolean;
+}
+
+export interface ExpertsResponse {
+  experts: ExpertInfo[];
+  current: string;
+}
+
+export async function fetchExperts(): Promise<ExpertsResponse> {
+  const res = await fetch("/api/experts");
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json() as Promise<ExpertsResponse>;
+}
+
+export async function activateExpert(name: string): Promise<{ ok: boolean; name: string; restart_required: boolean }> {
+  const res = await fetch(`/api/experts/${encodeURIComponent(name)}/activate`, { method: "POST" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.detail ?? `HTTP ${res.status}`);
+  }
+  return res.json() as Promise<{ ok: boolean; name: string; restart_required: boolean }>;
+}

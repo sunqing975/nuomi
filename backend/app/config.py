@@ -3,7 +3,7 @@
 单一数据根（决策 5，见 docs/desktop-data-architecture.md）：
 - 所有运行时数据锚定 NUOMI_HOME（默认 ~/Library/Application Support/Nuomi / ~/.nuomi），
   开发、打包、桌面端同源，不做 dev/packaged 双 profile。
-- 资源目录（plugins/partners）源码运行默认仓库路径，打包形态由 sidecar 用
+- 资源目录（plugins/experts）源码运行默认仓库路径，打包形态由 sidecar 用
   PLUGINS_DIR / PARTNERS_DIR 覆盖（指向 PyInstaller 只读资源区）。
 - 工作区默认 ~/Documents/Nuomi（用户可见），可用 NUOMI_WORKSPACE 覆盖。
 """
@@ -55,15 +55,22 @@ class Settings(BaseSettings):
     plugins_dir: str = str(REPO_ROOT / "plugins")
     # 技能（skills/）：独立文档资产（SKILL.md），与插件解耦；打包 sidecar 用 SKILLS_DIR 覆盖
     skills_dir: str = str(REPO_ROOT / "skills")
-    # 模块（backend/app/modules/）：内核组成部分（service-* / preset / hook 类），随 Python 代码打包
-    modules_dir: str = str(REPO_ROOT / "backend" / "app" / "modules")
-    # --- 伙伴目录（同理，PARTNERS_DIR 覆盖） ---
-    partners_dir: str = str(REPO_ROOT / "partners")
+    # --- 领域根（domain/ 包下按领域组织的内核模块位置）：engine 聚合扫描 module.json ---
+    # 对齐四层架构：领域核心（domain/）与入口（transport/）内的模块 + 引擎服务（engine/services/）
+    domain_roots: list[str] = [
+        str(REPO_ROOT / "backend" / "app" / "domain" / "experts"),
+        str(REPO_ROOT / "backend" / "app" / "domain" / "memory"),
+        str(REPO_ROOT / "backend" / "app" / "domain" / "behavior"),
+        str(REPO_ROOT / "backend" / "app" / "transport"),
+        str(REPO_ROOT / "backend" / "app" / "infrastructure" / "engine" / "services"),
+    ]
+    # --- 专家库目录（experts/<name>/，EXPERTS_DIR 覆盖）：对齐 Octop Expert 模板库 ---
+    experts_dir: str = str(REPO_ROOT / "experts")
     # --- 运行时注入（非环境字段）：设置页/首启向导保存的工作区覆盖 ---
     _workspace_override: str | None = None
 
-    # --- 伙伴与记忆 ---
-    partner_name: str = "nuomi"
+    # --- 专家与记忆 ---
+    expert_name: str = "nuomi"
     summarize_max_messages: int = 24  # 历史超过此条数触发摘要
     summarize_keep_recent: int = 8  # 摘要时保留最近 N 条原文
 
@@ -127,7 +134,7 @@ class Settings(BaseSettings):
 
     @property
     def knowledge_path(self) -> Path:
-        return self.resolve("knowledge") / self.partner_name
+        return self.resolve("knowledge") / self.expert_name
 
     @property
     def trace_path(self) -> Path:

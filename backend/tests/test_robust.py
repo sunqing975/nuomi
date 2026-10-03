@@ -6,7 +6,7 @@ import asyncio
 from pathlib import Path
 
 import pytest
-from app.plugins.robust import RetryError, with_fallback, with_retry, with_timeout
+from app.infrastructure.engine.robust import RetryError, with_fallback, with_retry, with_timeout
 from langchain_core.tools import tool
 
 REPO_ROOT = Path(__file__).resolve().parents[2]

@@ -14,7 +14,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def connect(db_path: str | Path) -> sqlite3.Connection:
@@ -37,7 +37,7 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             """
             CREATE TABLE IF NOT EXISTS facts (
                 id TEXT PRIMARY KEY,
-                partner TEXT NOT NULL DEFAULT 'nuomi',
+                expert TEXT NOT NULL DEFAULT 'nuomi',
                 content TEXT NOT NULL,
                 category TEXT NOT NULL DEFAULT 'fact',
                 created_at REAL NOT NULL,
@@ -77,8 +77,21 @@ def ensure_database(db_path: str | Path) -> None:
     try:
         _ensure_schema(conn)
         version = conn.execute("PRAGMA user_version").fetchone()[0]
-        if version < SCHEMA_VERSION:
-            with conn:
-                conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+        _migrate(conn, version)
+        with conn:
+            conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
     finally:
         conn.close()
+
+
+def _migrate(conn: sqlite3.Connection, version: int) -> None:
+    """按 PRAGMA user_version 顺序迁移（v0.8：facts.partner 列改名为 expert）。
+
+    全新库（version 0）已按最新 DDL 建表（expert 列），按列存在性判断，
+    避免对不存在的 partner 列误执行 RENAME COLUMN。
+    """
+    if version < 2:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(facts)")}
+        if "partner" in cols:
+            with conn:
+                conn.execute("ALTER TABLE facts RENAME COLUMN partner TO expert")

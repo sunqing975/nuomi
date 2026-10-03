@@ -11,7 +11,7 @@ import sys
 import types
 from pathlib import Path
 
-from app.agent.middleware import _render_snapshot
+from app.domain.experts.middleware import _render_snapshot
 from app.storage.memory import FileMemoryBackend, MemoryStore
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -153,7 +153,7 @@ def _install_fake_mem0(monkeypatch):
 def _load_mem0_hook():
     spec = importlib.util.spec_from_file_location(
         "memory_mem0_hook",
-        REPO_ROOT / "backend" / "app" / "modules" / "memory-mem0" / "memory_mem0.py",
+        REPO_ROOT / "backend" / "app" / "domain" / "memory" / "memory-mem0" / "memory_mem0.py",
     )
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)

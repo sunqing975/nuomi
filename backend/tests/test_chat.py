@@ -9,8 +9,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from app.infrastructure.engine.loader import scan_plugins
 from app.main import build_app
-from app.plugins.loader import scan_plugins
 from fastapi.testclient import TestClient
 
 from .fake_llm import FakeChatModel

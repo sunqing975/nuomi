@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from app.plugins.loader import scan_plugins
+from app.infrastructure.engine.loader import scan_plugins
 
 from .conftest import applied_tools
 

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from app.infrastructure.engine.runtime import RESPONSE_DONE, EventBus, PluginContext
 from app.main import build_app
-from app.plugins.runtime import RESPONSE_DONE, EventBus, PluginContext
 from fastapi.testclient import TestClient
 
 from .fake_llm import FakeChatModel
@@ -77,7 +77,7 @@ def test_mood_plugin_rules(tmp_path):
     import importlib.util
     import sys
 
-    hook_path = REPO_ROOT / "backend" / "app" / "modules" / "mood" / "mood.py"
+    hook_path = REPO_ROOT / "backend" / "app" / "domain" / "behavior" / "mood" / "mood.py"
     spec = importlib.util.spec_from_file_location("nuomi_mood_hook", hook_path)
     mod = importlib.util.module_from_spec(spec)
     sys.modules["nuomi_mood_hook"] = mod
@@ -135,7 +135,7 @@ def test_skill_doc_reads_body(tmp_path):
 def test_skill_catalog_only_metadata(tmp_path):
     app = _make_app(tmp_path)
     with TestClient(app) as client:
-        from app.plugins.loader import collect_skill_catalog
+        from app.infrastructure.engine.loader import collect_skill_catalog
 
         catalog = collect_skill_catalog(app.state.skills)
         assert "memory_write" not in catalog  # 正文不进常驻目录
