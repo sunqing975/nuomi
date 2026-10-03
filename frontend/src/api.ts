@@ -560,6 +560,9 @@ export interface ExpertInfo {
   id: string;
   name: string;
   display_name: string;
+  description: string;
+  icon_name: string;
+  color: string;
   default: boolean;
 }
 

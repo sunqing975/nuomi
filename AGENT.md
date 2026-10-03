@@ -610,3 +610,11 @@ models.py 删除 BUILTIN_PROVIDERS（deepseek/doubao/local）与 PROVIDERS/MODEL
 - **踩坑**：lucide-react 无 `Robot` 导出→`Bot`；antd 装的是 **v6**（Octop 是 v5，Menu/Sider theme prop 运行时已验证可用）；doToggle/available 等旧引用随插件面板迁出 App 时清理（TS6133 链）；`createRecognizer` 是 App 语音逻辑依赖，删 InputBar import 时只删组件保留函数。
 - **验证（2026-10-03）**：tsc --noEmit 全绿 + vite build 通过（manualChunks 拆 antd/assistant 消 chunk 警告）；浏览器冒烟：/#/chat 三栏 + 会话树 + 模型菜单 + 机器人入口、/#/experts 专家卡片（当前专家/默认标签+切换）、/#/capabilities 插件启停、/#/skills 9 技能、/#/workspace 项目卡片+新建+删除、/#/settings embedded 设置页、色板 8 项持久化（localStorage nuomi-palette=tech）、明暗 Switch 生效（--accent=#4B74FA）。
 - **commit**：`0f2f1fe`（v0.9 前端迁移，16 files +2689/−240）。后端 /api/skills 一并入此 commit。
+
+## 前端深度对齐 Octop 页面体系（2026-10-03，v0.10：用户"都对齐一下 octop"）
+- **PageShell 外壳**：新建 `pages/shared/PageShell.tsx`（对齐 Octop PageShell 视觉契约——Title 行 20px/600 固定 + subtitle 13px + actions 右对齐 + 内容卡片 colorBgContainer/radius 8/padding 24/内部滚动）；Capabilities/Skills/Workspace/Experts 四页接入。
+- **专家页 Tab 化**：对齐 Octop Experts（Agents Management Centre）——Tabs「我的专家」（激活管理：当前专家/默认徽标 + 切换按钮）/「专家库」（模板资产：ExpertCard 风格 accent 图标 + 描述 + footer 徽标）；卡片对齐 Octop expertTemplateCard（2px border/radius 10/padding 20/min-height 172）。
+- **后端 /api/experts 补元数据**：transport 现在逐个 load_expert 返回 description/icon_name/color（Expert 模型本有，之前未带出）；前端 ExpertInfo 同步扩展。
+- **聊天页 rail 视觉统一**：.sidebar/.right-panel 从磨砂玻璃（backdrop-filter + color-mix）改为 antd 观感（--bg-container solid + rgba(128,128,128,.12) 分隔线，与 MainLayout Sider/Header 一致）。
+- **验证（2026-10-03）**：tsc/build 全绿；浏览器：专家页双 Tab 切换（我的专家/专家库+模板资产 footer）、四页 PageShell 外壳、聊天页 rail 视觉统一；后端 make check 143 passed。
+- **commit**：`0f2f1fe`（v0.9）后续接本批（v0.10，未提交时并入下一次 commit）。

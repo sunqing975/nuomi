@@ -796,22 +796,32 @@ def build_router(app: FastAPI) -> APIRouter:
     @router.get("/api/experts")
     async def experts_list():
         """专家库清单（领域语义：专家 = 人格 + 能力模板资产，对齐 Octop 专家库）。"""
-        from ..domain.experts.expert import list_experts
+        from ..domain.experts.expert import list_experts, load_expert
 
         names = list_experts(settings.experts_dir)
         current = app.state.expert
-        return {
-            "experts": [
+        out = []
+        for n in sorted(names):
+            try:
+                ex = load_expert(n, settings.experts_dir)
+            except Exception:
+                ex = None
+            out.append(
                 {
                     "id": n,
                     "name": n,
-                    "display_name": current.display_name if n == current.name else n,
-                    "default": current.default if n == current.name else False,
+                    "display_name": ex.display_name
+                    if ex
+                    else (current.display_name if n == current.name else n),
+                    "description": ex.description if ex else "",
+                    "icon_name": ex.icon_name if ex else "",
+                    "color": ex.color if ex else "",
+                    "default": ex.default
+                    if ex
+                    else (current.default if n == current.name else False),
                 }
-                for n in sorted(names)
-            ],
-            "current": current.name,
-        }
+            )
+        return {"experts": out, "current": current.name}
 
     @router.get("/api/bootstrap")
     async def bootstrap():

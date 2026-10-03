@@ -7,6 +7,7 @@ import type { ProjectInfo, ThreadInfo } from "../api";
 import { createProject } from "../api";
 import FilesPanel from "../modules/ui-sidebar/FilesPanel";
 import { t } from "../i18n";
+import PageShell from "./shared/PageShell";
 
 const { Title, Text } = Typography;
 
@@ -51,14 +52,19 @@ export default function WorkspacePage({
   const selected = projects.find((p) => p.id === currentProjectId);
 
   return (
-    <div style={{ padding: 24, height: "100%", overflow: "auto" }}>
-      <Title level={4} style={{ marginTop: 0, display: "flex", alignItems: "center", gap: 10 }}>
-        <HardDrive size={18} /> {t("nav.workspace")}
-      </Title>
-
-      <Button icon={<FolderPlus size={14} />} onClick={() => setCreating(true)} style={{ marginBottom: 16 }}>
-        {t("sidebar.newProject")}
-      </Button>
+    <PageShell
+      title={
+        <>
+          <HardDrive size={18} /> {t("nav.workspace")}
+        </>
+      }
+      subtitle={t("workspace.subtitle")}
+      actions={
+        <Button icon={<FolderPlus size={14} />} onClick={() => setCreating(true)}>
+          {t("sidebar.newProject")}
+        </Button>
+      }
+    >
 
       {projects.length === 0 ? (
         <Empty description={t("sidebar.noProjects")} style={{ marginTop: 40 }} />
@@ -137,6 +143,6 @@ export default function WorkspacePage({
           />
         </Space>
       </Modal>
-    </div>
+    </PageShell>
   );
 }

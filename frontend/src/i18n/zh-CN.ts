@@ -40,6 +40,24 @@ const zhCN = {
   "app.deleteProject": "删除项目",
   // ---- 技能 ----
   "skills.empty": "暂无技能资产",
+  "skills.subtitle": "独立文档资产（SKILL.md：触发条件 + 说明 + 正文），随专家上下文全量注入",
+  // ---- 能力页 ----
+  "capabilities.subtitle": "能力 = 插件（可选能力分发单元）+ 模块（内核组成部分，默认常驻）。启停即改配置组合 → 挂载/卸载 fiber",
+  "capabilities.pluginTag": "插件",
+  "capabilities.disabledTag": "已停用",
+  "capabilities.toolsLabel": "工具",
+  "capabilities.modulesTitle": "内核模块（默认常驻）",
+  "capabilities.servicesLabel": "服务",
+  "app.pluginToggleOk": "能力状态已更新",
+  // ---- 工作区 ----
+  "workspace.subtitle": "项目 = 工作区单元（绑定目录）；文件树只读浏览",
+  // ---- 专家页 ----
+  "experts.subtitle": "专家 = 人格 + 能力模板资产（manifest.json + IDENTITY/SOUL/USER.md）",
+  "experts.myExperts": "我的专家",
+  "experts.expertLibrary": "专家库",
+  "experts.createFromTemplate": "模板资产",
+  "experts.installedBadge": "已就绪",
+  "experts.switchHint": "切换写入工作区覆盖，重启生效",
 
   // ---- App ----
   "app.errorBoundary.title": "界面渲染出错",
