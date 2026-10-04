@@ -20,7 +20,8 @@
     "show_model": true,
     "model_x": 1141.5733262847807,
     "model_y": 165.2289305763473,
-    "model": "hiyori"
+    "model": "hiyori",
+    "pet_enabled": true
   },
   "subtitle_labels": {
     "enabled": true,

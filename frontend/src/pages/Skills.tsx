@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Avatar, Button, Card, Empty, Input, List, Modal, Popconfirm, Space, Switch, Table, Tabs,
+  Avatar, Button, Card, Empty, Input, List, Modal, Popconfirm, Select, Space, Switch, Tabs,
   Tag, Typography, Upload, message,
 } from 'antd';
 import { CloudUploadOutlined, DeleteOutlined, DownloadOutlined, GithubOutlined, ReloadOutlined } from '@ant-design/icons';
@@ -153,73 +153,138 @@ export default function SkillsPage() {
 
   const missingEnv = (s: Skill) => (s.requires_env || []).filter(v => !envVars[v] && !(v in envVars));
 
-  const skillColumns = [
-    { title: '技能', dataIndex: 'name', render: (n: string) => <b>{n}</b> },
-    { title: '描述', dataIndex: 'description', render: (d: string) => (
-        <span style={{ color: '#6b7280' }}>{d || '—'}</span>),
-    },
-    { title: '密钥', width: 120, render: (_: unknown, s: Skill) => {
-        const miss = missingEnv(s);
-        if (!s.requires_env || s.requires_env.length === 0) return <span style={{ color: '#9ca3af' }}>—</span>;
-        return miss.length > 0 ? (
-          <Tag color="orange" title={`缺少：${miss.join(', ')}`}>需配置 {miss.join(', ')}</Tag>
-        ) : (
-          <Tag color="green">已配置</Tag>
-        );
-      },
-    },
-    { title: '启用', width: 90, render: (_: unknown, s: Skill) => (
-        <Switch checked={s.enabled} onChange={v => toggleSkill(s, v)} />),
-    },
-    { title: '操作', width: 70, render: (_: unknown, s: Skill) => (
-        <Popconfirm
-          title="删除技能？"
-          description="将删除技能目录，不可恢复"
-          okText="删除" cancelText="取消"
-          onConfirm={() => removeSkill(s)}
-        >
-          <Button size="small" type="text" danger icon={<DeleteOutlined />} />
-        </Popconfirm>),
-    },
-  ];
+  // —— 已安装卡片（内置/技能/技能包 统一平铺） ——
+  const KIND_META = {
+    builtin: { color: 'blue', label: '内置' },
+    skill: { color: 'geekblue', label: '技能' },
+    package: { color: 'purple', label: '技能包' },
+  } as const;
 
-  const builtinColumns = [
-    { title: '内置技能', dataIndex: 'name', render: (n: string) => <span><b>{n}</b> <Tag color="blue">内置</Tag></span> },
-    { title: '语言', dataIndex: 'lang', width: 80, render: (l: string) => l || '—' },
-    { title: '描述', dataIndex: 'description', render: (d: string) => (
-        <span style={{ color: '#6b7280' }}>{d || '—'}</span>),
-    },
-    { title: '说明', width: 220, render: () => (
-        <span style={{ color: '#9ca3af', fontSize: 12 }}>随 harness 注入，只读</span>),
-    },
-  ];
+  type InstalledKind = keyof typeof KIND_META;
 
-  const packageColumns = [
-    { title: '技能包', dataIndex: 'name', render: (n: string) => <b>{n}</b> },
-    { title: '描述', dataIndex: 'description', render: (d: string) => (
-        <span style={{ color: '#6b7280' }}>{d || '—'}</span>),
-    },
-    { title: '技能', width: 70, dataIndex: 'skill_count',
-      render: (c: number) => <Tag color="blue">{c} 个</Tag> },
-    { title: '启用（包级）', width: 110, render: (_: unknown, p: SkillPackage) => (
-        <Switch checked={p.enabled} onChange={v => togglePackage(p, v)} />),
-    },
-    { title: '操作', width: 70, render: (_: unknown, p: SkillPackage) => (
-        <Popconfirm
-          title="删除技能包？"
-          description="将删除包目录及全部技能，不可恢复"
-          okText="删除" cancelText="取消"
-          onConfirm={() => removePackage(p)}
-        >
-          <Button size="small" type="text" danger icon={<DeleteOutlined />} />
-        </Popconfirm>),
-    },
-  ];
+  interface InstalledItem {
+    key: string;
+    kind: InstalledKind;
+    name: string;
+    description: string;
+    lang?: string;
+    enabled?: boolean;
+    skill_count?: number | null;
+    icon_url?: string;
+    requires_env?: string[];
+    ref: Skill | SkillPackage | null;
+  }
+
+  const [kindFilter, setKindFilter] = useState<'all' | InstalledKind>('all');
+  const [installedQuery, setInstalledQuery] = useState('');
+
+  const installedItems = useMemo(() => {
+    const items: InstalledItem[] = [
+      ...builtins.map(s => ({
+        key: `b:${s.name}`, kind: 'builtin' as const, name: s.name, description: s.description,
+        lang: s.lang, ref: null,
+      })),
+      ...skills.map(s => ({
+        key: `s:${s.name}`, kind: 'skill' as const, name: s.name, description: s.description,
+        enabled: s.enabled, requires_env: s.requires_env, ref: s,
+      })),
+      ...packages.map(p => ({
+        key: `p:${p.id}`, kind: 'package' as const, name: p.name, description: p.description,
+        enabled: p.enabled, skill_count: p.skill_count, icon_url: p.icon_url, ref: p,
+      })),
+    ];
+    const q = installedQuery.trim().toLowerCase();
+    return items.filter(it =>
+      (kindFilter === 'all' || it.kind === kindFilter) &&
+      (!q || it.name.toLowerCase().includes(q) || (it.description || '').toLowerCase().includes(q)));
+  }, [builtins, skills, packages, kindFilter, installedQuery]);
+
+  const renderInstalledItem = (it: InstalledItem) => {
+    const meta = KIND_META[it.kind];
+    const desc = it.description || '—';
+    const miss = (it.requires_env || []).filter(v => !envVars[v] && !(v in envVars));
+    const isSkill = it.kind === 'skill' && it.ref;
+    const isPackage = it.kind === 'package' && it.ref;
+    return (
+      <List.Item>
+        <Card size="small" style={{ height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+          <Tag color={meta.color} style={{ position: 'absolute', top: 8, right: 8, margin: 0, fontSize: 11 }}>
+            {meta.label}
+          </Tag>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', paddingRight: 44 }}>
+            {it.icon_url ? (
+              <img src={it.icon_url} alt="" width={40} height={40}
+                style={{ borderRadius: 8, objectFit: 'cover', flexShrink: 0 }} />
+            ) : initialAvatarOf(it.name)}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <Typography.Text strong ellipsis style={{ display: 'block' }} title={it.name}>
+                {it.name}
+              </Typography.Text>
+              <Space size={4} wrap style={{ marginTop: 2 }}>
+                {it.kind === 'package' && it.skill_count != null && (
+                  <Tag style={{ marginInlineEnd: 0 }}>{it.skill_count} 技能</Tag>)}
+                {isSkill && miss.length > 0 && (
+                  <Tag color="orange" style={{ marginInlineEnd: 0 }} title={`缺少：${miss.join(', ')}`}>
+                    需配置 {miss.join(', ')}
+                  </Tag>
+                )}
+              </Space>
+            </div>
+          </div>
+          <Typography.Paragraph
+            type="secondary" style={{ fontSize: 12, marginTop: 8, marginBottom: 0, flex: 1 }}
+            ellipsis={{ rows: 3, tooltip: desc }}
+          >
+            {desc}
+          </Typography.Paragraph>
+          <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            {it.kind === 'builtin' ? (
+              <span style={{ color: '#9ca3af', fontSize: 12 }}>随 harness 注入 · 只读</span>
+            ) : isSkill ? (
+              <span style={{ color: '#9ca3af', fontSize: 12 }}>
+                {it.requires_env?.length ? (miss.length ? '密钥待配置' : '密钥已配置') : '无需密钥'}
+              </span>
+            ) : (
+              <span style={{ color: '#9ca3af', fontSize: 12 }}>包级整体启停</span>
+            )}
+            {it.kind === 'builtin' ? (
+              <Typography.Text style={{ fontSize: 11, color: '#9ca3af' }}>
+                lang: {it.lang || '—'}
+              </Typography.Text>
+            ) : isSkill ? (
+              <Space size={4}>
+                <Switch size="small" checked={it.enabled}
+                  onChange={v => toggleSkill(it.ref as Skill, v)} />
+                <Popconfirm
+                  title="删除技能？" description="将删除技能目录，不可恢复"
+                  okText="删除" cancelText="取消"
+                  onConfirm={() => removeSkill(it.ref as Skill)}
+                >
+                  <Button size="small" type="text" danger icon={<DeleteOutlined />} />
+                </Popconfirm>
+              </Space>
+            ) : isPackage ? (
+              <Space size={4}>
+                <Switch size="small" checked={it.enabled}
+                  onChange={v => togglePackage(it.ref as SkillPackage, v)} />
+                <Popconfirm
+                  title="删除技能包？" description="将删除包目录及全部技能，不可恢复"
+                  okText="删除" cancelText="取消"
+                  onConfirm={() => removePackage(it.ref as SkillPackage)}
+                >
+                  <Button size="small" type="text" danger icon={<DeleteOutlined />} />
+                </Popconfirm>
+              </Space>
+            ) : null}
+          </div>
+        </Card>
+      </List.Item>
+    );
+  };
 
   const AVATAR_COLORS = ['#f59e0b', '#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
 
-  const initialAvatar = (item: SkillHubItem) => {
-    const name = item.display_name || item.slug || '?';
+  const initialAvatarOf = (name: string) => {
     const ch = (name[0] || '?').toUpperCase();
     const color = AVATAR_COLORS[(name.charCodeAt(0) || 0) % AVATAR_COLORS.length];
     return <Avatar size={40} style={{ backgroundColor: color, flexShrink: 0 }}>{ch}</Avatar>;
@@ -236,7 +301,7 @@ export default function SkillsPage() {
             {item.icon_url ? (
               <img src={item.icon_url} alt="" width={40} height={40}
                 style={{ borderRadius: 8, objectFit: 'cover', flexShrink: 0 }} />
-            ) : initialAvatar(item)}
+            ) : initialAvatarOf(name)}
             <div style={{ flex: 1, minWidth: 0 }}>
               <Typography.Text strong ellipsis style={{ display: 'block' }} title={name}>
                 {name}
@@ -280,9 +345,26 @@ export default function SkillsPage() {
             key: 'installed', label: '已安装',
             children: (
               <>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
-                  <Button size="small" icon={<GithubOutlined />} style={{ marginRight: 8 }}
-                    onClick={() => setGitOpen(true)}>从 Git 导入</Button>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <Select
+                    value={kindFilter}
+                    onChange={setKindFilter}
+                    style={{ width: 120 }}
+                    options={[
+                      { value: 'all', label: '全部类型' },
+                      { value: 'builtin', label: '内置' },
+                      { value: 'skill', label: '技能' },
+                      { value: 'package', label: '技能包' },
+                    ]}
+                  />
+                  <Input.Search
+                    placeholder="搜索名称 / 描述"
+                    allowClear style={{ width: 240 }}
+                    value={installedQuery}
+                    onChange={e => setInstalledQuery(e.target.value)}
+                  />
+                  <div style={{ flex: 1 }} />
+                  <Button icon={<GithubOutlined />} onClick={() => setGitOpen(true)}>从 Git 导入</Button>
                   <Upload
                     accept=".zip"
                     showUploadList={false}
@@ -291,7 +373,7 @@ export default function SkillsPage() {
                       return false; // 手动上传，阻止 antd 自动提交
                     }}
                   >
-                    <Button size="small" icon={<CloudUploadOutlined />}>导入技能 zip</Button>
+                    <Button icon={<CloudUploadOutlined />}>导入技能 zip</Button>
                   </Upload>
                 </div>
                 <Modal
@@ -314,31 +396,11 @@ export default function SkillsPage() {
                     autoFocus
                   />
                 </Modal>
-                <Table<Skill>
-                  rowKey="name" columns={builtinColumns} dataSource={builtins}
-                  loading={loading} pagination={false} size="small"
-                  title={() => <b style={{ fontSize: 13 }}>内置技能（随 harness 分发，仅查看）</b>}
-                />
-                <Table<Skill>
-                  rowKey="name" columns={skillColumns} dataSource={skills}
-                  loading={loading} pagination={false} size="small"
-                  style={{ marginTop: 16 }}
-                  title={() => <b style={{ fontSize: 13 }}>技能（单技能，目录 工作区/skills/）</b>}
-                />
-                <Table<SkillPackage>
-                  rowKey="id" columns={packageColumns} dataSource={packages}
-                  loading={loading} pagination={false} size="small"
-                  style={{ marginTop: 16 }}
-                  title={() => <b style={{ fontSize: 13 }}>技能包（SkillHub 技能集，包级整体启停）</b>}
-                  expandable={{
-                    expandedRowRender: (p: SkillPackage) => (
-                      <Space wrap>
-                        {p.skills.map(s => (
-                          <Tag key={s.slug}>{s.slug}</Tag>
-                        ))}
-                      </Space>
-                    ),
-                  }}
+                <List
+                  grid={{ gutter: 12, xs: 1, sm: 2, md: 3, lg: 3, xl: 4, xxl: 5 }}
+                  dataSource={installedItems} loading={loading} size="small"
+                  locale={{ emptyText: <Empty description="没有匹配的已安装项" /> }}
+                  renderItem={renderInstalledItem}
                 />
               </>
             ),
