@@ -24,6 +24,7 @@ from octop_harness.plugins import (
 )
 
 from app.config import settings
+from app.domain.avatar.service import VRM_AVATAR_PLUGIN_ID  # 方案B：共享 AI 数字人插件（动态工具）
 from app.storage import db
 
 # OpenAI 兼容接口（DeepSeek 等）要求工具名只含 [a-zA-Z0-9_-]
@@ -72,7 +73,15 @@ class PluginService:
         out = []
         for r in rows:
             d = dict(r)
-            d["tool_count"] = sum(1 for t in registry.all_tools() if t.plugin_id == r["plugin_id"])
+            if r["plugin_id"] == VRM_AVATAR_PLUGIN_ID:
+                # 方案B：AI 数字人工具不走静态注册，由 tools() 装配时动态构造（do_action/set_expression）。
+                # 启用时按当前动作/表情清单统计实际动态工具数，避免插件列表误显示"0 个工具"。
+                from app.domain.avatar.service import list_avatar_actions, list_avatar_expressions
+
+                n = (1 if list_avatar_actions() else 0) + (1 if list_avatar_expressions() else 0)
+                d["tool_count"] = n if r["enabled"] else 0
+            else:
+                d["tool_count"] = sum(1 for t in registry.all_tools() if t.plugin_id == r["plugin_id"])
             out.append(d)
         return out
 

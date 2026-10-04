@@ -185,3 +185,9 @@ SSE 事件协议（AI 数字人前端消费）：`token` / `tool_call` / `tool_r
 - **问题**：用户反馈新模型 868274793854709131 比旧模型 6309260419351179234 "大一倍"。实测包围盒高度：1.68m vs 1.17m（1.44 倍）——不同 VRM 导出比例/单位不一致
 - **方案**：vrm-model-setup.js 加载后 `Box3().setFromObject(vrm.scene)` 测原始高度 → 统一缩放到 targetHeight=1.4m（`vrmGroup.scale`），脚底对齐 y=0（`vrmGroup.position.y = -box.min.y * scale`）。VRMA 骨骼动画随 scale 等比缩放，动作幅度一致
 - **验证**：壳日志两个模型均输出「尺寸归一化: 1.68m→1.4m (scale=0.834)」「1.17m→1.4m (scale=1.199)」；热切换 3 次均正常
+
+## 插件列表动态工具计数（2026-10-05）
+
+- **问题**：方案B 下 vrm-avatar 插件工具不走静态注册（PluginRegistry.all_tools() 统计为 0），插件列表显示"0 个工具"，用户认为不合理
+- **修复**：plugins/service.py `list_all()` 对 vrm-avatar 特殊处理——启用时按当前动作/表情清单统计动态工具数（do_action + set_expression = 2，有数据才各计 1）；未启用为 0。VRM_AVATAR_PLUGIN_ID 提升为模块级 import（函数内 import 会触发 UnboundLocalError）
+- **验证**：/api/plugins 返回 vrm-avatar tools: 2（enabled=1）；weather 1
