@@ -172,4 +172,4 @@ dc242b1  卡片等高修复：antd5 grid 列为裸 div，.ant-row > div（amend 
 开发规范：`make lint`（ruff）/ `make typecheck`（mypy），CI 在 .github/workflows。
 6b71691  feat: 大模型配置页（providers.json CRUD）+ 模型不绑专家（default_model 列删除，对话框 per-turn 选模型）
 988b65e  docs: HANDOVER 回填（大模型配置 + 模型解耦）
-<TBD5>  feat: Provider 模型探测（probe API + 勾选默认）· 对话框输入区布局优化（选择器独立行/输入框整行）
+35d86d9  feat: Provider 模型探测（probe API + 勾选默认）· 对话框输入区布局优化（选择器独立行/输入框整行）
