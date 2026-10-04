@@ -109,4 +109,8 @@ SSE 事件协议（桌宠前端消费）：`token` / `tool_call` / `tool_result`
   - 命令：`node node_modules/fbx2vrma-converter/fbx2vrma-converter.js -i <in.fbx> -o <out.vrma>`——自动 Mixamo→VRM humanoid 骨骼映射（mixamorig:* → hips/spine/chest...），默认 30fps
   - 产物：`shells/myspy/assets/animations/elbow_punch.vrma`（2.25s、22 骨骼、55 帧、113KB）
   - 验证：`tools/fbx2vrma/verify-vrma.js`（Node 直跑，与壳 loadVRMA 同款加载链：GLTFLoader+VRMLoaderPlugin 载 VRM 模型 → VRMAnimationLoaderPlugin 载 .vrma → createVRMAnimationClip → 22 tracks 标准 humanoid 骨骼 + Head 采样四元数差异确认驱动）。**Node 环境需浏览器 polyfill：self/createImageBitmap/URL.createObjectURL/ProgressEvent**（脚本已内置，不渲染纹理）
-  - **遗留：壳 loadVRMA 接口（vrm-model-adapter.js:224）全项目无调用点**——下一步把 VRM 模型动作插件触发时改为播放对应 .vrma（替换手写骨骼动画 motion()），即 actions.json 语义动作可挂 vrma 文件名
+- **VRMA 播放链路已接入（2026-10-04，端到端验证通过）**：
+  - 壳 `vrm-model-setup.js` 初始化时自动扫描 `assets/animations/*.vrma`，文件名去扩展名注册（await loadVRMA）
+  - `vrm-model-adapter.js`：loadVRMA 改为 **fs 读文件 + loader.parse**（与 _loadVRM 同模式，原 loadAsync 走 fetch 无法加载 file://，这是它一直没接上的根因）；`motion(name)` **优先播 animations[name]（vrma）**，无则回退手写骨骼动画；playAnimation 一次性动画播完自动 fadeOut 回 idle（不卡最后一帧）
+  - 后端 `_enrich_vrm` 动作清单加 `elbow_punch`（肘击攻击），重启后 `enrich_model('6309260419351179234')` 重新生成插件（**注意：启动时 generate_all_model_plugins 只用现有 actions.json 生成插件、不重新 enrich**，改动作清单后需手动调 enrich_model 或删 actions.json 后切模型）
+  - 端到端实测：对话"对我来一记肘击" → LLM 调 elbow_punch 工具 → tool_result {motion, expressions, label} → SSE pet_action → 壳 [VRM动画] 播放 elbow_punch ✓

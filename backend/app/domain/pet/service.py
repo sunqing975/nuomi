@@ -696,9 +696,10 @@ def _enrich_vrm(model_id: str, vrm_path: Path) -> dict:
         "jump":            {"label_zh": "跳一下", "motion": "jump", "emotions": ["happy", "excited", "celebrate"]},
         "spin":            {"label_zh": "转一圈", "motion": "spin", "emotions": ["happy", "excited", "dizzy"]},
         "stretch":         {"label_zh": "伸懒腰", "motion": "stretch", "emotions": ["tired", "relaxed", "casual"]},
+        "elbow_punch":     {"label_zh": "肘击攻击", "motion": "elbow_punch", "emotions": ["fight", "excited", "playful", "action"]},
     }
 
-    actions_json = {
+    actions_json: dict = {
         "model_type": "vrm",
         "expressions": expressions,
         "actions": actions,

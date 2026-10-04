@@ -75,6 +75,23 @@ class VRMModelSetup {
         model.vrmGroup = vrmGroup;
         model.setModelPath(modelPath);
 
+        // 自动注册 assets/animations/*.vrma 动画（文件名去扩展名 = 动作名，motion() 优先播放）
+        try {
+            const animDir = path.join(__dirname, '..', '..', 'assets', 'animations');
+            if (fs.existsSync(animDir)) {
+                const vrmaFiles = fs.readdirSync(animDir).filter((f) => f.endsWith('.vrma'));
+                for (const f of vrmaFiles) {
+                    const animName = path.basename(f, '.vrma');
+                    const relPath = path.join('assets', 'animations', f);
+                    await model.loadVRMA(animName, relPath).catch((e) => {
+                        console.warn(`[VRM动画] ${f} 注册失败:`, e.message);
+                    });
+                }
+            }
+        } catch (e) {
+            console.warn('[VRM动画] 扫描 assets/animations 失败:', e.message);
+        }
+
         // 根据配置控制模型显示/隐藏
         const showModel = config.ui?.show_model !== false;
         model.visible = showModel;

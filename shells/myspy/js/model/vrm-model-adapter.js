@@ -220,19 +220,38 @@ class VRMModelAdapter extends EventEmitter {
     }
 
     // 兼容Live2D的motion方法
-    // 加载 .vrma 动画文件
+    // 加载 .vrma 动画文件（fs 读文件 + parse，与 _loadVRM 同模式，绕过 fetch + file:// 限制）
     async loadVRMA(name, filePath) {
+        const fs = require('fs');
+        const path = require('path');
+        // 相对路径基于壳根目录（js/model/ → ../../ = shells/myspy）
+        const absPath = path.resolve(path.join(__dirname, '..', '..'), filePath);
+        if (!fs.existsSync(absPath)) {
+            console.warn(`[VRM动画] ${name} 文件不存在: ${absPath}`);
+            return;
+        }
+        const fileBuffer = fs.readFileSync(absPath);
+        const arrayBuffer = fileBuffer.buffer.slice(
+            fileBuffer.byteOffset,
+            fileBuffer.byteOffset + fileBuffer.byteLength
+        );
         const { GLTFLoader } = require('../lib/gltf-loader-bundle.cjs');
         const loader = new GLTFLoader();
         loader.register((parser) => new VRMAnimationLoaderPlugin(parser));
-        const gltf = await loader.loadAsync(filePath);
-        const vrmAnim = gltf.userData.vrmAnimations[0];
+        const gltf = await new Promise((resolve, reject) => {
+            loader.parse(arrayBuffer, '', (g) => resolve(g), (e) => reject(e));
+        });
+        const vrmAnim = (gltf.userData.vrmAnimations || [])[0];
+        if (!vrmAnim) {
+            console.warn(`[VRM动画] ${name} 无 vrmAnimations 数据`);
+            return;
+        }
         const clip = createVRMAnimationClip(vrmAnim, this.vrm);
         this.animations[name] = clip;
-        console.log(`[VRM动画] 加载 ${name} 成功, ${clip.duration.toFixed(2)}s`);
+        console.log(`[VRM动画] 加载 ${name} 成功, ${clip.duration.toFixed(2)}s, ${clip.tracks.length} 轨道`);
     }
 
-    // 播放动画
+    // 播放动画（一次性动画播完自动淡出回 idle，避免停在最后一帧）
     playAnimation(name, loop = false) {
         const clip = this.animations[name];
         if (!clip) {
@@ -246,10 +265,28 @@ class VRMModelAdapter extends EventEmitter {
         action.clampWhenFinished = true;
         this.currentAction = action;
         console.log(`[VRM动画] 播放 ${name}`);
+        // 一次性动画：播完后淡出回 idle 姿态
+        if (!loop) {
+            const doneMs = clip.duration * 1000 + 400; // +400ms 淡入缓冲
+            setTimeout(() => {
+                if (this.currentAction === action) {
+                    this.currentAction.fadeOut(0.3);
+                    setTimeout(() => {
+                        action.stop();
+                        if (this.currentAction === action) this.currentAction = null;
+                    }, 350);
+                }
+            }, doneMs);
+        }
     }
 
     motion(name) {
         if (!this.vrm || !this.vrm.humanoid) return;
+        // 优先播放已注册的 .vrma 动画（无则回退手写骨骼动画）
+        if (this.animations[name]) {
+            this.playAnimation(name);
+            return;
+        }
         console.log('[VRM动作]', name);
 
         const bones = this.vrm.humanoid;
