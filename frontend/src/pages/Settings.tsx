@@ -290,7 +290,8 @@ function ProvidersTab() {
             <Input placeholder="https://api.deepseek.com" />
           </Form.Item>
           <Form.Item name="api_key" label="API Key"
-            extra={editing ? '留空 = 保持原值' : undefined}>
+            extra={editing ? '留空 = 保持原值' : undefined}
+            rules={editing ? [] : [{ required: true, message: 'API Key 必填（harness 要求 Provider 必须有 key）' }]}>
             <Input.Password placeholder={editing ? '留空保持原值' : 'sk-…'} autoComplete="off" />
           </Form.Item>
           <Form.Item name="protocol" label="协议" initialValue="openai">

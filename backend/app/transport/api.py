@@ -594,6 +594,8 @@ def _validate_providers(providers: list[dict], existing: list[dict]) -> list[dic
         if not api_key or "***" in api_key:
             old = next((x for x in existing if x.get("id") == pid), None)
             api_key = (old or {}).get("api_key") or ""
+        if not api_key:
+            raise HTTPException(status_code=400, detail=f"Provider「{pid}」缺少 API Key（harness 要求非空）")
         out.append(
             {
                 "id": pid,
