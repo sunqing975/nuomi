@@ -57,6 +57,9 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("NUOMI_MCP_SERVERS", "MCP_SERVERS"),
     )
 
+    # --- SkillHub 技能市场（默认腾讯市场，可用 SKILLHUB_HOST 覆盖） ---
+    skillhub_host: str = ""
+
     @property
     def data_root(self) -> Path:
         if self.nuomi_home:

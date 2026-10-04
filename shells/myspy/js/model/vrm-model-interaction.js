@@ -127,19 +127,6 @@ class VRMInteractionController {
                 ignore: true, options: { forward: true }
             });
         });
-
-        // 聊天框在穿透模式下也保持可交互
-        const chatContainer = document.getElementById('text-chat-container');
-        if (chatContainer) {
-            chatContainer.addEventListener('mouseenter', () => {
-                ipcRenderer.send('set-ignore-mouse-events', { ignore: false });
-            });
-            chatContainer.addEventListener('mouseleave', () => {
-                ipcRenderer.send('set-ignore-mouse-events', {
-                    ignore: true, options: { forward: true }
-                });
-            });
-        }
     }
 
     // 更新渲染按钮的禁用状态

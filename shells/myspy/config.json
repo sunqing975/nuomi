@@ -15,12 +15,12 @@
   "ui": {
     "intro_text": "你好，我是糯米。",
     "model_type": "live2d",
-    "model_path": "2D/aidang/aidang_2.model3.json",
+    "model_path": "2D/hiyori/Hiyori.model3.json",
     "show_chat_box": true,
     "show_model": true,
-    "model_x": 217.0404545285544,
-    "model_y": 370.13724847560974,
-    "model": "aidang"
+    "model_x": 1103.6280137847807,
+    "model_y": 180.3343993263473,
+    "model": "hiyori"
   },
   "subtitle_labels": {
     "enabled": true,
@@ -62,6 +62,29 @@
   },
   "nuomi": {
     "enabled": true,
-    "agent_id": "6a3b128b89e9"
+    "agent_id": "6a3b128b89e9",
+    "threads": [
+      {
+        "thread_id": "6a3b128b89e9:953d910c3a0c",
+        "title": "你有哪些动作",
+        "updated_at": 1791079739687,
+        "agent_id": "6a3b128b89e9",
+        "model_id": "hiyori"
+      },
+      {
+        "thread_id": "6a3b128b89e9:b496d4901d35",
+        "title": "新会话",
+        "updated_at": 1791079739112,
+        "agent_id": "6a3b128b89e9",
+        "model_id": "cat"
+      },
+      {
+        "thread_id": "6a3b128b89e9:a38e00c04c19",
+        "title": "hi",
+        "updated_at": 1791079738597,
+        "agent_id": "6a3b128b89e9"
+      }
+    ],
+    "thread_id": "6a3b128b89e9:953d910c3a0c"
   }
 }

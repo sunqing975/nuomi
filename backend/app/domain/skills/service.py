@@ -60,6 +60,20 @@ class SkillService:
         rows = self._db_rows()
         return frozenset(r["skill_name"] for r in rows if not r["enabled"])
 
+    def delete(self, name: str) -> bool:
+        """删除技能：DB 记录 + 技能目录（source of truth）。"""
+        deleted = False
+        with db.connect() as conn:
+            cur = conn.execute("DELETE FROM skills WHERE skill_name = ?", (name,))
+            deleted = cur.rowcount > 0
+        skill_dir = self.skills_dir() / name
+        if skill_dir.is_dir():
+            import shutil
+
+            shutil.rmtree(skill_dir, ignore_errors=True)
+            deleted = True
+        return deleted
+
     # ---------- 内部 ----------
 
     def _db_rows(self) -> list[dict]:

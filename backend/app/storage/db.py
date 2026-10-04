@@ -69,6 +69,28 @@ CREATE TABLE IF NOT EXISTS skills (
 );
 """
 
+SKILL_PACKAGES_DDL = """
+CREATE TABLE IF NOT EXISTS skill_packages (
+  id TEXT PRIMARY KEY,
+  name TEXT UNIQUE NOT NULL,
+  description TEXT DEFAULT '',
+  icon_url TEXT DEFAULT '',
+  enabled INTEGER DEFAULT 1,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+"""
+
+SKILL_PACKAGE_SKILLS_DDL = """
+CREATE TABLE IF NOT EXISTS skill_package_skills (
+  package_id TEXT NOT NULL,
+  skill_slug TEXT NOT NULL,
+  enabled INTEGER DEFAULT 1,
+  PRIMARY KEY (package_id, skill_slug),
+  FOREIGN KEY (package_id) REFERENCES skill_packages(id) ON DELETE CASCADE
+);
+"""
+
 
 def db_path() -> Path:
     """统一 SQLite 文件（单一数据根）。"""
@@ -95,6 +117,8 @@ def init_db() -> None:
         conn.executescript(PLUGINS_DDL)
         conn.executescript(AGENT_PLUGINS_DDL)
         conn.executescript(SKILLS_DDL)
+        conn.executescript(SKILL_PACKAGES_DDL)
+        conn.executescript(SKILL_PACKAGE_SKILLS_DDL)
 
 
 def gen_agent_id() -> str:

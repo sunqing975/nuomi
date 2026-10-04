@@ -110,40 +110,6 @@ class ModelInteractionController {
             }
         });
 
-        const chatContainer = document.getElementById('text-chat-container');
-
-        // 聊天框拖动
-        chatContainer.addEventListener('mousedown', (e) => {
-            if (e.target === chatContainer || e.target.id === 'chat-messages') {
-                this.isDraggingChat = true;
-                this.chatDragOffset.x = e.clientX - chatContainer.getBoundingClientRect().left;
-                this.chatDragOffset.y = e.clientY - chatContainer.getBoundingClientRect().top;
-                e.preventDefault();
-                ipcRenderer.send('set-ignore-mouse-events', { ignore: false });
-            }
-        });
-
-        document.addEventListener('mousemove', (e) => {
-            if (this.isDraggingChat) {
-                chatContainer.style.left = `${e.clientX - this.chatDragOffset.x}px`;
-                chatContainer.style.top = `${e.clientY - this.chatDragOffset.y}px`;
-            }
-        });
-
-        document.addEventListener('mouseup', () => {
-            if (this.isDraggingChat) {
-                this.isDraggingChat = false;
-                setTimeout(() => {
-                    if (!this.model.containsPoint(this.app.renderer.plugins.interaction.mouse.global)) {
-                        ipcRenderer.send('set-ignore-mouse-events', {
-                            ignore: true,
-                            options: { forward: true }
-                        });
-                    }
-                }, 100);
-            }
-        });
-
         // 鼠标悬停事件
         this.model.on('mouseover', () => {
             if (this.model.containsPoint(this.app.renderer.plugins.interaction.mouse.global)) {

@@ -1,39 +1,25 @@
-"""对话桥：ChatRequest → 标准化事件流（token / emotion / tool / usage / done）。
+"""对话桥：ChatRequest → 标准化事件流（token / tool / usage / done）。
 
-事件结构（前端桌宠消费）：
+内部事件结构（OpenAI 格式翻译层消费）：
     {"type": "token",       "content": "你"}
-    {"type": "emotion",     "name": "开心"}                 # 情绪事件（驱动表情）
-    {"type": "tool_call",   "name": "what_to_eat", "args": "{...}"}
-    {"type": "tool_result", "name": "what_to_eat", "content": "..."}
+    {"type": "tool_call",   "name": "touch_special", "args": "{}", "id": "call_0"}
+    {"type": "tool_result", "name": "touch_special", "content": "..."}
     {"type": "usage",       "input_tokens": 1, "output_tokens": 2}
     {"type": "done",        "answer": "完整回复"}
+
+对外统一输出 OpenAI Chat Completions 格式（stream_openai_sse），
+表情/动作由模型插件工具驱动（工具名即动作/表情名），不再有独立的 emotion 事件。
 """
 from __future__ import annotations
 
 import json
-import re
+import uuid
 from collections.abc import AsyncIterator
 
 from octop_harness import ChatRequest
 from octop_harness.protocols.langgraph import AgentEventType
 
 from app.infra.harness.manager import manager
-
-# 桌宠情绪标签规范：与 openai_compat.MOOD_TAG_RULE 保持一致
-MOOD_TAGS = ("开心", "生气", "难过", "惊讶", "害羞", "俏皮")
-_MOOD_RE = re.compile(r"<(" + "|".join(MOOD_TAGS) + r")>")
-
-# 追加到专家 system_prompt，驱动桌宠表情（原生对话端点也使用）
-PET_MOOD_RULE = (
-    "\n\n回复规范：每句话开头用情绪标签表达当前心情，选最符合的放句首："
-    "<开心> <生气> <难过> <惊讶> <害羞> <俏皮>。不加标签就没有表情动画。"
-)
-
-
-def extract_emotion(answer: str) -> str | None:
-    """从回复文本中提取第一个情绪标签；无标签返回 None。"""
-    m = _MOOD_RE.search(answer)
-    return m.group(1) if m else None
 
 
 async def stream_chat(
@@ -68,6 +54,7 @@ async def stream_chat(
 
     text_parts: list[str] = []
     seen_tool_results: set[tuple] = set()
+    pending_tools: dict[int, dict] = {}  # index -> {id, name, args}（聚合分块）
     async for event in agent.stream(request):
         ev_type = event.get("type")
         kind = getattr(ev_type, "value", ev_type)
@@ -75,10 +62,25 @@ async def stream_chat(
         if kind == AgentEventType.TOKEN.value and event.get("content"):
             text_parts.append(event["content"])
             yield {"type": "token", "content": event["content"]}
-        elif kind == AgentEventType.TOOL_CALL_CHUNK.value and event.get("name"):
-            # 工具调用的首个 chunk 带 name；聚合 args 由 done 前的完整事件承载
-            yield {"type": "tool_call", "name": event["name"], "args": event.get("args") or ""}
+        elif kind == AgentEventType.TOOL_CALL_CHUNK.value:
+            # 聚合工具调用分块（name 首个 chunk 携带，args 分块累积）
+            idx = event.get("index", 0)
+            slot = pending_tools.setdefault(idx, {"id": event.get("id", ""), "name": "", "args": ""})
+            if event.get("name"):
+                slot["name"] = event["name"]
+            if event.get("args"):
+                slot["args"] += event["args"]
         elif kind == AgentEventType.TOOL_RESULT.value:
+            # 工具结果到达 = 本轮工具调用已提交，先 flush 完整 tool_call 事件
+            for idx in sorted(pending_tools):
+                slot = pending_tools[idx]
+                yield {
+                    "type": "tool_call",
+                    "name": slot["name"],
+                    "args": slot["args"],
+                    "id": slot["id"] or f"call_{idx}",
+                }
+            pending_tools.clear()
             for m in event.get("messages") or []:
                 content = getattr(m, "content", None)
                 if content:
@@ -92,12 +94,112 @@ async def stream_chat(
             yield {"type": "usage", **{k: v for k, v in (event.get("usage") or {}).items() if k in ("input_tokens", "output_tokens")}}
 
     answer = "".join(text_parts).strip()
-    emotion = extract_emotion(answer)
-    if emotion:
-        yield {"type": "emotion", "name": emotion}
     yield {"type": "done", "answer": answer}
 
 
 def format_sse(event: dict) -> str:
     """把事件格式化为 SSE 帧（data: JSON）。"""
     return f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+
+def _openai_chunk(chat_id: str, model: str, delta: dict, finish: str | None = None) -> str:
+    """构造 OpenAI Chat Completions 流式 chunk。"""
+    return f"data: {json.dumps({'id': chat_id, 'object': 'chat.completion.chunk', 'model': model, 'choices': [{'index': 0, 'delta': delta, 'finish_reason': finish}]}, ensure_ascii=False)}\n\n"
+
+
+async def stream_openai_sse(
+    events: AsyncIterator[dict],
+    *,
+    model: str = "nuomi",
+    include_usage: bool = False,
+    chat_id: str | None = None,
+) -> AsyncIterator[str]:
+    """把内部事件流翻译为 OpenAI Chat Completions SSE 帧（统一对外格式）。
+
+    - token → delta.content
+    - tool_call → delta.tool_calls（arguments 一次给全，流式客户端需自行累积）
+    - usage → 末尾 usage chunk（仅当 include_usage，OpenAI stream_options 语义）
+    - done → finish_reason="stop" + [DONE]
+    """
+    cid = chat_id or f"chatcmpl-{uuid.uuid4().hex[:24]}"
+    usage: dict = {}
+    async for ev in events:
+        t = ev.get("type")
+        if t == "token":
+            yield _openai_chunk(cid, model, {"content": ev.get("content", "")})
+        elif t == "tool_call":
+            tool = {
+                "index": 0,
+                "id": ev.get("id") or f"call_{uuid.uuid4().hex[:8]}",
+                "function": {"name": ev.get("name", ""), "arguments": ev.get("args") or ""},
+            }
+            yield _openai_chunk(cid, model, {"tool_calls": [tool]})
+        elif t == "usage":
+            usage = {k: v for k, v in ev.items() if k in ("input_tokens", "output_tokens")}
+        elif t == "done":
+            yield _openai_chunk(cid, model, {}, finish="stop")
+            if include_usage and usage:
+                yield f"data: {json.dumps({'id': cid, 'object': 'chat.completion.chunk', 'model': model, 'choices': [], 'usage': {'prompt_tokens': usage.get('input_tokens', 0), 'completion_tokens': usage.get('output_tokens', 0), 'total_tokens': usage.get('input_tokens', 0) + usage.get('output_tokens', 0)}}, ensure_ascii=False)}\n\n"
+            yield "data: [DONE]\n\n"
+
+
+async def stream_octop_sse(
+    events: AsyncIterator[dict],
+    *,
+    thread_id: str,
+    conversation_mode: str = "craft",
+) -> AsyncIterator[str]:
+    """把内部事件流翻译为 octop 原生事件帧（对齐 octop dashboard WS 协议）。
+
+    通道仍是 HTTP SSE，但每个 ``data:`` 负载就是一个 octop 帧（JSON）：
+    - token → {"type":"token","content","node":"model","thread_id"}
+    - tool_call → {"type":"tool_call_chunk","id","name","args","index","node","thread_id"}
+    - tool_result → {"type":"tool_result","node":"tools","messages":[{type,name,content}],"thread_id"}
+    - usage → {"type":"usage","usage":{input_tokens,output_tokens},"node","thread_id"}
+    - done → {"type":"done","conversation_mode","thread_id"}（后关闭流，无 [DONE]）
+
+    消费者解析逻辑与未来切 WebSocket 时完全一致，只需换传输通道。
+    """
+    async for ev in events:
+        t = ev.get("type")
+        if t == "token":
+            yield format_sse({
+                "type": "token",
+                "content": ev.get("content", ""),
+                "node": "model",
+                "thread_id": thread_id,
+            })
+        elif t == "tool_call":
+            yield format_sse({
+                "type": "tool_call_chunk",
+                "id": ev.get("id") or f"call_{uuid.uuid4().hex[:8]}",
+                "name": ev.get("name", ""),
+                "args": ev.get("args") or "",
+                "index": 0,
+                "node": "model",
+                "thread_id": thread_id,
+            })
+        elif t == "tool_result":
+            yield format_sse({
+                "type": "tool_result",
+                "node": "tools",
+                "messages": [
+                    {"type": "tool", "name": ev.get("name"), "content": ev.get("content", "")}
+                ],
+                "thread_id": thread_id,
+            })
+        elif t == "usage":
+            yield format_sse({
+                "type": "usage",
+                "usage": {
+                    k: v for k, v in ev.items() if k in ("input_tokens", "output_tokens")
+                },
+                "node": "model",
+                "thread_id": thread_id,
+            })
+        elif t == "done":
+            yield format_sse({
+                "type": "done",
+                "conversation_mode": conversation_mode,
+                "thread_id": thread_id,
+            })

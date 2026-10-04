@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from app.config import REPO_ROOT, settings
@@ -51,7 +52,7 @@ def list_models() -> list[dict]:
         meta = _load_json(model_files[0])
         fr = meta.get("FileReferences") or {}
         motions = sorted(
-            g for g in (fr.get("Motions") or {}).keys()
+            g for g in (fr.get("Motions") or {})
             if _group_has_files(char_dir, meta, g)
         )
         expressions = [
@@ -82,7 +83,11 @@ def get_shell_agent_id() -> str | None:
 
 
 def switch_model(model_id: str) -> dict:
-    """切换桌宠模型：更新壳 config.json 的 ui.model / ui.model_path。"""
+    """切换桌宠模型：更新壳 config.json 的 ui.model / ui.model_path。
+
+    联动会话：一个桌宠一个会话——切换模型即绑定该模型的专属会话
+    （无则新建干净会话，见 ChatSessionService.ensure_model_session）。
+    """
     target = next((m for m in list_models() if m["id"] == model_id), None)
     if target is None:
         raise KeyError(f"模型不存在: {model_id}")
@@ -93,7 +98,67 @@ def switch_model(model_id: str) -> dict:
     ui["model_path"] = target["path"]
     ui["model_type"] = "live2d"
     SHELL_CONFIG.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    agent_id = (cfg.get("nuomi") or {}).get("agent_id")
+    if agent_id:
+        from app.domain.chat.service import chat_sessions
+
+        chat_sessions.ensure_model_session(agent_id, target["id"])
     return target
+
+
+def delete_model(model_id: str) -> dict:
+    """删除桌宠模型（级联）：模型插件 → 资产目录 → config 联动。
+
+    级联顺序：
+    1. 删模型插件（DB 记录 + agent 绑定 + 插件目录）
+    2. 删模型资产目录（shells/myspy/2D/<id>/）
+    3. 若删的是当前激活模型：自动切到剩余第一个模型（联动插件互斥 + 会话换绑）；
+       无剩余模型 → ui.model 置空（壳 watch 变化，加载兜底）。
+    非激活模型：config 不动（该模型的专属会话保留，属对话历史）。
+    """
+    target = next((m for m in list_models() if m["id"] == model_id), None)
+    if target is None:
+        raise KeyError(f"模型不存在: {model_id}")
+
+    # 1. 级联删模型插件（source of truth = workspace plugins/<id>/）
+    from app.domain.plugins.service import plugin_service
+
+    plugin_service.delete(model_id)
+
+    # 2. 删资产目录
+    model_dir = MODEL_DIR / model_id
+    if model_dir.is_dir():
+        import shutil
+
+        shutil.rmtree(model_dir, ignore_errors=True)
+
+    # 3. config 联动
+    cfg = _load_json(SHELL_CONFIG)
+    ui = cfg.setdefault("ui", {})
+    was_active = ui.get("model") == model_id
+    agent_id = (cfg.get("nuomi") or {}).get("agent_id")
+    if was_active:
+        remaining = [m for m in list_models() if m["id"] != model_id]
+        if remaining:
+            nxt = sorted(remaining, key=lambda m: m["id"])[0]
+            ui["model"] = nxt["id"]
+            ui["model_path"] = nxt["path"]
+            ui["model_type"] = "live2d"
+            SHELL_CONFIG.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+            # 插件互斥：只启用新模型插件（删掉插件后 model_plugin_ids 已更新）
+            for pid in plugin_service.model_plugin_ids():
+                plugin_service.set_enabled(pid, pid == nxt["id"])
+            if agent_id:
+                from app.domain.chat.service import chat_sessions
+
+                chat_sessions.ensure_model_session(agent_id, nxt["id"])
+        else:
+            ui.pop("model", None)
+            ui.pop("model_path", None)
+            ui.pop("model_type", None)
+            SHELL_CONFIG.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"id": model_id, "was_active": was_active}
 
 
 # ---------- 模型插件生成（插件名=模型名，工具名=动作/表情名） ----------
@@ -106,6 +171,7 @@ _MOTION_ZH: dict[str, str] = {
     "mission_complete": "任务完成", "complete": "完成动作", "wedding": "婚礼动作",
     "flick": "轻弹", "flickup": "向上轻弹", "flickdown": "向下轻弹",
     "idle1": "待机一", "idle2": "待机二",
+    "tap_left": "摸左边", "tap_right": "摸右边",
 }
 
 _EXPRESSION_ZH: dict[str, str] = {
@@ -115,7 +181,9 @@ _EXPRESSION_ZH: dict[str, str] = {
 
 
 def _zh_label(kind: str, name: str) -> str:
-    zh = (_MOTION_ZH if kind == "motion" else _EXPRESSION_ZH).get(name.lower(), "")
+    # 动作/表情名规范化：驼峰转下划线小写（TapBody→tap_body），兼容两种命名
+    snake = re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+    zh = (_MOTION_ZH if kind == "motion" else _EXPRESSION_ZH).get(snake, "")
     return f"{zh}（{name}）" if zh else name
 
 

@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import { Layout, Menu, Tag, Typography } from 'antd';
 import {
   RobotOutlined, ApiOutlined, ReadOutlined, GlobalOutlined, DatabaseOutlined,
-  SmileOutlined,
+  SmileOutlined, MessageOutlined,
 } from '@ant-design/icons';
+import ChatPage from './pages/Chat';
 import ExpertsPage from './pages/Experts';
 import PluginsPage from './pages/Plugins';
 import SkillsPage from './pages/Skills';
@@ -14,16 +15,17 @@ import ModelsPage from './pages/Models';
 const { Sider, Content, Header } = Layout;
 
 const NAV = [
+  { key: 'chat', icon: <MessageOutlined />, label: '对话', title: '对话' },
   { key: 'experts', icon: <RobotOutlined />, label: '专家', title: '专家' },
   { key: 'plugins', icon: <ApiOutlined />, label: '插件', title: '插件' },
   { key: 'skills', icon: <ReadOutlined />, label: '技能', title: '技能' },
   { key: 'mcp', icon: <GlobalOutlined />, label: 'MCP', title: 'MCP 服务器' },
-  { key: 'models', icon: <SmileOutlined />, label: '模型', title: '桌宠模型资产' },
+  { key: 'models', icon: <SmileOutlined />, label: '桌宠', title: '桌宠模型资产' },
   { key: 'storage', icon: <DatabaseOutlined />, label: '存储', title: '存储 / 总览' },
 ];
 
 export default function App() {
-  const [page, setPage] = useState('experts');
+  const [page, setPage] = useState('chat');
   const [backendOk, setBackendOk] = useState<boolean | null>(null);
 
   // 与 URL hash 同步（#plugins 直达 / 浏览器前进后退）
@@ -75,6 +77,7 @@ export default function App() {
           </Tag>
         </Header>
         <Content style={{ padding: 24, overflow: 'auto' }}>
+          {page === 'chat' && <ChatPage />}
           {page === 'experts' && <ExpertsPage onBackend={setBackendOk} />}
           {page === 'plugins' && <PluginsPage />}
           {page === 'skills' && <SkillsPage />}

@@ -17,15 +17,15 @@ from pydantic import BaseModel
 
 from app.domain.agents.seed import default_system_prompt
 from app.domain.agents.service import agent_service
-from app.infra.harness.chat import PET_MOOD_RULE, stream_chat
+from app.infra.harness.chat import stream_chat, stream_openai_sse
 
 router = APIRouter(prefix="/api/v1", tags=["openai"])
 
 
 def _system_prompt_for(agent: dict) -> str:
-    """专家人设 + 桌宠情绪标签规范（仅桌面 OpenAI 端点追加）。"""
+    """专家人设（桌面 OpenAI 端点）。"""
     base = agent["system_prompt"] or default_system_prompt()
-    return base + PET_MOOD_RULE
+    return base
 
 
 class OpenAIChatMessage(BaseModel):
@@ -33,11 +33,16 @@ class OpenAIChatMessage(BaseModel):
     content: str = ""
 
 
+class StreamOptions(BaseModel):
+    include_usage: bool = False
+
+
 class OpenAIChatBody(BaseModel):
     model: str = "nuomi"
     messages: list[OpenAIChatMessage]
     stream: bool = False
     temperature: float | None = None
+    stream_options: StreamOptions | None = None
 
 
 def _resolve_agent(model: str) -> dict:
@@ -67,55 +72,48 @@ def _chat_id() -> str:
     return f"chatcmpl-{uuid.uuid4().hex[:24]}"
 
 
-def _delta(content: str, finish: str | None = None) -> str:
-    return json.dumps(
-        {
-            "id": _chat_id(),
-            "object": "chat.completion.chunk",
-            "model": "nuomi",
-            "choices": [{"index": 0, "delta": {"content": content} if content else {}, "finish_reason": finish}],
-        },
-        ensure_ascii=False,
-    )
-
-
 @router.post("/chat/completions")
 async def chat_completions(body: OpenAIChatBody, request: Request) -> StreamingResponse:
     agent = _resolve_agent(body.model)
     user_text = _last_user_text(body.messages)
     system_prompt = _system_prompt_for(agent)
+    include_usage = bool(body.stream_options and body.stream_options.include_usage)
 
     async def gen() -> AsyncIterator[str]:
-        # 非流式：攒完整回答后一次性返回
-        parts: list[str] = []
-        async for event in stream_chat(
+        events = stream_chat(
             user_text,
             "desktop",
             agent_id=agent["agent_id"],
             name=agent["name"],
             system_prompt=system_prompt,
-        ):
-            if body.stream:
-                if event["type"] == "token":
-                    yield f"data: {_delta(event['content'])}\n\n"
-                elif event["type"] == "done":
-                    yield f"data: {_delta('', 'stop')}\n\n"
-                    yield "data: [DONE]\n\n"
-            elif event["type"] == "token":
+        )
+        if body.stream:
+            async for frame in stream_openai_sse(
+                events,
+                model=agent["name"],
+                include_usage=include_usage,
+            ):
+                if await request.is_disconnected():
+                    break
+                yield frame
+            return
+        # 非流式：攒完整回答后一次性返回
+        parts: list[str] = []
+        async for event in events:
+            if event["type"] == "token":
                 parts.append(event["content"])
             if await request.is_disconnected():
                 break
-        if not body.stream:
-            answer = "".join(parts).strip()
-            yield json.dumps(
-                {
-                    "id": _chat_id(),
-                    "object": "chat.completion",
-                    "model": "nuomi",
-                    "choices": [{"index": 0, "message": {"role": "assistant", "content": answer}, "finish_reason": "stop"}],
-                },
-                ensure_ascii=False,
-            )
+        answer = "".join(parts).strip()
+        yield json.dumps(
+            {
+                "id": _chat_id(),
+                "object": "chat.completion",
+                "model": agent["name"],
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": answer}, "finish_reason": "stop"}],
+            },
+            ensure_ascii=False,
+        )
 
     media = "text/event-stream" if body.stream else "application/json"
     return StreamingResponse(gen(), media_type=media, headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

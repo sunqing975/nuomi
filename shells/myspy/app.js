@@ -3,7 +3,6 @@ const fs = require('fs')
 const path = require('path')
 const { ipcRenderer } = require('electron')
 const { TTSClient } = require('./js/tts-client')
-const { ASRProcessor } = require('./js/asr-client')
 const { ModelInteractionController } = require('./js/model/model-interaction.js')
 const { TTSStreamProcessor } = require('./js/tts-stream-processor')
 const { EmotionExpressionMapper } = require('./js/emotion-expression-mapper')
@@ -113,14 +112,14 @@ function _applyEmotionExpression(emotion) {
 
 // ===== 持久化对话历史（已废除：记忆由后端 octop-harness 管理）=====
 
-// 设置全局对话环境（供桌宠表现层使用）
+// 设置全局对话环境（供桌宠表现层使用；对话已收归控制台，sendToLLM 不再可用）
 const voiceChat = {
     messages: messages,
     API_URL: config?.llm?.api_url || '',
     API_KEY: config?.llm?.api_key || '',
     MODEL: config?.llm?.model || '',
     ttsProcessor: tts,
-    sendToLLM: async (content) => { await sendMessage(content) },
+    sendToLLM: async () => { /* 对话仅控制台，桌宠不再发消息 */ },
     setModel: (m) => { global.currentModel = m },
     setEmotionMapper: null
 }
@@ -141,78 +140,35 @@ function trimMessages() {
     }
 }
 
-global.showSubtitle = function(text) {
-    const el = document.getElementById('subtitle-text')
-    const container = document.getElementById('subtitle-container')
-    if (el && container) {
-        // 字幕禁用时不显示
-        if (config?.subtitle_labels?.enabled === false) return
-        el.textContent = text
-        container.style.display = 'block'
-        container.scrollTop = container.scrollHeight
-    }
-}
 
-// 渐进更新字幕（流式显示用）
-let _subtitleUpdateTimer = null
-let _subtitleHideTimer = null
-
-global.updateSubtitle = function(text, isFinal = false) {
-    const el = document.getElementById('subtitle-text')
-    const container = document.getElementById('subtitle-container')
-    if (!el || !container) return
-    if (config?.subtitle_labels?.enabled === false) return
-
-    container.style.display = 'block'
-
-    // 直接设置文本（跟原项目一样简单）
-    el.textContent = text
-    container.scrollTop = container.scrollHeight
-
-    // 每次更新都重置隐藏计时器，5秒后自动隐藏
-    if (_subtitleHideTimer) clearTimeout(_subtitleHideTimer)
-    _subtitleHideTimer = setTimeout(() => {
-        container.style.display = 'none'
-    }, 5000)
-}
-
-// 隐藏字幕
-global.hideSubtitle = function() {
-    const container = document.getElementById('subtitle-container')
-    if (container) {
-        container.style.display = 'none'
-    }
-}
-
-// 保持兼容性
-global.setSubtitlePrefix = function(prefix) {}
-global.setSubtitleHideDelay = function(ms) {}
-
-// ASR 语音识别
-const asrProcessor = new ASRProcessor(config)
-asrProcessor.setOnSpeechRecognized((text) => {
-    if (text && text.trim()) {
-        showSubtitle((config?.subtitle_labels?.user || '你') + ': ' + text)
-        sendMessage(text)
-    }
-})
-
-// 连接语音打断
-if (config.asr?.voice_barge_in) {
-    asrProcessor.setTTSProcessor(tts)
-}
 
 global.modelController = null
 
 // DOM
-const chatInput = document.getElementById('chat-input')
-const chatSendBtn = document.getElementById('chat-send-btn')
-const subtitleContainer = document.getElementById('subtitle-container')
-const subtitleText = document.getElementById('subtitle-text')
-const chatContainer = document.getElementById('text-chat-container')
 
 let model = null
 let modelCtrl = null
+
+// ===== 会话管理（一个 thread_id 逻辑）：config.json 的 nuomi.thread_id 为权威 =====
+// 桌宠与控制台共用同一「当前会话」：控制台切会话（后端写 config.json）后，
+// 壳在每次对话前重读 config 自动跟随。
+const configPath = path.join(__dirname, 'config.json')
+
+function saveConfig() {
+    try {
+        // 壳只拥有 nuomi.*（会话绑定）；ui.*（模型等）由后端/控制台管理。
+        // 必须以磁盘最新为底写回，否则壳内存里启动时的旧 ui.model 会覆盖后端刚切换的模型。
+        let disk = {}
+        try { disk = JSON.parse(fs.readFileSync(configPath, 'utf8')) } catch (e) { disk = {} }
+        const merged = JSON.parse(JSON.stringify(disk))
+        if (config.nuomi) merged.nuomi = config.nuomi
+        fs.writeFileSync(configPath, JSON.stringify(merged, null, 2), 'utf8')
+        config = merged // 同步内存，后续读取即为磁盘最新
+    } catch (e) {
+        log('配置写入失败: ' + e.message, 'warn')
+    }
+}
+
 
 // 图片模型交互（overlay 只管穿透，交互走 document/overlay 级别）
 const imgOverlay = document.createElement('div')
@@ -408,27 +364,6 @@ document.addEventListener('wheel', (e) => {
 // 鼠标是否在交互区域（模型或聊天框）
 let mouseOverInteractive = false
 
-// 聊天框穿透控制（跟原项目一致）
-chatContainer.addEventListener('mouseenter', () => {
-    ipcRenderer.send('set-ignore-mouse-events', { ignore: false, options: { forward: false } })
-})
-chatContainer.addEventListener('mouseleave', () => {
-    ipcRenderer.send('set-ignore-mouse-events', { ignore: true, options: { forward: true } })
-})
-chatInput.addEventListener('focus', () => {
-    ipcRenderer.send('set-ignore-mouse-events', { ignore: false, options: { forward: false } })
-})
-chatInput.addEventListener('blur', () => {
-    ipcRenderer.send('set-ignore-mouse-events', { ignore: true, options: { forward: true } })
-})
-
-function showSubtitle(text) {
-    // 字幕禁用时不显示
-    if (config?.subtitle_labels?.enabled === false) return
-    subtitleText.textContent = text
-    subtitleContainer.style.display = 'block'
-    setTimeout(() => subtitleContainer.style.display = 'none', 5000)
-}
 
 
 async function main() {
@@ -746,37 +681,6 @@ async function main() {
                 const oldConfig = JSON.parse(JSON.stringify(config))
                 config = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), 'utf8'))
 
-                // 文字输入框
-                const showChatBox = config?.ui?.show_chat_box !== false
-                const oldShowChatBox = oldConfig?.ui?.show_chat_box !== false
-                if (showChatBox !== oldShowChatBox) {
-                    log('文字输入框已' + (showChatBox ? '显示' : '隐藏'))
-                }
-                chatContainer.style.display = showChatBox ? 'block' : 'none'
-
-                // ASR 启用
-                const asrEnabled = config?.asr?.enabled !== false
-                if (asrEnabled !== (oldConfig?.asr?.enabled !== false)) {
-                    log('ASR: ' + (asrEnabled ? '启用' : '禁用'))
-                }
-
-                // 按键说话
-                const pttEnabled = config?.asr?.ptt_enabled || false
-                if (pttEnabled !== (oldConfig?.asr?.ptt_enabled || false)) {
-                    log('按键说话: ' + (pttEnabled ? '启用' : '禁用'))
-                    asrProcessor.pttModeEnabled = pttEnabled
-                    // 重置录音状态，防止状态残留
-                    asrProcessor.isRecording = false
-                    asrProcessor.asrLocked = false
-                }
-
-                // V键超时
-                const pttTimeout = parseInt(config?.asr?.ptt_max_timeout) || 10
-                const oldPttTimeout = parseInt(oldConfig?.asr?.ptt_max_timeout) || 10
-                if (pttTimeout !== oldPttTimeout) {
-                    asrProcessor.pttMaxTimeout = pttTimeout * 1000
-                    log('V键超时: ' + pttTimeout + '秒')
-                }
 
                 // TTS 启用
                 const ttsEnabled = config?.tts?.enabled !== false
@@ -844,17 +748,6 @@ async function main() {
                     log('温度设置已' + (tempEnabled ? '启用' : '禁用'))
                 }
 
-                // 语音打断
-                const bargeIn = config?.asr?.voice_barge_in || false
-                const oldBargeIn = oldConfig?.asr?.voice_barge_in || false
-                if (bargeIn !== oldBargeIn) {
-                    log('语音打断: ' + (bargeIn ? '启用' : '禁用'))
-                    if (bargeIn) {
-                        asrProcessor.setTTSProcessor(tts)
-                    } else {
-                        asrProcessor.setTTSProcessor(null)
-                    }
-                }
 
                 // BERT 分类热重载
                 const bertEnabled = config?.bert?.enabled || false
@@ -963,35 +856,12 @@ async function main() {
             }
         })
 
+
         log('myspy 启动完成')
 
-        // ASR 启用后，启动麦克风（PTT 和监听模式都需要）
-        if (config?.asr?.enabled !== false) {
-            setTimeout(() => {
-                asrProcessor.startRecording()
-                log('ASR 录音已启动')
-            }, 3000)
-        }
+        // 订阅后端动作广播：控制台等来源的对话也会驱动桌宠动作
+        subscribePetEvents()
 
-        // 开场白
-        const introText = config?.ui?.intro_text
-        if (introText) {
-            setTimeout(async () => {
-                showSubtitle(introText)
-                // TTS 播完后再隐藏字幕
-                if (config?.tts?.enabled) {
-                    await tts.speak(introText, modelCtrl)
-                } else {
-                    await new Promise(r => setTimeout(r, 5000))
-                }
-                const container = document.getElementById('subtitle-container')
-                if (container) container.style.display = 'none'
-            }, 1000)
-        }
-
-        // 文字输入框可见性
-        const showChatBox = config?.ui?.show_chat_box !== false
-        chatContainer.style.display = showChatBox ? 'block' : 'none'
 
     } catch (e) {
         console.error('初始化失败:', e)
@@ -1083,69 +953,56 @@ function handleNuomiToolResult(name, content) {
         } catch (e) { log('表情播放失败: ' + e.message, 'warn') }
         return
     }
-    // 兼容旧插件（pet_action / set_emotion）
+    // 兼容旧插件 pet_action（已废弃，仅防御性保留）
     if (name === 'pet_action' && data.action) {
         playPetAction(data.action)
-    } else if (name === 'set_emotion' && data.emotion) {
-        log('桌宠表情: ' + data.emotion + (data.intensity ? '/' + data.intensity : ''), 'info')
-        try {
-            emotionMapper.triggerByEmotion(data.emotion)
-            if (_applyEmotionExpression) _applyEmotionExpression(data.emotion)
-        } catch (e) { log('表情应用失败: ' + e.message, 'warn') }
     }
 }
 
-// 调用后端 /api/agents/{id}/chat SSE 流：token→字幕 / emotion→表情 / tool_result→播放器 / done→结束
-async function callNuomiSSE(text, onChunk = null) {
-    const agentId = config.nuomi.agent_id
-    const base = String(config.llm.api_url || '').replace(/\/api\/v1\/?$/, '') || 'http://127.0.0.1:8000'
-    const url = base + '/api/agents/' + agentId + '/chat'
-    log('Nuomi SSE 请求: ' + url)
 
-    const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: text })
-    })
-    if (!response.ok) {
-        const errText = await response.text()
-        throw new Error('Nuomi API ' + response.status + ': ' + errText)
-    }
+// 按工具名播放动作/表情（模型插件工具名 = 动作/表情名）
+let lastPlayedTool = null // 去重：广播动作与本地播放（1s 内同名跳过）
+function playPetToolByName(name) {
+    lastPlayedTool = { name, ts: Date.now() }
+    log('桌宠工具: ' + name, 'info')
+    try {
+        if (model && model.motion) { model.motion(name); return }
+    } catch (e) { log('动作播放失败: ' + e.message, 'warn') }
+    try {
+        if (model && model.expression) model.expression(name)
+    } catch (e) { log('表情播放失败: ' + e.message, 'warn') }
+}
 
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder('utf-8')
-    let buffer = ''
-    while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
-        for (const line of lines) {
-            const t = line.trim()
-            if (!t.startsWith('data:')) continue
-            let ev
-            try { ev = JSON.parse(t.slice(5).trim()) } catch (e) { continue }
-            switch (ev.type) {
-                case 'token':
-                    if (onChunk) onChunk(ev.content || '')
-                    break
-                case 'emotion':
-                    if (ev.name) {
-                        try {
-                            emotionMapper.triggerByEmotion(ev.name)
-                            if (_applyEmotionExpression) _applyEmotionExpression(ev.name)
-                        } catch (e) { log('情绪表情应用失败: ' + e.message, 'warn') }
-                    }
-                    break
-                case 'tool_result':
-                    if (ev.name) handleNuomiToolResult(ev.name, ev.content || '')
-                    break
-                case 'done':
-                    return
+// 订阅后端动作广播：控制台等任何来源的对话触发工具调用时，桌宠同步播放
+async function subscribePetEvents() {
+    try {
+        const base = String(config.llm.api_url || '').replace(/\/api\/v1\/?$/, '') || 'http://127.0.0.1:8000'
+        const res = await fetch(base + '/api/pet/events')
+        const reader = res.body.getReader()
+        const decoder = new TextDecoder('utf-8')
+        let buffer = ''
+        while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            buffer += decoder.decode(value, { stream: true })
+            const lines = buffer.split('\n')
+            buffer = lines.pop() || ''
+            for (const line of lines) {
+                const t = line.trim()
+                if (!t.startsWith('data:')) continue
+                const p = t.slice(5).trim()
+                if (!p) continue
+                let ev
+                try { ev = JSON.parse(p) } catch (e) { continue }
+                if (ev.type === 'tool_call' && ev.name) {
+                    const now = Date.now()
+                    if (lastPlayedTool && lastPlayedTool.name === ev.name && now - lastPlayedTool.ts < 1000) continue
+                    playPetToolByName(ev.name)
+                }
             }
         }
-    }
+    } catch (e) { log('订阅连接失败: ' + e.message, 'warn') }
+    setTimeout(subscribePetEvents, 3000)
 }
 
 // 流式 LLM 调用 - 逐块返回文本
@@ -1244,282 +1101,7 @@ async function callLLMStream(messages, tools = null, onChunk = null) {
 }
 
 // 发送消息
-async function sendMessage(text, options = {}) {
-    // 清除之前的打断标志
-    appState.clearInterrupted()
 
-    if (!text) {
-        text = chatInput.value.trim()
-    }
-    if (!text || !config) return
-    chatInput.value = ''
-    if (!options.hideSubtitle) showSubtitle('你: ' + text)
-
-    messages.push({ role: 'user', content: text })
-
-    // 裁剪上下文
-    trimMessages()
-
-    try {
-        // —— Nuomi 后端模式：后端统一执行工具（插件/MCP），壳只消费 SSE 事件流播放 ——
-        if (config.nuomi && config.nuomi.enabled && config.nuomi.agent_id) {
-            let nuomiBuffer = ''
-            if (ttsStreamProcessor) ttsStreamProcessor.reset()
-            await callNuomiSSE(text, (chunk) => {
-                nuomiBuffer += chunk
-                const clean = emotionMapper.removeEmotionTags(chunk)
-                if (!ttsStreamProcessor) {
-                    updateSubtitle(emotionMapper.removeEmotionTags(nuomiBuffer))
-                }
-                if (ttsStreamProcessor) ttsStreamProcessor.addStreamingText(clean)
-            })
-            if (ttsStreamProcessor) ttsStreamProcessor.finalizeStreamingText()
-            const assistantContent = emotionMapper.removeEmotionTags(nuomiBuffer)
-            if (assistantContent) {
-                messages.push({ role: 'assistant', content: assistantContent })
-                if (!ttsStreamProcessor) updateSubtitle(assistantContent, true)
-            }
-            setTimeout(() => {
-                const container = document.getElementById('subtitle-container')
-                if (container) container.style.display = 'none'
-            }, 5000)
-            saveConversationHistory()
-            if (model) { try { model.motion('Tap') } catch (e) {} }
-            return
-        }
-
-        // 调用主 LLM（流式）
-        let replyBuffer = ''
-
-        // 重置流式 TTS 处理器
-        if (ttsStreamProcessor) ttsStreamProcessor.reset()
-
-        let d
-        try {
-            d = await callLLMStream(messagesForAPI, shouldSendTools ? allTools : null, (chunk) => {
-                replyBuffer += chunk
-                // TTS 开启时由 TTS 逐字控制字幕，不显示完整文本
-                if (!ttsStreamProcessor) {
-                    updateSubtitle(emotionMapper.removeEmotionTags(replyBuffer))
-                }
-
-                // 流式 TTS（去掉情绪标签再传入）
-                if (ttsStreamProcessor) {
-                    ttsStreamProcessor.addStreamingText(emotionMapper.removeEmotionTags(chunk))
-                }
-            })
-        } catch (llmError) {
-            // 多模态不支持时，剥离图片重试
-            const hasImages = messagesForAPI.some(m =>
-                Array.isArray(m.content) && m.content.some(c => c.type === 'image_url')
-            )
-            if (hasImages) {
-                log('LLM不支持图片，剥离图片重试')
-                messagesForAPI = cleanMessagesForAPI(messages.map(msg => {
-                    if (Array.isArray(msg.content)) {
-                        return { ...msg, content: msg.content.filter(c => c.type !== 'image_url') }
-                    }
-                    return msg
-                }))
-                replyBuffer = ''
-                if (ttsStreamProcessor) ttsStreamProcessor.reset()
-                d = await callLLMStream(messagesForAPI, shouldSendTools ? allTools : null, (chunk) => {
-                    replyBuffer += chunk
-                    if (!ttsStreamProcessor) {
-                        updateSubtitle(emotionMapper.removeEmotionTags(replyBuffer))
-                    }
-                    if (ttsStreamProcessor) ttsStreamProcessor.addStreamingText(emotionMapper.removeEmotionTags(chunk))
-                })
-            } else {
-                throw llmError
-            }
-        }
-
-        // LLM 流结束，刷出 TTS 剩余文本
-        if (ttsStreamProcessor) {
-            ttsStreamProcessor.finalizeStreamingText()
-        }
-
-        // 检查是否有工具调用
-        log('LLM流式响应完成')
-        let finalText = ''
-
-        // 连续工具调用循环（最多30轮）
-        const MAX_TOOL_ITERATIONS = 30
-        const MAX_CONSECUTIVE_FAILURES = 3
-        let iteration = 0
-        let consecutiveFailures = 0
-
-        while (d.tool_calls && d.tool_calls.length > 0 && iteration < MAX_TOOL_ITERATIONS) {
-            // 检查用户是否打断
-            if (appState.isInterrupted()) {
-                log('用户打断，终止工具调用循环')
-                appState.clearInterrupted()
-                if (messages.length > 0 && messages[messages.length - 1].role === 'assistant') {
-                    messages.pop()
-                }
-                break
-            }
-            iteration++
-            logTool(`工具调用轮次 ${iteration}: ${d.tool_calls.length} 个工具`)
-
-            // 先添加 assistant 消息（含 tool_calls），只加一次
-            // 如果 content 为空但有 tool_calls，仍需保留 tool_calls 供后续 tool result 关联
-            messages.push({
-                role: 'assistant',
-                content: d.content || null,
-                tool_calls: d.tool_calls
-            })
-
-            // 执行所有工具调用
-            for (const toolCall of d.tool_calls) {
-                const toolName = toolCall.function.name
-                const toolArgs = JSON.parse(toolCall.function.arguments || '{}')
-                logTool('调用工具: ' + toolName)
-
-                // 执行工具（MCP 优先，然后是插件）
-                let toolResult = ''
-                try {
-                    if (global.mcpManager && global.mcpManager.isEnabled && global.mcpManager.toolRegistry.isMCPTool(toolName)) {
-                        logTool('执行 MCP 工具: ' + toolName)
-                        const mcpResults = await global.mcpManager.handleToolCalls([toolCall])
-                        if (mcpResults.length > 0) {
-                            toolResult = mcpResults[0].content
-                        }
-                        logTool('MCP 工具结果: ' + String(toolResult).substring(0, 100))
-                    } else if (global.pluginManager) {
-                        logTool('执行插件工具: ' + toolName)
-                        toolResult = await global.pluginManager.executeTool(toolName, toolArgs)
-                        logTool('工具结果: ' + String(toolResult).substring(0, 100))
-                    } else {
-                        log('pluginManager 不存在', 'warn')
-                    }
-                    consecutiveFailures = 0 // 成功则重置计数
-                } catch (toolError) {
-                    toolResult = `工具执行错误: ${toolError.message}`
-                    consecutiveFailures++
-                    logTool('工具执行失败: ' + toolError.message)
-                    if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-                        log('连续失败 ' + consecutiveFailures + ' 次，终止工具调用循环', 'warn')
-                        break
-                    }
-                }
-
-                // 截图工具特殊处理：提取 base64 用于视觉分析
-                if (typeof toolResult === 'object' && toolResult._isScreenshot) {
-                    messages.push({
-                        role: 'tool',
-                        name: toolName,
-                        tool_call_id: toolCall.id,
-                        content: toolResult.message
-                    })
-                    finalText = toolResult.message
-                    // 将截图注入为 user 消息供 LLM 分析
-                    const imageBase64 = toolResult.base64
-                    log('截图base64长度: ' + (imageBase64 ? imageBase64.length : 0))
-                    if (imageBase64 && imageBase64.length > 0) {
-                        messages.push({
-                            role: 'user',
-                            content: [
-                                { type: 'text', text: '当前电脑屏幕内容:' },
-                                { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${imageBase64}` } }
-                            ]
-                        })
-                        log('截图已添加到消息，供 AI 分析')
-                    } else {
-                        log('截图数据为空，跳过图片注入', 'warn')
-                    }
-                } else {
-                    messages.push({
-                        role: 'tool',
-                        name: toolName,
-                        tool_call_id: toolCall.id,
-                        content: String(toolResult)
-                    })
-                    finalText = String(toolResult)
-                }
-            }
-
-            // 再次调用 LLM（流式）
-            let replyBuffer = ''
-
-            // 重置流式 TTS 处理器
-            if (ttsStreamProcessor) ttsStreamProcessor.reset()
-
-            d = await callLLMStream(messages, shouldSendTools ? allTools : null, (chunk) => {
-                replyBuffer += chunk
-                // TTS 开启时由 TTS 逐字控制字幕，不显示完整文本
-                if (!ttsStreamProcessor) {
-                    updateSubtitle(emotionMapper.removeEmotionTags(replyBuffer))
-                }
-
-                // 流式 TTS（去掉情绪标签再传入）
-                if (ttsStreamProcessor) {
-                    ttsStreamProcessor.addStreamingText(emotionMapper.removeEmotionTags(chunk))
-                }
-            })
-
-            // LLM 流结束，刷出 TTS 剩余文本
-            if (ttsStreamProcessor) {
-                ttsStreamProcessor.finalizeStreamingText()
-            }
-
-            finalText = replyBuffer
-            log(`轮次 ${iteration} LLM 响应完成`)
-        }
-
-        // 最终回复（无工具调用时 finalText 还是空，需要从 replyBuffer 取）
-        if (!finalText && replyBuffer) {
-            finalText = replyBuffer
-        }
-        if (d.tool_calls && d.tool_calls.length > 0) {
-            log('达到最大工具调用轮次，停止循环', 'warn')
-        }
-
-        // 解析情绪标签并触发表情
-        const emotionTags = emotionMapper.parseEmotionTags(finalText)
-        log(`情绪标签解析: ${emotionTags.length}个 | 原始文本: ${JSON.stringify(finalText.substring(0, 150))}`)
-        if (emotionTags.length > 0) {
-            emotionMapper.triggerByEmotion(emotionTags[0].emotion)
-            try { _applyEmotionExpression(emotionTags[0].emotion) } catch (e) { log('情绪表情应用失败: ' + e.message, 'warn') }
-            finalText = emotionMapper.removeEmotionTags(finalText)
-        }
-
-        // 显示最终字幕（仅当有内容时）
-        if (finalText) {
-            // TTS 开启时由 TTS 逐字控制，不显示完整文本
-            if (!ttsStreamProcessor) {
-                updateSubtitle(finalText, true)
-            }
-            // 5秒后自动隐藏字幕
-            setTimeout(() => {
-                const container = document.getElementById('subtitle-container')
-                if (container) container.style.display = 'none'
-            }, 5000)
-        }
-        // 保存助手回复（优先用 finalText，回退到 replyBuffer）
-        const assistantContent = finalText || replyBuffer || ''
-        if (assistantContent) {
-            messages.push({ role: 'assistant', content: assistantContent })
-        }
-
-        // 插件：LLM 响应钩子（上下文压缩等）- 先压缩再保存
-        if (global.pluginManager) {
-            await global.pluginManager.runLLMResponseHooks({ text: finalText })
-        }
-
-        // 保存对话历史（在压缩之后，保存压缩后的状态）
-        saveConversationHistory()
-
-        if (model) model.motion('Tap')
-
-    } catch (e) {
-        showSubtitle('错误: ' + e.message)
-    }
-}
-
-chatSendBtn.addEventListener('click', () => sendMessage())
-chatInput.addEventListener('keydown', e => { if (e.key === 'Enter') sendMessage() })
 
 // 窗口关闭时清理 MCP
 window.addEventListener('beforeunload', () => {
@@ -1528,41 +1110,6 @@ window.addEventListener('beforeunload', () => {
     }
 })
 
-// PTT 按键监听
-const pttKey = (config.asr?.ptt_key || 'v').toLowerCase()
-let pttActive = false
-
-const isInputFocused = () => {
-    const el = document.activeElement
-    if (!el) return false
-    const tag = el.tagName
-    return tag === 'INPUT' || tag === 'TEXTAREA' || el.isContentEditable
-}
-
-document.addEventListener('keydown', (e) => {
-    if (e.key.toLowerCase() !== pttKey) return
-    if (!config.asr?.ptt_enabled) return
-    if (e.repeat || pttActive || isInputFocused()) return
-    pttActive = true
-    asrProcessor.pttStartRecording()
-    showSubtitle('录音中...')
-})
-
-document.addEventListener('keyup', (e) => {
-    if (e.key.toLowerCase() !== pttKey || !pttActive) return
-    pttActive = false
-    if (!config.asr?.ptt_enabled) return
-    asrProcessor.pttStopRecording()
-})
-
-// 全局快捷键（窗口失焦时也能用）
-ipcRenderer.on('ptt-key-down', () => {
-    if (!config.asr?.ptt_enabled) return
-    if (pttActive) return
-    pttActive = true
-    asrProcessor.pttStartRecording()
-    showSubtitle('录音中...')
-})
 
 // 自定义右键菜单
 const contextMenu = document.getElementById('custom-context-menu')
@@ -1609,69 +1156,5 @@ document.querySelectorAll('.ctx-menu-item').forEach(item => {
     })
 })
 
-// ===== B站弹幕管理器 =====
-// TTS 读完才处理下一批弹幕，只取最新几条，过时的丢掉
-global.barrageManager = {
-    _buffer: [],         // 弹幕缓冲区
-    _processing: false,  // 是否正在处理（LLM + TTS 播放中）
-    _maxBuffer: 30,      // 缓冲区上限
-    _maxPerBatch: 8,     // 每批最多发 8 条
-
-    addToQueue: function(nickname, text) {
-        if (this._buffer.length >= this._maxBuffer) this._buffer.shift();
-        this._buffer.push({ nickname, text, timestamp: Date.now() });
-        // 当前没有在处理时，立即触发下一批
-        if (!this._processing) this._flush();
-    },
-
-    _flush: async function() {
-        if (this._processing || this._buffer.length === 0) return;
-        this._processing = true;
-
-        // 只取最新的几条，过时的弹幕直接丢掉
-        const batch = this._buffer.splice(-this._maxPerBatch);
-
-        // 构造弹幕摘要，让 LLM 自己决定回哪条
-        const summary = batch.map(m => `${m.nickname}: ${m.text}`).join('\n');
-        const text = `[直播间弹幕]\n${summary}\n\n以上是直播间的最新弹幕，挑你感兴趣的回复一两句，不用每条都回。不感兴趣就不回。`;
-
-        try {
-            showSubtitle('弹幕: ' + batch.slice(-3).map(m => m.nickname).join(', '));
-            await sendMessage(text, { hideSubtitle: true });
-            // 等 TTS 播放完成（sendMessage 返回后 TTS 可能还在播放）
-            await waitForTTS();
-        } catch (e) {
-            console.error('弹幕批次发送失败:', e);
-        }
-
-        this._processing = false;
-
-        // TTS 播完了，如果缓冲区有新弹幕，继续处理下一批
-        if (this._buffer.length > 0) this._flush();
-    }
-};
-
-// 等待 TTS 播放完成
-function waitForTTS() {
-    return new Promise(resolve => {
-        const isTTSDone = () => {
-            if (!ttsStreamProcessor) return true;
-            // 队列有音频、正在处理文本、或客户端正在播放 → 还没完
-            if (ttsStreamProcessor.audioQueue.length > 0) return false;
-            if (ttsStreamProcessor.isProcessing) return false;
-            if (ttsStreamProcessor.ttsClient && ttsStreamProcessor.ttsClient.isPlaying) return false;
-            return true;
-        };
-        const check = () => {
-            if (isTTSDone()) {
-                resolve();
-            } else {
-                setTimeout(check, 500);
-            }
-        };
-        // 先等 3 秒让 TTS 开始播放，再检测状态
-        setTimeout(check, 3000);
-    });
-}
 
 main()

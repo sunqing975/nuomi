@@ -41,9 +41,41 @@ def seed_default_agent() -> None:
 async def lifespan(_: FastAPI):
     init_db()
     seed_default_agent()
+    _ensure_model_plugins()
     _sync_plugins()
+    _sync_mcp_file()
     yield
     manager.close()
+
+
+def _sync_mcp_file() -> None:
+    """MCP 配置源：data_root/mcp_servers.json 优先（控制台增删后持久化），无文件时用 env 种子。"""
+    from app.config import settings
+
+    p = settings.data_root / "mcp_servers.json"
+    if not p.is_file():
+        return
+    try:
+        import json
+
+        data = json.loads(p.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            settings.mcp_servers = data
+    except Exception:
+        pass
+
+
+def _ensure_model_plugins() -> None:
+    """确保每个有动作/表情的桌宠模型都有对应插件（插件名 = 模型名）。
+
+    模型资产补齐/替换后重启即自动重新生成；无能力的模型跳过。
+    """
+    from contextlib import suppress
+
+    from app.domain.pet.service import generate_all_model_plugins
+
+    with suppress(Exception):
+        generate_all_model_plugins()
 
 
 def _sync_plugins() -> None:

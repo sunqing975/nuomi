@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  Alert, Card, Col, Empty, Row, Tag, Typography, message,
+  Alert, Card, Col, Empty, Popconfirm, Row, Tag, Typography, message,
 } from 'antd';
-import { CheckCircleFilled, SmileOutlined } from '@ant-design/icons';
-import { get, post, type PetModel, type PetModelsResponse } from '../api';
+import { CheckCircleFilled, DeleteOutlined, SmileOutlined } from '@ant-design/icons';
+import { del, get, post, type PetModel, type PetModelsResponse } from '../api';
 
 export default function ModelsPage() {
   const [models, setModels] = useState<PetModel[]>([]);
@@ -38,17 +38,28 @@ export default function ModelsPage() {
     }
   };
 
+  const removeModel = async (m: PetModel) => {
+    try {
+      await del(`/pet/models/${m.id}`);
+      message.success(`模型 ${m.id} 已删除（资产 + 插件级联清除）`);
+      load();
+    } catch (e) {
+      message.error(`删除失败：${(e as Error).message}`);
+    }
+  };
+
   return (
     <>
       <Alert
         type="info"
         showIcon
         style={{ marginBottom: 16 }}
-        message="模型资产（shells/myspy/2D/）"
+        message="桌宠模型资产（shells/myspy/2D/）"
         description={
           <span style={{ fontSize: 13 }}>
             插件名 = 模型名，工具名 = 模型真实动作/表情名。选中模型即激活对应插件，
             对桌宠说「给我比个心」，LLM 会直接调用该模型的动作工具来驱动桌宠。
+            没有动作/表情的模型同样可以切换（作为纯外观桌宠），只是不会生成插件。
           </span>
         }
       />
@@ -63,12 +74,12 @@ export default function ModelsPage() {
             <Col xs={24} sm={12} lg={8} key={m.id}>
               <Card
                 size="small"
-                hoverable={hasCapability}
+                hoverable
                 style={{
                   borderColor: isActive ? '#f59e0b' : undefined,
                   boxShadow: isActive ? '0 0 0 2px rgba(245,158,11,.18)' : undefined,
                 }}
-                onClick={() => hasCapability && switchModel(m)}
+                onClick={() => switchModel(m)}
                 title={
                   <span>
                     {isActive && <CheckCircleFilled style={{ color: '#f59e0b', marginRight: 6 }} />}
@@ -76,13 +87,27 @@ export default function ModelsPage() {
                   </span>
                 }
                 extra={
-                  hasCapability ? (
-                    <Typography.Text type={isActive ? 'success' : 'secondary'} style={{ fontSize: 12 }}>
-                      {isActive ? '使用中' : '点击切换'}
-                    </Typography.Text>
-                  ) : (
-                    <Tag color="default">无动作/表情</Tag>
-                  )
+                  <span onClick={e => e.stopPropagation()}>
+                    {isActive && (
+                      <Typography.Text type="success" style={{ fontSize: 12, marginRight: 8 }}>使用中</Typography.Text>
+                    )}
+                    {!isActive && hasCapability && (
+                      <Typography.Text type="secondary" style={{ fontSize: 12, marginRight: 8 }}>点击切换</Typography.Text>
+                    )}
+                    {!isActive && !hasCapability && (
+                      <Tag color="default" style={{ marginRight: 8 }}>无动作/表情</Tag>
+                    )}
+                    <Popconfirm
+                      title="删除模型？"
+                      description="将删除模型资产与对应桌宠插件（不可恢复）；删除使用中的模型会自动切换"
+                      okText="删除" cancelText="取消"
+                      onConfirm={() => removeModel(m)}
+                    >
+                      <DeleteOutlined
+                        style={{ color: '#dc2626', fontSize: 14 }}
+                      />
+                    </Popconfirm>
+                  </span>
                 }
               >
                 <Typography.Paragraph

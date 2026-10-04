@@ -58,10 +58,12 @@ class PluginService:
         with db.connect() as conn:
             rows = conn.execute("SELECT * FROM plugins ORDER BY name").fetchall()
         registry = PluginRegistry()
+        model_plugin_ids = self.model_plugin_ids()
         out = []
         for r in rows:
             d = dict(r)
             d["tool_count"] = sum(1 for t in registry.all_tools() if t.plugin_id == r["plugin_id"])
+            d["model_plugin"] = r["plugin_id"] in model_plugin_ids
             out.append(d)
         return out
 
@@ -95,6 +97,23 @@ class PluginService:
         with db.connect() as conn:
             conn.execute("DELETE FROM agent_plugins WHERE agent_id = ? AND plugin_id = ?", (agent_id, plugin_id))
 
+    def delete(self, plugin_id: str) -> bool:
+        """删除插件：DB 记录 + 全部 agent 绑定 + 插件目录（source of truth）。
+
+        模型插件不在此删除（由「桌宠」删除模型时级联）——调用方先检查。
+        删除后调用方应释放 agent 实例，避免缓存实例仍带旧插件工具。
+        """
+        with db.connect() as conn:
+            cur = conn.execute("DELETE FROM plugins WHERE plugin_id = ?", (plugin_id,))
+            deleted = cur.rowcount > 0
+            conn.execute("DELETE FROM agent_plugins WHERE plugin_id = ?", (plugin_id,))
+        plugin_dir = self.plugins_dir() / plugin_id
+        if plugin_dir.is_dir():
+            import shutil
+
+            shutil.rmtree(plugin_dir, ignore_errors=True)
+        return deleted
+
     def agent_bindings(self, agent_id: str) -> list[dict]:
         with db.connect() as conn:
             rows = conn.execute(
@@ -112,6 +131,17 @@ class PluginService:
         return out
 
     # ---------- 工具装配（供对话端点） ----------
+
+    def model_plugin_ids(self) -> set[str]:
+        """桌宠模型插件 id 集合（pet 生成的插件：插件名 = 模型名）。
+
+        以 pet 模型扫描为准（有动作/表情、生成过插件的模型）。
+        模型插件互斥由插件启停层面保证（同一时间只启用一个），
+        工具随插件启停热挂载，装配层无需二次过滤。
+        """
+        from app.domain.pet.service import list_models  # 局部 import，避免模块级循环
+
+        return {m["id"] for m in list_models() if m["motions"] or m["expressions"]}
 
     def tools_for_agent(self, agent_id: str) -> list:
         """按 agent 绑定 + 全局启停，装配插件工具（StructuredTool 列表）。
