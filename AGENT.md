@@ -104,9 +104,9 @@ SSE 事件协议（桌宠前端消费）：`token` / `tool_call` / `tool_result`
 - **SSE 广播**：`_resolve_pet_action` 改成读 `plugins/<model_id>/actions.json`（VRM 模型 list_models() 里 actions={}）
 - **插件互斥 bug 修复**：切到无插件模型时所有模型插件全禁用（之前只在新模型有插件时才互斥）
 - **当前局限**：手写骨骼动画不自然（硬编码角度，无膝盖/手腕细节）
-- **待办：Mixamo FBX → VRM 动画**：
-  - 用户已注册 Mixamo，下载了 `Illegal Elbow Punch.fbx`（446KB，assets/animations/elbow_punch.fbx）
-  - 需要实现：FBXLoader 加载 → Mixamo rig 骨骼映射到 VRM humanoid → 生成 AnimationClip
-  - 参考：three.js FBXLoader + retargeting 逻辑；或 bvh2vrma 工具转换
-  - 目标：把常用动作（挥手/点头/跳舞/拳击）做成 .vrma 文件放 assets/animations/，壳里直接 playAnimation()
-  - 壳里已实现 loadVRMA(name, path) + playAnimation(name, loop) 接口，待接动画文件
+- **Mixamo FBX → VRMA 转换链路已走通（2026-10-04）**：
+  - 工具链：`shells/myspy/tools/fbx2vrma/`（npm `fbx2vrma-converter` 1.0.2 + FBX2glTF 0.9.7 darwin-x64 二进制）。**arm64 机器无原生 FBX2glTF**（官方仅 darwin-x64），需 Rosetta 2（`softwareupdate --install-rosetta --agree-to-license` 已装）；npm install 用 `--ignore-scripts`（其 setup.sh postinstall 会失败）
+  - 命令：`node node_modules/fbx2vrma-converter/fbx2vrma-converter.js -i <in.fbx> -o <out.vrma>`——自动 Mixamo→VRM humanoid 骨骼映射（mixamorig:* → hips/spine/chest...），默认 30fps
+  - 产物：`shells/myspy/assets/animations/elbow_punch.vrma`（2.25s、22 骨骼、55 帧、113KB）
+  - 验证：`tools/fbx2vrma/verify-vrma.js`（Node 直跑，与壳 loadVRMA 同款加载链：GLTFLoader+VRMLoaderPlugin 载 VRM 模型 → VRMAnimationLoaderPlugin 载 .vrma → createVRMAnimationClip → 22 tracks 标准 humanoid 骨骼 + Head 采样四元数差异确认驱动）。**Node 环境需浏览器 polyfill：self/createImageBitmap/URL.createObjectURL/ProgressEvent**（脚本已内置，不渲染纹理）
+  - **遗留：壳 loadVRMA 接口（vrm-model-adapter.js:224）全项目无调用点**——下一步把 VRM 模型动作插件触发时改为播放对应 .vrma（替换手写骨骼动画 motion()），即 actions.json 语义动作可挂 vrma 文件名

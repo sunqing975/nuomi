@@ -1,0 +1,14 @@
+{
+  "name": "fbx2vrma",
+  "version": "1.0.0",
+  "description": "Mixamo FBX → VRMA 动画转换工具链（fbx2vrma-converter + FBX2glTF）",
+  "private": true,
+  "scripts": {
+    "convert": "node node_modules/fbx2vrma-converter/fbx2vrma-converter.js",
+    "verify": "node verify-vrma.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "fbx2vrma-converter": "^1.0.2"
+  }
+}

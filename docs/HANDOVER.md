@@ -146,6 +146,7 @@ OpenAI 兼容：`app/transport/openai_compat.py`（`/v1/chat/completions`，mode
 - [ ] 前端 bundle 1MB 可 code-split
 - [ ] 模型资产补全：cat（hijiki）动作文件缺失；表情插件（expressions 为空）待有数据可测
 - [ ] 模型插件工具语义：工具 description 只有动作名，靠 `_MOTION_ZH` 映射，可再打磨
+- [x] **Mixamo FBX → VRMA 转换链路**（2026-10-04 走通）：工具链 `shells/myspy/tools/fbx2vrma/`（fbx2vrma-converter + FBX2glTF 0.9.7；arm64 机器需 Rosetta 2；npm install 需 --ignore-scripts）；`elbow_punch.vrma`（2.25s/22 骨骼）已生成，verify-vrma.js 用壳同款加载链验证通过（Node 需浏览器 polyfill）；**遗留**：壳 `loadVRMA` 接口无调用点，VRM 动作插件触发时尚未接 .vrma
 
 ## 9. 关键 git 历史
 
