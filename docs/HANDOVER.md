@@ -103,20 +103,39 @@ OpenAI 兼容：`app/transport/openai_compat.py`（`/v1/chat/completions`，mode
 - **antd5 grid 卡片等高**：grid List 渲染为 `.ant-row > div`（**无 `.ant-list-items`**，也无 `.ant-col` 类——列是原生 div + colStyle）；Row 默认 `align: top` 列不拉伸，必须 CSS `align-items: stretch`；`nuomi-grid` 类若挂在 List 容器上选择器写 `.nuomi-grid .ant-row`，若挂在 Row 自身（桌宠页）写 `.ant-row.nuomi-grid`——两形态都要覆盖（frontend/src/index.css `.nuomi-grid` 块已兼容）。
 - **壳加载的是 build 产物**：控制面板指向 `http://127.0.0.1:8000/console/`（后端挂 dist），**不是** 5173 vite dev；改前端验证要走 build + 强制刷新（`?v=n` nonce），5173 的 vite proxy 未配置好也不影响壳。
 
-## 7. 遗留事项 / 下一步
+## 7. 项目主线清单（用户需求 → 状态）
 
+> 主线项按用户原始清单 + 实际扩展整理；✅=已完成并验证，⬜=未做/暂缓。状态以最新对话拍板为准。
+
+| # | 主线项 | 状态 | 说明 / 落地点 |
+|---|---|---|---|
+| 1 | 插件市场 | ✅ | octop 无独立在线插件商店；市场闭环 = 内置随包 + SkillHub + zip/Git 导入（见 #4/#9） |
+| 2 | 连接器添加 | ✅ | 控制台增删改/重载（MCP 协议，产品命名统一「连接器」）；`connectors.json` 权威 + `NUOMI_CONNECTORS` 首次播种 |
+| 3 | 工作区单根化 + 数据迁移 | ✅ | `NUOMI_HOME=/Users/superman/Nuomi` 即数据根（**无 NUOMI_WORKSPACE**）；skills/plugins/skill_packages/models/connectors.json/env.json/nuomi-state.json 全部在内 |
+| 4 | 插件导入 | ✅ | `POST /plugins/import`（zip）+ `POST /plugins/import-git`（Git 仓库，浅克隆/50MB/已存在拒绝） |
+| 5 | 技能导入 | ✅ | `POST /skills/import`（zip）+ `POST /skills/import-git`；实测 anthropics/skills 真实仓库 |
+| 6 | 对话框大改动（参考 octop） | ⬜ 暂缓 | 用户 2026-10-04 拍板先不做；已调研 octop dashboard Chat 组件（MessageBubble/MessageList/ChatInput/Trajectory 系列等），改动范围待定 |
+| 7 | 桌宠模型导入 | ✅ | 种子机制：仓库仅留 `assets/models/2D/hiyori`，扫描幂等播种到工作区 `models/2D/`；内置模型页只读不可删 |
+| 8 | 桌宠模型升级（现太呆板） | ⬜ 暂缓 | 现为纯动作/表情表现层（Live2D）；升级方案未定 |
+| 9 | 技能市场（SkillHub） | ✅ | search 循环翻页（服务端固定 10 条/页）+ slug 去重；rankings/skillsets；单技能安装/技能集建包；`requires_api_key` 标注 |
+| 10 | 内置技能展示 + 环境变量 | ✅ | `GET /skills/builtin`（24 个，只读）+ `GET|PUT /settings/env`（env.json → os.environ，技能 API key 配置） |
+| 11 | 会话与模型解耦 | ✅ | 桌宠=纯表现层（拦截对话工具调用做动作）；切模型不换会话；default 线程已删；会话权威 `nuomi-state.json` |
+| 12 | 管理页 UI 统一卡片化 | ✅ | 专家/技能（已安装+市场）/桌宠/插件/连接器五页统一等宽卡片网格 + 首字头像 + 角标 + 描述省略/tooltip + **同行严格等高**（§6 踩坑） |
+
+## 8. 遗留事项 / 下一步
+
+- [ ] **对话框大改动**（暂缓，见主线 #6）：改动范围待用户拍板
+- [ ] **桌宠模型升级**（暂缓，见主线 #8）：表现层增强/新模型表现力
 - [ ] **桌宠直接说话（TTS）**（用户已拍板待办）：桌宠现为纯动作/表情层；TTS 客户端代码（`js/tts-client.js`、`TTSStreamProcessor`）已保留未删，届时恢复"收到回复文本→TTS 播报"入口
-- [ ] **对话菜单**（暂缓）：多会话列表/切换 UI（当前"一个 thread_id 绑定 + 新会话按钮"已落地）
 - [ ] **octop WS 迁移**（暂缓）：事件帧已对齐，通道仍 HTTP SSE；注意 websockets 403 坑
 - [ ] **HITL 工具审批流**（当前不启用）：octop_harness 自带 HumanInTheLoopMiddleware，未来有高风险工具再开启
 - [ ] **糯米人设源头约束**：回复仍会出现 `<开心>` 等尖括号标签，已决定从源头治理，未实施
-- [x] 连接器控制台增删改/重载（#2，2026-10-04 完成）
 - [ ] 壳启动时自动拉起 uvicorn
 - [ ] 前端 bundle 1MB 可 code-split
 - [ ] 模型资产补全：cat（hijiki）动作文件缺失；表情插件（expressions 为空）待有数据可测
 - [ ] 模型插件工具语义：工具 description 只有动作名，靠 `_MOTION_ZH` 映射，可再打磨
 
-## 8. 关键 git 历史
+## 9. 关键 git 历史
 
 ```
 027c584  桌宠接入（myspy 二次开发）        → 5602480 删 myspy 大脑
