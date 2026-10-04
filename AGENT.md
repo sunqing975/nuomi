@@ -179,3 +179,9 @@ SSE 事件协议（AI 数字人前端消费）：`token` / `tool_call` / `tool_r
 - **方案**：页面重载热切换。后端 switch 已同步 config.ui.model_path → 壳收到 switch-model 后 `setTimeout(() => location.reload(), 400)` → 渲染进程 initialize 重跑读取新模型路径。窗口不关、进程不重启，约 1-2s 换模型
 - **验证**：双向切换（630926↔868274）日志均出现「重载页面加载新模型 → 正在加载VRM模型: 新路径 → 糯米启动完成」；active/config 同步正确
 - **表情数据实证**（three-vrm 壳同款加载链，非后端 JSON 解析）：868274793854709131.vrm 的 `angry` 表情 binds=1（有 morph 变形），旧 6309260419351179234.vrm 全部 binds=0——**用户已导入的新模型即有表情数据，切换后表情预览即可生效**（脚本 vrm_expr_check_tmp.js 已完成使命，删除）
+
+## VRM 尺寸归一化（2026-10-05）
+
+- **问题**：用户反馈新模型 868274793854709131 比旧模型 6309260419351179234 "大一倍"。实测包围盒高度：1.68m vs 1.17m（1.44 倍）——不同 VRM 导出比例/单位不一致
+- **方案**：vrm-model-setup.js 加载后 `Box3().setFromObject(vrm.scene)` 测原始高度 → 统一缩放到 targetHeight=1.4m（`vrmGroup.scale`），脚底对齐 y=0（`vrmGroup.position.y = -box.min.y * scale`）。VRMA 骨骼动画随 scale 等比缩放，动作幅度一致
+- **验证**：壳日志两个模型均输出「尺寸归一化: 1.68m→1.4m (scale=0.834)」「1.17m→1.4m (scale=1.199)」；热切换 3 次均正常

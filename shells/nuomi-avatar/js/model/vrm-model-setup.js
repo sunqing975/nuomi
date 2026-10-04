@@ -87,6 +87,26 @@ class VRMModelSetup {
         vrmGroup.add(vrm.scene);
         scene.add(vrmGroup);
 
+        // 尺寸归一化：不同 VRM 导出单位/比例不同（实测 1.17m~1.68m），统一到 targetHeight，
+        // 且脚底对齐 y=0，保证切换模型后大小/站位一致（2026-10-05 用户反馈新模型比旧模型大一倍）
+        try {
+            const box = new THREE.Box3().setFromObject(vrm.scene);
+            const rawHeight = box.max.y - box.min.y;
+            if (rawHeight > 0.01) {
+                const targetHeight = 1.4;
+                const s = targetHeight / rawHeight;
+                if (Math.abs(s - 1) > 0.02) {
+                    vrmGroup.scale.setScalar(s);
+                    console.log(`[VRM] 尺寸归一化: ${rawHeight.toFixed(2)}m → ${targetHeight}m (scale=${s.toFixed(3)})`);
+                }
+                if (Math.abs(box.min.y) > 0.01) {
+                    vrmGroup.position.y = -box.min.y * (vrmGroup.scale.y || 1);
+                }
+            }
+        } catch (e) {
+            console.warn('[VRM] 尺寸归一化失败（不影响加载）:', e.message);
+        }
+
         // 模型投射/接收阴影（增强立体感）
         vrmGroup.traverse((obj) => {
             if (obj.isMesh) {
