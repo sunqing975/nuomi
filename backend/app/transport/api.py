@@ -96,6 +96,10 @@ class ChatBody(BaseModel):
         default=None,
         description="本次对话挂载的连接器（None=默认，[]=不挂载）",
     )
+    model: str | None = Field(
+        default=None,
+        description="本次对话使用的模型（provider/model；None=默认模型）",
+    )
 
 
 @router.get("/health")
@@ -220,6 +224,13 @@ async def chat(agent_id: str, body: ChatBody, request: Request) -> StreamingResp
         raise HTTPException(status_code=400, detail="Agent 已停用")
     # per-turn 能力校验必须在流开始前完成（generator 内抛错不会转成 400）
     skills, connectors = _resolve_chat_abilities(body.skills, body.connectors)
+    model = body.model
+    if model is not None:
+        from app.infra.providers_store import model_refs
+
+        if model not in model_refs():
+            raise HTTPException(status_code=400, detail=f"模型不存在或未配置: {model}")
+        model = model.strip()
 
     async def gen():
         tools = plugin_service.tools()
@@ -238,6 +249,7 @@ async def chat(agent_id: str, body: ChatBody, request: Request) -> StreamingResp
                     mcp_default_servers=list(settings.mcp_servers.keys()) or None,
                     skills=skills,
                     connectors=connectors,
+                    model=model,
                 )
             ),
             thread_id=body.thread_id,
@@ -260,7 +272,6 @@ class AgentCreateBody(BaseModel):
     name: str
     description: str = ""
     persona_mbti: str = ""
-    default_model: str = "llm/deepseek-chat"
     system_prompt: str = ""
     enabled: bool = True
     icon_name: str = ""
@@ -273,7 +284,6 @@ class AgentPatchBody(BaseModel):
     name: str | None = None
     description: str | None = None
     persona_mbti: str | None = None
-    default_model: str | None = None
     system_prompt: str | None = None
     enabled: bool | None = None
     icon_name: str | None = None
@@ -545,6 +555,82 @@ async def put_app_env(body: EnvSaveBody) -> dict[str, str]:
     saved = env_store.save(body.values)
     manager.close()
     return saved
+
+
+class ProviderBody(BaseModel):
+    """大模型 Provider 保存请求体（对齐 octop providers 管理）。
+
+    api_key 为空串 = 保持原值（编辑不显式改就不动）。
+    """
+
+    providers: list[dict] = Field(description="provider 列表（整体保存）")
+
+
+def _validate_providers(providers: list[dict], existing: list[dict]) -> list[dict]:
+    if not providers:
+        raise HTTPException(status_code=400, detail="至少保留一个 Provider")
+    ids: set[str] = set()
+    out: list[dict] = []
+    for i, p in enumerate(providers):
+        pid = str(p.get("id") or "").strip()
+        base_url = str(p.get("base_url") or "").strip()
+        if not pid:
+            raise HTTPException(status_code=400, detail=f"第 {i + 1} 个 Provider 缺少 id")
+        if pid in ids:
+            raise HTTPException(status_code=400, detail=f"Provider id 重复: {pid}")
+        ids.add(pid)
+        if not base_url:
+            raise HTTPException(status_code=400, detail=f"Provider「{pid}」缺少 base_url")
+        models = [
+            {"id": str(m.get("id") or "").strip(), "name": str(m.get("name") or "").strip() or str(m.get("id") or "").strip()}
+            for m in (p.get("models") or [])
+            if str(m.get("id") or "").strip()
+        ]
+        if not models:
+            raise HTTPException(status_code=400, detail=f"Provider「{pid}」至少需要一个模型")
+        # api_key 空串 = 保持原值（按 id 匹配旧配置）
+        api_key = str(p.get("api_key") or "").strip()
+        if not api_key:
+            old = next((x for x in existing if x.get("id") == pid), None)
+            api_key = (old or {}).get("api_key") or ""
+        out.append(
+            {
+                "id": pid,
+                "name": str(p.get("name") or "").strip() or pid,
+                "base_url": base_url,
+                "api_key": api_key,
+                "protocol": str(p.get("protocol") or "openai").strip() or "openai",
+                "models": models,
+            }
+        )
+    return out
+
+
+@router.get("/settings/providers")
+async def get_providers() -> dict:
+    """大模型 Provider 列表（api_key 脱敏；未配置过时返回 .env 种子）。"""
+    from app.infra.providers_store import load, mask_key
+
+    provs = []
+    for p in load():
+        provs.append({**p, "api_key": mask_key(p.get("api_key") or "")})
+    return {"providers": provs}
+
+
+@router.put("/settings/providers")
+async def put_providers(body: ProviderBody) -> dict:
+    """整体保存大模型 Provider：写 providers.json + 释放实例（下次对话生效）。
+
+    模型不绑专家（2026-10-04）：不校验/重置任何专家字段，对话时 per-turn 选模型。
+    """
+    from app.infra.providers_store import load as load_providers
+    from app.infra.providers_store import save
+
+    existing = load_providers()
+    providers = _validate_providers(body.providers, existing)
+    save(providers)
+    manager.close()
+    return {"ok": True, "providers": len(providers)}
 
 
 @router.get("/skillhub/search")

@@ -136,6 +136,27 @@ export interface PetModelsResponse {
   active: string | null;
 }
 
+// ---------- 大模型 Provider ----------
+
+export interface ModelConfig {
+  id: string;
+  name: string;
+}
+
+export interface Provider {
+  id: string;
+  name: string;
+  base_url: string;
+  /** 脱敏后的 key（GET）；编辑时留空 = 保持原值 */
+  api_key: string;
+  protocol: string;
+  models: ModelConfig[];
+}
+
+export interface ProvidersResponse {
+  providers: Provider[];
+}
+
 // ---------- 对话（octop 原生事件帧 SSE） ----------
 
 export interface ChatEvent {
@@ -162,6 +183,8 @@ export interface ChatStreamOptions {
   skills?: string[];
   /** per-turn 连接器（不传=默认挂载，传空数组=不挂载） */
   connectors?: string[];
+  /** per-turn 模型（provider/model；不传=默认模型） */
+  model?: string;
 }
 
 /** 调用专家对话 SSE 流（octop 原生事件帧），逐事件回调（token 累积由调用方处理）。 */

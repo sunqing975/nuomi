@@ -15,15 +15,23 @@ from octop_harness.config import ModelConfig, ProviderConfig
 from app.config import settings
 
 
-def build_provider() -> ProviderConfig:
-    """从 .env 的 LLM_* 配置构造 OpenAI 兼容 ProviderConfig。"""
-    return ProviderConfig(
-        id="llm",
-        base_url=settings.llm_base_url,
-        api_key=settings.llm_api_key,
-        protocol="openai",
-        models=[ModelConfig(id=settings.llm_model, name=settings.llm_model)],
-    )
+def build_providers() -> list[ProviderConfig]:
+    """从 providers.json 构造 ProviderConfig 列表（缺省回退 .env 的 LLM_* 种子）。"""
+    from app.infra.providers_store import load as load_providers
+
+    out: list[ProviderConfig] = []
+    for p in load_providers():
+        models = [ModelConfig(id=m["id"], name=m.get("name") or m["id"]) for m in (p.get("models") or []) if m.get("id")]
+        out.append(
+            ProviderConfig(
+                id=p["id"],
+                base_url=p.get("base_url") or "",
+                api_key=p.get("api_key") or "",
+                protocol=p.get("protocol") or "openai",
+                models=models,
+            )
+        )
+    return out
 
 
 def build_agent_config(
@@ -40,16 +48,22 @@ def build_agent_config(
     """构造单个 Agent 的运行时配置（工作区按 harness init_workspace 布局）。
 
     model_ref 使用 "provider/model" 复合串（Octop resolve_explicit_default_model 形态）。
+    模型不绑专家（2026-10-04）：默认模型 = providers[0] 的 models[0]；
+    对话时由 ChatRequest.model per-turn 覆盖（harness 原生优先于 default_model）。
     plugin_tools：插件注册的工具（build_plugin_tools 结果），经 cfg.tools 注入 agent。
     skills_dir / skills_disabled：自定义技能目录与禁用集合。
     mcp_server_configs / mcp_default_servers：MCP 服务器（对话请求经 mcp_use_default 启用）。
     """
     init_workspace(workspace_dir, language="zh", include_md_files=False, include_skills=True)
+    providers = build_providers()
+    default_model = None
+    if providers and providers[0].models:
+        default_model = f"{providers[0].id}/{providers[0].models[0].id}"
     return HarnessAgentConfig(
         name=name,
         workspace_dir=workspace_dir,
-        providers=[build_provider()],
-        default_model=f"llm/{settings.llm_model}",
+        providers=providers,
+        default_model=default_model or f"llm/{settings.llm_model}",
         system_prompt=system_prompt
         or "你是糯米，一个住在用户电脑里的桌面 AI 人格。中文回答，简洁友好。",
         tools=plugin_tools,

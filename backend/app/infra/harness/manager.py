@@ -46,6 +46,8 @@ class HarnessManager:
         """按 agent_id 取实例；不存在则构造并缓存（start 语义）。
 
         plugin_tools / skills / mcp：随 agent 绑定变化；实例已存在时忽略（改绑定需重启实例）。
+        模型不绑专家（2026-10-04）：agent 默认模型 = providers 默认；对话时由
+        ChatRequest.model per-turn 覆盖。
         """
         if agent_id not in self._agents:
             cfg = build_agent_config(

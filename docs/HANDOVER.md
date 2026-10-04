@@ -36,6 +36,7 @@ nuomi/
 | 技能 Skill | SKILL.md（frontmatter + 提示词），随 harness 注入；目录 `工作区/skills/<slug>/`；**per-turn 可白名单选择**（对话请求 skills 字段） |
 | 技能包 Skill Package | SkillHub 技能集的本地安装（一包多技能，`skill_packages/<id>/skills/<slug>/`）；**包级整体启停/删除**（禁用=不注入）；**不做版本更新**；包内技能随包注入，per-turn 同样可被 skills 白名单命中（slug） |
 | 连接器 | 外部工具服务（MCP 协议，stdio/sse/http），`NUOMI_CONNECTORS` 种子 + `connectors.json` 权威；**per-turn 可指定挂载**（对话请求 connectors 字段；不传=默认全挂，空=不挂） |
+| 大模型 Provider | LLM 服务配置（OpenAI 兼容；base_url/api_key/模型列表），`工作区/providers.json` 权威（运行时），.env `LLM_*` 仅种子回退；**设置页「大模型」多 Provider 管理**；模型不绑专家（2026-10-04），**对话框 per-turn 选择**（请求 model 字段） |
 | 桌宠模型 Model | 表现层资产（Live2D，**工作区 `models/2D/<id>/`**，2026-10-04 迁出壳仓库；仓库仅留可分发种子 `assets/models/2D/hiyori`，扫描时幂等播种）；选中模型 = 激活对应插件（互斥）；**与会话解耦**（2026-10-04 起切模型不换会话） |
 | 动作播放链 | 对话触发模型插件工具（动作/表情）→ 后端事件总线（`/api/pet/events` SSE）→ 壳常驻订阅播放（断线 3s 重连） |
 | 表现层协议 | v3 octop 事件帧（token/tool_call_chunk/tool_result/usage/done，带 node+thread_id）；**无 emotion 事件** |
@@ -71,7 +72,7 @@ cd shells/myspy && npm start
 
 **专家/插件**：`GET|POST /agents` · `GET|PATCH|DELETE /agents/{id}` · `POST /agents/{id}/start|stop|status` · `GET /plugins` · `POST /plugins/sync` · `POST /plugins/import`（zip）· `POST /plugins/import-git`（git 仓库）· `PATCH /plugins/{id}`（启停）· `DELETE /plugins/{id}`（模型插件 400 拒绝，由桌宠删除级联）。**已废除**：`GET|PUT /agents/{id}/plugins`（专家-插件绑定，2026-10-04 解耦删除）
 
-**技能/技能包**：`GET /skills` · `GET /skills/builtin`（内置只读）· `GET|PATCH|DELETE /skills/{name}` · `POST /skills/import`（zip）· `POST /skills/import-git`（git 仓库）· `POST /skills/install`（SkillHub 单技能，requires_api_key 标注）· `GET /skillhub/search|rankings|skillsets{?q,/{slug}}`（search 循环翻页一次 50） · `GET /settings/env` · `PUT /settings/env`（应用设置环境变量，{workspace}/env.json → os.environ，技能/连接器 API key 在此配置）· `GET|POST /skill-packages` · `POST /skill-packages/from-skillhub` · `PATCH|DELETE /skill-packages/{id}`
+**技能/技能包**：`GET /skills` · `GET /skills/builtin`（内置只读）· `GET|PATCH|DELETE /skills/{name}` · `POST /skills/import`（zip）· `POST /skills/import-git`（git 仓库）· `POST /skills/install`（SkillHub 单技能，requires_api_key 标注）· `GET /skillhub/search|rankings|skillsets{?q,/{slug}}`（search 循环翻页一次 50） · `GET /settings/env` · `PUT /settings/env`（应用设置环境变量，{workspace}/env.json → os.environ，技能/连接器 API key 在此配置）· `GET|PUT /settings/providers`（大模型 Provider，存 {workspace}/providers.json；PUT 整体保存：api_key 空串=保持原值、释放实例；GET 脱敏；校验 id 唯一/base_url/模型非空 → 400；模型不绑专家，不校验专家字段）· `GET|POST /skill-packages` · `POST /skill-packages/from-skillhub` · `PATCH|DELETE /skill-packages/{id}`
 
 **其他**：`GET|POST /connectors` · `PUT|DELETE /connectors/{name}`（控制台增删改，connectors.json 持久化，变更下次对话生效）· `GET /workspace` · `GET /pet/models` · `POST /pet/models/switch` · `DELETE /pet/models/{id}`（级联删插件+资产，**不换会话**）· `GET|PUT /pet/status`（桌宠开关：读写壳 config.json `ui.pet_enabled`，壳 watch 后创建/销毁桌宠窗口；关闭=完全停止窗口，壳进程与后端对话不受影响）
 
@@ -79,7 +80,7 @@ OpenAI 兼容：`app/transport/openai_compat.py`（`/v1/chat/completions`，mode
 
 ## 5. 已验证链路（回归依据；细节以代码/实测为准）
 
-插件链（weather 触发 tool_call→tool_result；zip/git 导入均实测）、技能链（frontmatter+启停；git 导入实测 anthropics/skills→template-skill）、技能链（frontmatter+启停）、连接器链（pet_mood，MCP 协议）、协议链（/chat octop 帧 56 帧无解析错误）、控制台链（各板块无 console 错误）、壳链（面板重试/订阅断线重连）、**SkillHub 链**（真实市场：search/rankings/skillsets、单技能安装、技能集建包 6 技能、包启停/删除、chat 注入均实测通过）、模型切换链（插件互斥+manager.release，**不换会话**，2026-10-04 起）、**桌宠开关链**（控制台「桌宠」页开关 → /pet/status → config watch → 窗口创建/销毁，启动时按开关决定是否创建，2026-10-04）、会话链（真实线程列表，无 default 合成）、**管理页卡片化链**（专家/技能（已安装+市场）/桌宠/插件/连接器五页统一卡片网格，浏览器实测同行严格等高：技能页 5 列 179px、桌宠 sm 2 列 306px，2026-10-04）、**专家-插件解耦链**（/agents/{id}/plugins 404；插件全局启停即对所有专家生效；weather 对话触发工具调用，2026-10-04）、**对话框能力选择链**（技能选择器选中→chip→对话携带 skills 白名单；weather 工具调用→消息气泡折叠步骤（tool_call args + tool_result content）→轨迹抽屉时间线，浏览器实测，2026-10-04）。
+插件链（weather 触发 tool_call→tool_result；zip/git 导入均实测）、技能链（frontmatter+启停；git 导入实测 anthropics/skills→template-skill）、技能链（frontmatter+启停）、连接器链（pet_mood，MCP 协议）、协议链（/chat octop 帧 56 帧无解析错误）、控制台链（各板块无 console 错误）、壳链（面板重试/订阅断线重连）、**SkillHub 链**（真实市场：search/rankings/skillsets、单技能安装、技能集建包 6 技能、包启停/删除、chat 注入均实测通过）、模型切换链（插件互斥+manager.release，**不换会话**，2026-10-04 起）、**桌宠开关链**（控制台「桌宠」页开关 → /pet/status → config watch → 窗口创建/销毁，启动时按开关决定是否创建，2026-10-04）、会话链（真实线程列表，无 default 合成）、**管理页卡片化链**（专家/技能（已安装+市场）/桌宠/插件/连接器五页统一卡片网格，浏览器实测同行严格等高：技能页 5 列 179px、桌宠 sm 2 列 306px，2026-10-04）、**专家-插件解耦链**（/agents/{id}/plugins 404；插件全局启停即对所有专家生效；weather 对话触发工具调用，2026-10-04）、**对话框能力选择链**（技能选择器选中→chip→对话携带 skills 白名单；weather 工具调用→消息气泡折叠步骤（tool_call args + tool_result content）→轨迹抽屉时间线，浏览器实测，2026-10-04）、**大模型配置链**（设置页「大模型」多 Provider CRUD：base_url/模型列表/API key 脱敏、api_key 留空保持、保存后释放实例，浏览器实测，2026-10-04）、**模型 per-turn 选择链**（agents 表 default_model 列删除（旧库 DROP COLUMN 迁移）；对话框「模型」Select 选中 DeepSeek 主服务 · deepseek-chat → 请求带 model → harness ChatRequest.model 覆盖；非法模型 400；不带 model 走默认，2026-10-04）。
 
 **注意**：部分市场技能 SKILL.md 的 description 含裸 `: ` 导致 harness YAML 解析失败被跳过（如 superpowers-tdd）——与 Octop 行为一致，非 nuomi bug。
 
@@ -169,3 +170,5 @@ dc242b1  卡片等高修复：antd5 grid 列为裸 div，.ant-row > div（amend 
 ```
 
 开发规范：`make lint`（ruff）/ `make typecheck`（mypy），CI 在 .github/workflows。
+<TBD3>  feat: 大模型配置页（providers.json CRUD）+ 模型不绑专家（default_model 列删除，对话框 per-turn 选模型）
+<TBD4>  docs: HANDOVER 回填（大模型配置 + 模型解耦）

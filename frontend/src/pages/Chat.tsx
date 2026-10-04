@@ -166,11 +166,13 @@ export default function ChatPage() {
   const [sending, setSending] = useState(false);
   const [streamText, setStreamText] = useState('');
   const [streamTools, setStreamTools] = useState<ToolEvent[]>([]);
-  // 能力选择（per-turn 注入：技能白名单 / 连接器挂载）
+  // 能力选择（per-turn 注入：技能白名单 / 连接器挂载 / 模型）
   const [skills, setSkills] = useState<Skill[]>([]);
   const [connectors, setConnectors] = useState<ConnectorServer[]>([]);
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [selectedConnectors, setSelectedConnectors] = useState<string[]>([]);
+  const [modelOptions, setModelOptions] = useState<{ value: string; label: string }[]>([]);
+  const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [trajectoryOpen, setTrajectoryOpen] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
 
@@ -182,12 +184,21 @@ export default function ChatPage() {
 
   useEffect(() => { loadAgents(); }, [loadAgents]);
 
-  // 能力清单（已启用技能 + 连接器），对话框里按 per-turn 选择
+  // 能力清单（已启用技能 + 连接器 + 模型），对话框里按 per-turn 选择
   useEffect(() => {
-    Promise.all([get<Skill[]>('/skills'), get<ConnectorServer[]>('/connectors')])
-      .then(([sk, conn]) => {
+    Promise.all([
+      get<Skill[]>('/skills'),
+      get<ConnectorServer[]>('/connectors'),
+      get<{ providers: { id: string; name: string; models: { id: string }[] }[] }>('/settings/providers'),
+    ])
+      .then(([sk, conn, provs]) => {
         setSkills(sk.filter(s => s.enabled));
         setConnectors(conn);
+        setModelOptions(
+          provs.providers.flatMap(p =>
+            (p.models || []).map(m => ({ value: `${p.id}/${m.id}`, label: `${p.name} · ${m.id}` })),
+          ),
+        );
       })
       .catch(() => { /* 能力加载失败不阻塞对话 */ });
   }, []);
@@ -301,10 +312,11 @@ export default function ChatPage() {
     setStreamTools([]);
     const toolEvents: ToolEvent[] = [];
     let accumulated = '';
-    // per-turn 能力注入：显式选择的技能/连接器才传（不传=全量技能/默认连接器）
+    // per-turn 能力注入：显式选择的技能/连接器/模型才传（不传=全量技能/默认连接器/默认模型）
     const opts = {
       skills: selectedSkills.length ? selectedSkills : undefined,
       connectors: selectedConnectors.length ? selectedConnectors : undefined,
+      model: selectedModel ?? undefined,
     };
 
     try {
@@ -472,6 +484,17 @@ export default function ChatPage() {
             <Space size={4} style={{ marginBottom: 4 }}>
               <SkillPicker skills={skills} selected={selectedSkills} onToggle={toggleSkill} />
               <ConnectorPicker connectors={connectors} selected={selectedConnectors} onToggle={toggleConnector} />
+              <Select
+                size="small"
+                allowClear
+                placeholder="模型"
+                style={{ width: 170 }}
+                value={selectedModel ?? undefined}
+                onChange={setSelectedModel}
+                options={modelOptions}
+                disabled={modelOptions.length === 0}
+                popupMatchSelectWidth={false}
+              />
             </Space>
             <Input.TextArea
               value={input}

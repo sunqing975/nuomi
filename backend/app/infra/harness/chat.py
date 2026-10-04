@@ -37,13 +37,15 @@ async def stream_chat(
     mcp_default_servers: list[str] | None = None,
     skills: list[str] | None = None,
     connectors: list[str] | None = None,
+    model: str | None = None,
 ) -> AsyncIterator[dict]:
     """流式对话：把 harness 事件翻译成 nuomi 标准化事件。
 
-    skills / connectors 为 per-turn 能力选择（对齐 octop 对话框语义）：
+    skills / connectors / model 为 per-turn 能力选择（对齐 octop 对话框语义）：
     - skills=None 全量技能；[] 禁用全部技能；[name/slug...] 只启用这些
     - connectors=None 用默认连接器（agent 配置的 mcp_default_servers）；
       [] 不挂载连接器；[name...] 只挂载这些连接器
+    - model=None 用 agent 默认模型；[provider/model] 覆盖本次模型（harness 原生优先）
     """
     agent = manager.get_agent(
         agent_id,
@@ -70,6 +72,7 @@ async def stream_chat(
         skills=skills,
         mcp_servers=mcp_servers,
         mcp_use_default=mcp_use_default,
+        model=model,
     )
 
     text_parts: list[str] = []

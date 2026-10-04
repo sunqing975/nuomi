@@ -5,6 +5,7 @@ v0.13 起不背历史数据：库文件不存在时全新创建，不写迁移�
 
 from __future__ import annotations
 
+import contextlib
 import json
 import sqlite3
 import uuid
@@ -20,7 +21,6 @@ CREATE TABLE IF NOT EXISTS agents (
   name TEXT NOT NULL,
   description TEXT DEFAULT '',
   persona_mbti TEXT DEFAULT '',
-  default_model TEXT DEFAULT 'llm/deepseek-chat',
   system_prompt TEXT DEFAULT '',
   enabled INTEGER DEFAULT 1,
   config_json TEXT DEFAULT '{}',
@@ -101,7 +101,7 @@ def now_iso() -> str:
 
 
 def init_db() -> None:
-    """建表（幂等）。"""
+    """建表（幂等）+ 旧库字段清理。"""
     db_path().parent.mkdir(parents=True, exist_ok=True)
     with connect() as conn:
         conn.executescript(AGENTS_DDL)
@@ -109,6 +109,19 @@ def init_db() -> None:
         conn.executescript(SKILLS_DDL)
         conn.executescript(SKILL_PACKAGES_DDL)
         conn.executescript(SKILL_PACKAGE_SKILLS_DDL)
+        _drop_legacy_column(conn, "agents", "default_model")  # 模型不绑专家（2026-10-04 解耦）
+
+
+def _drop_legacy_column(conn, table: str, column: str) -> None:
+    """旧库残留列清理（SQLite 3.35+ DROP COLUMN；模型不绑专家后 default_model 死列）。
+
+    先确认列存在再删；失败静默（旧 SQLite 不支持时靠重建新库兜底，列不读写即无害）。
+    """
+    cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    if column not in cols:
+        return
+    with contextlib.suppress(Exception):
+        conn.execute(f"ALTER TABLE {table} DROP COLUMN {column}")
 
 
 def gen_agent_id() -> str:
