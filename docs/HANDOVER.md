@@ -192,12 +192,13 @@ f27f8ae  壳打通：控制面板 → React 控制台 /console/
 afbed65  壳 SSE 动作/表情播放器 + aidang 模型试装
 1e2b54c  模型资产管理：扫描/切换/插件联动 + 壳 watch + 控制台模型页
 1bf979d  docs: HANDOVER 交接文档更新到 1e2b54c（模型资产管理主线）
+b35e874  feat: SkillHub 技能市场 + 技能包 + 会话/删除/壳简化主线（2026-10-04，28 文件）
 ```
 
-**未提交工作区（HEAD=1bf979d 之后，2026-10-03 ~ 10-04 全部改动，`git status` 可见）**：
-- 后端：`domain/chat/`（新，会话服务）、`domain/pet/service.py`（模型插件只读互斥）、`domain/plugins/service.py`、`infra/harness/chat.py`（stream_octop_sse）、`transport/api.py`（会话 API + /chat 切 octop 帧）、`openai_compat.py`、`main.py`
-- 前端：`App.tsx`（菜单"模型"改名"桌宠"）、`api.ts`（chatStream 解析 octop 帧）、`pages/Chat.tsx`（新，会话列表/历史走后端）、`pages/Models.tsx`、`pages/Plugins.tsx`（模型插件只读）
-- 壳：`app.js`（删 saveConversationHistory + 会话管理 + octop 帧解析 + **2026-10-04 移除输入框/字幕/ASR/弹幕/对话链路，620 行 → 1160 行**；`subscribePetEvents` 常驻订阅）、`config.json`（thread 绑定）、`index.html`/`css/styles.css`（**输入框/字幕 UI 移除，仅画布+右键菜单**）、`js/model/model-interaction.js` + `js/model/vrm-model-interaction.js`（**删已移除 DOM 的聊天框拖动/穿透逻辑**——不移除会 `null.addEventListener` 中断初始化，表现为"模型加载完但订阅不建立、动作不播放"）
-- 文档：`docs/pet-protocol.md`（v3）
+**b35e874 提交内容（2026-10-03 ~ 10-04 全部主线，`git show --stat b35e874` 可查）**：
+- 后端：`domain/chat/`（新，会话服务）、`domain/skillpackages/`（新，技能包）、`infra/skillhub.py` + `infra/pet_events.py`（新）、`transport/api.py`（会话 API + /chat octop 帧 + SkillHub/技能包路由 + 删除端点）、`openai_compat.py`、`storage/db.py`（skill_packages 表）、`config.py`（skillhub_host）
+- 前端：`App.tsx`（菜单"模型"改名）、`api.ts`（chatStream octop 帧 + SkillHub 类型）、`pages/Chat.tsx`（新，会话列表）、`pages/Skills.tsx`（已安装/市场双 tab）、`Models.tsx`/`Plugins.tsx`（模型插件只读）
+- 壳：`app.js`（octop 帧解析 + 常驻订阅 + **移除输入框/字幕/ASR/弹幕/对话链路**）、`config.json`（thread 绑定）、`index.html`/`css/styles.css`（仅画布+右键菜单）、`js/model/model-interaction.js` + `vrm-model-interaction.js`（删已移除 DOM 的聊天框逻辑）
+- 文档：`docs/pet-protocol.md`（v3）、HANDOVER 技能包主线
 
 开发规范：`make lint`（ruff）/ `make typecheck`（mypy），CI 已在 .github/workflows 配置。
