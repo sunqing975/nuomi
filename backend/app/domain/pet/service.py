@@ -529,16 +529,20 @@ def _summarize_motion_file(path: Path) -> dict:
 
 
 def enrich_model(model_id: str) -> dict:
-    """用 AI 分析模型目录，生成 actions.json + instructions.md。
+    """分析模型，生成 actions.json + instructions.md + 插件。
 
-    流程：
-    1. 读 model3.json 拿到 motions/expressions 列表
-    2. 读所有 .exp3.json 参数 + motion 曲线摘要（分段，控制 token）
-    3. 调 LLM 生成语义动作映射 + 身体使用说明
-    4. 写 actions.json + 重生成插件
-
-    失败时返回 {"ok": False, "error": ...}，不影响模型使用（fallback 到裸工具名）。
+    Live2D：AI 分析 motions/expressions 目录生成语义动作映射。
+    VRM：直接生成通用动作工具集（表情 + 预设骨骼动作），不需要 AI。
     """
+    # --- VRM 3D 模型：直接生成通用动作工具 ---
+    model_path = None
+    for vrm_file in sorted(MODEL_DIR_3D.glob("*.vrm")):
+        if vrm_file.stem == model_id:
+            model_path = vrm_file
+            break
+    if model_path:
+        return _enrich_vrm(model_id, model_path)
+
     model_dir = MODEL_DIR / model_id
     model_files = sorted(model_dir.glob("*.model3.json"))
     if not model_files:
@@ -656,3 +660,75 @@ def enrich_model(model_id: str) -> dict:
 
     logger.info("enrich_model %s done: %d actions", model_id, len(result["actions"]))
     return {"ok": True, "actions": len(result["actions"])}
+
+
+def _enrich_vrm(model_id: str, vrm_path: Path) -> dict:
+    """VRM 模型：直接生成通用动作工具集（表情 + 预设骨骼动作），不需要 AI。
+
+    VRM 没有 motions/expressions 目录——表情是 blend shape 权重，动作是运行时骨骼旋转。
+    这里生成一套通用工具，壳里 VRM 模式下映射到 expressionManager + humanoid bone。
+    """
+    # 通用表情（blend shape，所有 VRM 模型基本都有）
+    expressions = {
+        "happy":    {"label": "开心微笑", "emotions": ["happy", "greeting", "praise"]},
+        "angry":    {"label": "生气", "emotions": ["angry", "displeased"]},
+        "sad":      {"label": "难过", "emotions": ["sad", "disappointed"]},
+        "relaxed":  {"label": "放松", "emotions": ["calm", "thinking", "listening"]},
+        "surprised":{"label": "惊讶张嘴", "emotions": ["surprised", "thinking", "question"]},
+        "blink":    {"label": "眨眼", "emotions": ["neutral"]},
+        "neutral":  {"label": "中性表情", "emotions": ["idle", "neutral"]},
+    }
+    # 预设动作（壳里用骨骼旋转实现）
+    actions = {
+        "wave_hand":       {"label": "挥手打招呼", "emotions": ["greeting", "happy", "bye"]},
+        "nod":             {"label": "点头", "emotions": ["agree", "yes", "understanding"]},
+        "shake_head":      {"label": "摇头", "emotions": ["deny", "no", "disagree"]},
+        "tilt_head":       {"label": "歪头", "emotions": ["curious", "thinking", "question"]},
+        "raise_right_hand":{"label": "举起右手", "emotions": ["point", "show", "explain"]},
+        "raise_left_hand": {"label": "举起左手", "emotions": ["point", "show", "explain"]},
+        "look_left":       {"label": "看向左边", "emotions": ["thinking", "shy"]},
+        "look_right":      {"label": "看向右边", "emotions": ["thinking", "shy"]},
+        "look_up":         {"label": "抬头看", "emotions": ["thinking", "surprised"]},
+        "look_down":       {"label": "低头看", "emotions": ["shy", "sad", "thoughtful"]},
+        "hands_on_hips":   {"label": "叉腰", "emotions": ["confident", "angry", "explain"]},
+        "shrug":           {"label": "耸肩", "emotions": ["helpless", "don't_know", "casual"]},
+    }
+
+    actions_json = {
+        "model_type": "vrm",
+        "expressions": expressions,
+        "actions": actions,
+    }
+
+    # 写 actions.json 到 VRM 旁边的目录
+    plugin_dir = settings.workspace_path / "plugins" / model_id
+    plugin_dir.mkdir(parents=True, exist_ok=True)
+    (plugin_dir / "actions.json").write_text(
+        json.dumps(actions_json, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+    # instructions.md：告诉 LLM 这是 3D 模型，可以直接控制表情和身体
+    instructions = f"""# {model_id}（VRM 3D 桌宠）
+
+这是一个 3D VRM 模型。你可以通过工具直接控制 ta 的表情和身体动作。
+
+## 可用表情（调 set_expression 工具，weight 0~1）
+{chr(10).join(f'- **{k}**：{v["label"]}' for k, v in expressions.items())}
+
+## 可用动作（调 do_action 工具）
+{chr(10).join(f'- **{k}**：{v["label"]}' for k, v in actions.items())}
+
+## 使用建议
+- 对话时根据情绪自动切换表情（开心→happy，思考→relaxed，惊讶→surprised）
+- 打招呼时 wave_hand，同意时 nod，不同意时 shake_head
+- 表情和动作可以组合（笑 + 挥手）
+- 不要同时用矛盾的表情（happy 和 angry）
+"""
+    (plugin_dir / "instructions.md").write_text(instructions, encoding="utf-8")
+
+    # 生成插件（直接传 actions，不走 list_models）
+    _generate_semantic_plugin(model_id, actions_json["actions"])
+
+    logger.info("enrich_vrm %s done: %d expressions, %d actions",
+                model_id, len(expressions), len(actions))
+    return {"ok": True, "actions": len(actions)}

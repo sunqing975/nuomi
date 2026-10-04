@@ -111,13 +111,17 @@ class PluginService:
     def model_plugin_ids(self) -> set[str]:
         """桌宠模型插件 id 集合（pet 生成的插件：插件名 = 模型名）。
 
-        以 pet 模型扫描为准（有动作/表情、生成过插件的模型）。
-        模型插件互斥由插件启停层面保证（同一时间只启用一个），
-        工具随插件启停热挂载，装配层无需二次过滤。
+        判断标准：plugins/<model_id>/ 目录存在（Live2D 有 motions/expressions，
+        VRM 有通用动作工具集）。模型插件互斥由插件启停层面保证。
         """
         from app.domain.pet.service import list_models  # 局部 import，避免模块级循环
 
-        return {m["id"] for m in list_models() if m["motions"] or m["expressions"]}
+        result = set()
+        for m in list_models():
+            plugin_dir = self.plugins_dir() / m["id"]
+            if plugin_dir.is_dir():
+                result.add(m["id"])
+        return result
 
     def tools(self) -> list:
         """按全局启停装配插件工具（StructuredTool 列表）。
