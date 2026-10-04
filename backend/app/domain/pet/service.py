@@ -527,9 +527,15 @@ def enrich_model(model_id: str) -> dict:
     meta = _load_json(model_files[0])
     fr = meta.get("FileReferences") or {}
 
+    motions = fr.get("Motions") or {}
+    expressions_list = fr.get("Expressions") or []
+    if not motions and not expressions_list:
+        logger.info("enrich_model %s skipped: no motions/expressions", model_id)
+        return {"ok": True, "skipped": "no motions/expressions"}
+
     # 1. 表情摘要
     expressions: dict[str, dict] = {}
-    for e in fr.get("Expressions", []):
+    for e in expressions_list:
         if not isinstance(e, dict):
             continue
         name = e.get("Name") or Path(e.get("File", "")).stem
