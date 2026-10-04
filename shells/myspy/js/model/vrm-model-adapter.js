@@ -4,6 +4,7 @@
 const EventEmitter = require('events');
 const THREE = require('three');
 const { VMCSender } = require('../services/vmc-sender.js');
+const { VRMAnimationLoaderPlugin, createVRMAnimationClip } = require('@pixiv/three-vrm-animation');
 
 class VRMModelAdapter extends EventEmitter {
     constructor(vrm, scene, camera, renderer, canvas) {
@@ -14,7 +15,12 @@ class VRMModelAdapter extends EventEmitter {
         this.renderer = renderer;
         this.canvas = canvas;
         this.modelType = 'vrm';
-        this.vrmGroup = null; // 由vrm-model-setup设置，包裹vrm.scene的Group（用于朝向修正）
+        this.vrmGroup = null;
+
+        // 动画系统
+        this._animationMixer = new THREE.AnimationMixer(vrm.scene);
+        this.animations = {}; // name -> AnimationClip
+        this.currentAction = null;
 
         // 兼容Live2D的基本属性
         this._x = 0;
@@ -214,6 +220,34 @@ class VRMModelAdapter extends EventEmitter {
     }
 
     // 兼容Live2D的motion方法
+    // 加载 .vrma 动画文件
+    async loadVRMA(name, filePath) {
+        const { GLTFLoader } = require('../lib/gltf-loader-bundle.cjs');
+        const loader = new GLTFLoader();
+        loader.register((parser) => new VRMAnimationLoaderPlugin(parser));
+        const gltf = await loader.loadAsync(filePath);
+        const vrmAnim = gltf.userData.vrmAnimations[0];
+        const clip = createVRMAnimationClip(vrmAnim, this.vrm);
+        this.animations[name] = clip;
+        console.log(`[VRM动画] 加载 ${name} 成功, ${clip.duration.toFixed(2)}s`);
+    }
+
+    // 播放动画
+    playAnimation(name, loop = false) {
+        const clip = this.animations[name];
+        if (!clip) {
+            console.warn(`[VRM动画] 未找到动画: ${name}`);
+            return;
+        }
+        if (this.currentAction) this.currentAction.fadeOut(0.2);
+        const action = this._animationMixer.clipAction(clip);
+        action.reset().fadeIn(0.2).play();
+        action.loop = loop ? THREE.LoopRepeat : THREE.LoopOnce;
+        action.clampWhenFinished = true;
+        this.currentAction = action;
+        console.log(`[VRM动画] 播放 ${name}`);
+    }
+
     motion(name) {
         if (!this.vrm || !this.vrm.humanoid) return;
         console.log('[VRM动作]', name);
