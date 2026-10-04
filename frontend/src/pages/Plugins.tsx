@@ -83,11 +83,6 @@ export default function PluginsPage() {
           <Tag color="blue" style={{ position: 'absolute', top: 8, right: 8, margin: 0, fontSize: 11 }}>
             {p.kind || 'tool'}
           </Tag>
-          {p.model_plugin && (
-            <Tag color="orange" style={{ position: 'absolute', top: 30, right: 8, margin: 0, fontSize: 11 }}>
-              桌宠模型
-            </Tag>
-          )}
           <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', paddingRight: 44 }}>
             <Avatar size={40} style={{ backgroundColor: color, flexShrink: 0 }}>
               {(p.plugin_id[0] || '?').toUpperCase()}
@@ -104,28 +99,18 @@ export default function PluginsPage() {
           </div>
           <div style={{ flex: 1 }} />
           <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            {p.model_plugin ? (
-              <Tag color={p.enabled ? 'orange' : 'default'} style={{ margin: 0 }}>
-                {p.enabled ? '启用中' : '已停用'}
-              </Tag>
-            ) : (
-              <span style={{ color: '#9ca3af', fontSize: 12 }}>全局启停</span>
-            )}
-            {p.model_plugin ? (
-              <small style={{ color: '#d1d5db', fontSize: 12 }}>随模型删除</small>
-            ) : (
-              <Space size={4}>
-                <Switch size="small" checked={p.enabled} onChange={v => toggle(p, v)} />
-                <Popconfirm
-                  title="删除插件？"
-                  description="将删除插件目录与全部绑定，不可恢复"
-                  okText="删除" cancelText="取消"
-                  onConfirm={() => remove(p)}
-                >
-                  <Button size="small" type="text" danger icon={<DeleteOutlined />} />
-                </Popconfirm>
-              </Space>
-            )}
+            <span style={{ color: '#9ca3af', fontSize: 12 }}>全局启停</span>
+            <Space size={4}>
+              <Switch size="small" checked={p.enabled} onChange={v => toggle(p, v)} />
+              <Popconfirm
+                title="删除插件？"
+                description="将删除插件目录与全部绑定，不可恢复"
+                okText="删除" cancelText="取消"
+                onConfirm={() => remove(p)}
+              >
+                <Button size="small" type="text" danger icon={<DeleteOutlined />} />
+              </Popconfirm>
+            </Space>
           </div>
         </Card>
       </List.Item>

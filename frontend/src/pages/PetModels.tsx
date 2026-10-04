@@ -41,14 +41,12 @@ export default function PetModelsPage() {
     if (m.id === active) return;
     setSwitching(m.id);
     try {
-      const r = await post<{ ok: boolean; model: PetModel; activated_plugin?: string }>(
+      const r = await post<{ ok: boolean; model: PetModel }>(
         '/pet/models/switch', { model_id: m.id },
       );
       setActive(r.model.id);
       message.success(
-        r.activated_plugin
-          ? `已切换到「${r.model.id}」，并激活桌宠插件「${r.activated_plugin}」（LLM 现在可以直接叫它做动作）`
-          : `已切换到「${r.model.id}」（壳 watch config 自动重载）`,
+        `已切换到「${r.model.id}」（表情工具随模型自动更新，壳 watch config 自动重载）`,
       );
     } catch (e) {
       message.error(`切换失败：${(e as Error).message}`);
@@ -85,8 +83,8 @@ export default function PetModelsPage() {
       >
         <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 0 }}>
           {petEnabled
-            ? '桌宠窗口显示中。关闭将销毁桌宠窗口（释放资源）并停用全部桌宠动作/表情插件，后端对话能力不受影响，可随时重新开启。'
-            : '桌宠窗口已完全停止（释放资源），全部桌宠动作/表情插件已停用（LLM 不再调用动作工具）。开启后恢复当前桌宠的插件。'}
+            ? '桌宠窗口显示中。关闭将销毁桌宠窗口（释放资源）并停用桌宠动作/表情插件（vrm-pet），后端对话能力不受影响，可随时重新开启。'
+            : '桌宠窗口已完全停止（释放资源），桌宠动作/表情插件已停用（LLM 不再调用动作工具）。开启后恢复桌宠插件。'}
         </Typography.Paragraph>
       </Card>
 
@@ -94,18 +92,17 @@ export default function PetModelsPage() {
         type="info"
         showIcon
         style={{ marginBottom: 16 }}
-        message="桌宠模型资产（工作区 models/2D/）"
+        message="桌宠模型资产（工作区 models/3D/，VRM）"
         description={
           <span style={{ fontSize: 13 }}>
-            插件名 = 桌宠名，工具名 = 桌宠真实动作/表情名。选中桌宠即激活对应插件，
-            对桌宠说「给我比个心」，LLM 会直接调用该桌宠的动作工具来驱动桌宠。
-            没有动作/表情的桌宠同样可以切换（作为纯外观桌宠），只是不会生成插件。
-            标注「内置」的桌宠由种子机制分发（随仓库分发、启动自动复原），不可删除。
+            所有桌宠共用同一套动作/表情插件（vrm-pet）：动作来自 Mixamo 动画（.vrma），
+            表情来自当前模型的 blend shape。对桌宠说「给我比个心」「笑一个」，
+            LLM 会调用动态装配的动作/表情工具来驱动桌宠。切模型 / 新增动画无需重启。
           </span>
         }
       />
 
-      {models.length === 0 && <Empty description="2D/ 目录下没有可用的桌宠形象" />}
+      {models.length === 0 && <Empty description="3D/ 目录下没有可用的 VRM 桌宠形象" />}
 
       <Row gutter={[14, 14]} className="nuomi-grid">
         {models.map(m => {

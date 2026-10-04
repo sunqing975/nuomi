@@ -52,7 +52,7 @@ class VRMModelAdapter extends EventEmitter {
             }
         };
 
-        // VRM表情映射（Live2D情绪 → VRM表情）
+        // VRM表情映射（情绪名 → VRM表情，中文情绪名用）
         this._expressionMap = {
             '开心': 'happy',
             '生气': 'angry',
@@ -61,6 +61,11 @@ class VRMModelAdapter extends EventEmitter {
             '害羞': 'relaxed',
             '俏皮': 'happy'
         };
+
+        // 模型真实 blend shape 名索引（小写 → 真实名，VRM expressionManager 键大小写敏感）
+        // 例：模型命名 "Angry"/"Joy"/"Blink"，索引后 "angry"→"Angry"，setValue 才能命中
+        this._exprByLower = {};
+        this._indexExpressionNames();
 
         // 当前播放状态
         this._currentExpression = null;
@@ -192,7 +197,7 @@ class VRMModelAdapter extends EventEmitter {
             }
 
             try {
-                this.vrm.expressionManager.setValue('blink', blinkValue);
+                this.vrm.expressionManager.setValue(this._resolveExpression('blink'), blinkValue);
             } catch (e) {
                 console.warn('眨眼动画异常:', e.message);
             }
@@ -209,10 +214,10 @@ class VRMModelAdapter extends EventEmitter {
             // 放大幅度并使用多元音混合
             const v = Math.max(0, Math.min(value * 1.3, 1.0));
             try {
-                // aa = 大张嘴（主权重），oh/ou = 中幅度圆口
-                this.vrm.expressionManager.setValue('aa', v);
-                this.vrm.expressionManager.setValue('oh', v * 0.3);
-                this.vrm.expressionManager.setValue('ou', v * 0.15);
+                // aa = 大张嘴（主权重），oh/ou = 中幅度圆口（resolve 真实名，键大小写敏感）
+                this.vrm.expressionManager.setValue(this._resolveExpression('aa'), v);
+                this.vrm.expressionManager.setValue(this._resolveExpression('oh'), v * 0.3);
+                this.vrm.expressionManager.setValue(this._resolveExpression('ou'), v * 0.15);
             } catch (e) {
                 // 静默处理
             }
@@ -427,13 +432,37 @@ class VRMModelAdapter extends EventEmitter {
             default:
                 // 未知动作：随机眨眼
                 if (this.vrm.expressionManager) {
-                    this.vrm.expressionManager.setValue('blink', 1);
-                    setTimeout(() => this.vrm.expressionManager.setValue('blink', 0), 200);
+                    const blinkExpr = this._resolveExpression('blink');
+                    this.vrm.expressionManager.setValue(blinkExpr, 1);
+                    setTimeout(() => this.vrm.expressionManager.setValue(blinkExpr, 0), 200);
                 }
         }
     }
 
     // 兼容Live2D的expression方法
+    // 收集 expressionManager 的全部真实 blend shape 名（小写索引）
+    _indexExpressionNames() {
+        this._exprByLower = {};
+        if (!this.vrm || !this.vrm.expressionManager) return;
+        try {
+            const em = this.vrm.expressionManager;
+            const names = [];
+            if (em.expressions && typeof em.expressions.keys === 'function') names.push(...em.expressions.keys());
+            if (em._expressionMap) names.push(...Object.keys(em._expressionMap));
+            if (Array.isArray(em.expressions)) names.push(...em.expressions.map(e => e.name));
+            for (const n of new Set(names)) {
+                this._exprByLower[String(n).toLowerCase()] = n;
+            }
+        } catch (e) {}
+    }
+
+    // 大小写不敏感解析真实表情名（找不到则原样返回）
+    _resolveExpression(name) {
+        if (!name) return name;
+        const hit = this._exprByLower[String(name).toLowerCase()];
+        return hit || name;
+    }
+
     expression(name) {
         if (!this.vrm || !this.vrm.expressionManager) return;
 
@@ -476,6 +505,13 @@ class VRMModelAdapter extends EventEmitter {
     _playExpression(expressionName, duration = 3000) {
         if (!this.vrm || !this.vrm.expressionManager) return;
 
+        // 解析模型真实名（大小写不敏感），否则 setValue 键不匹配表情不动
+        const realName = this._resolveExpression(expressionName);
+        if (!this._exprByLower[String(realName).toLowerCase()]) {
+            console.warn(`VRM表情 "${expressionName}" 不可用（模型无此 blend shape）`);
+            return;
+        }
+
         // 清除之前的自动恢复定时器
         if (this._expressionTimer) {
             clearTimeout(this._expressionTimer);
@@ -491,21 +527,21 @@ class VRMModelAdapter extends EventEmitter {
 
         // 设置新表情
         try {
-            this.vrm.expressionManager.setValue(expressionName, 1.0);
-            this._currentExpression = expressionName;
+            this.vrm.expressionManager.setValue(realName, 1.0);
+            this._currentExpression = realName;
 
             // 自动恢复
             this._expressionTimer = setTimeout(() => {
-                if (this._currentExpression === expressionName) {
+                if (this._currentExpression === realName) {
                     try {
-                        this.vrm.expressionManager.setValue(expressionName, 0);
+                        this.vrm.expressionManager.setValue(realName, 0);
                     } catch (e) {}
                     this._currentExpression = null;
                 }
                 this._expressionTimer = null;
             }, duration);
         } catch (e) {
-            console.warn(`VRM表情 "${expressionName}" 不可用`);
+            console.warn(`VRM表情 "${realName}" 不可用`);
         }
     }
 
@@ -766,25 +802,15 @@ class VRMModelAdapter extends EventEmitter {
         };
     }
 
-    // 获取可用表情列表
+    // 获取可用表情列表（返回模型真实 blend shape 名）
     getAvailableExpressions() {
         if (!this.vrm || !this.vrm.expressionManager) return [];
 
         const expressions = [];
-        // VRM 1.0 expressions
-        const presetNames = ['happy', 'angry', 'sad', 'relaxed', 'surprised',
-                             'aa', 'ih', 'ou', 'ee', 'oh',
-                             'blink', 'blinkLeft', 'blinkRight',
-                             'lookUp', 'lookDown', 'lookLeft', 'lookRight',
-                             'neutral'];
-
-        for (const name of presetNames) {
-            try {
-                const expr = this.vrm.expressionManager.getExpression(name);
-                if (expr) expressions.push(name);
-            } catch (e) {}
+        // 用真实名索引（大小写敏感键），模型真实名如 Neutral/Angry/Joy/Blink
+        for (const realName of Object.values(this._exprByLower)) {
+            expressions.push(realName);
         }
-
         return expressions;
     }
 

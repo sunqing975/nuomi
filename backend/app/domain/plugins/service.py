@@ -5,13 +5,17 @@
 - 插件目录是 source of truth（plugin.yaml）；DB 只存启停状态
 - 全局启用（plugins.enabled）：插件启用即对所有专家可用（2026-10-04 起
   不再有专家-插件绑定，专家不绑定插件；能力随对话请求注入见后续设计）
+- 桌宠（方案B，2026-10-04）：只有一个共享 VRM 插件（vrm-pet），
+  其启用/停用绑定桌宠开关；动作/表情工具在 tools() 装配时按当前模型动态构造
 """
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
+from langchain_core.tools import StructuredTool
 from octop_harness.plugins import (
     PluginRegistry,
     build_plugin_tools,
@@ -65,12 +69,10 @@ class PluginService:
         with db.connect() as conn:
             rows = conn.execute("SELECT * FROM plugins ORDER BY name").fetchall()
         registry = PluginRegistry()
-        model_plugin_ids = self.model_plugin_ids()
         out = []
         for r in rows:
             d = dict(r)
             d["tool_count"] = sum(1 for t in registry.all_tools() if t.plugin_id == r["plugin_id"])
-            d["model_plugin"] = r["plugin_id"] in model_plugin_ids
             out.append(d)
         return out
 
@@ -108,31 +110,58 @@ class PluginService:
 
     # ---------- 工具装配（供对话端点） ----------
 
-    def model_plugin_ids(self) -> set[str]:
-        """桌宠模型插件 id 集合（pet 生成的插件：插件名 = 模型名）。
-
-        判断标准：plugins/<model_id>/ 目录存在（Live2D 有 motions/expressions，
-        VRM 有通用动作工具集）。模型插件互斥由插件启停层面保证。
-        """
-        from app.domain.pet.service import list_models  # 局部 import，避免模块级循环
-
-        result = set()
-        for m in list_models():
-            plugin_dir = self.plugins_dir() / m["id"]
-            if plugin_dir.is_dir():
-                result.add(m["id"])
-        return result
-
     def tools(self) -> list:
-        """按全局启停装配插件工具（StructuredTool 列表）。
+        """按全局启停装配插件工具 + 桌宠动态工具（StructuredTool 列表）。
 
         专家不再绑定插件（2026-10-04 解耦）：插件启用即对所有专家可用。
+        桌宠（方案B）：vrm-pet 插件启用时，动态构造 do_action / set_expression——
+        enum 清单按当前激活 VRM 模型（GLB blend shape）与 animations/*.vrma 实时生成，
+        切模型 / 新增动画零重启（工具在每次对话装配时重算）。
         工具名做 slug 防御：非 ASCII 名（如中文）改名为 tool_{n}，
         中文原名拼进 description，保证 OpenAI 兼容接口不 400。
         """
         global_enabled = {r["plugin_id"]: bool(r["enabled"]) for r in self.list_all()}
         tools = build_plugin_tools(global_plugins=global_enabled)
+        tools = tools + self._pet_dynamic_tools(global_enabled)
         return [self._sanitize_tool(t, i) for i, t in enumerate(tools)]
+
+    def _pet_dynamic_tools(self, global_enabled: dict) -> list:
+        """桌宠共享插件启用时，动态构造动作/表情工具（enum 随当前模型/动画实时变化）。"""
+        from app.domain.pet.service import (
+            VRM_PET_PLUGIN_ID,
+            list_pet_actions,
+            list_pet_expressions,
+        )
+
+        if not global_enabled.get(VRM_PET_PLUGIN_ID):
+            return []
+        actions = list_pet_actions()
+        expressions = list_pet_expressions()
+        out: list = []
+        if actions:
+            out.append(
+                StructuredTool.from_function(
+                    func=_make_do_action(actions),
+                    name="do_action",
+                    description=(
+                        "让桌宠做出一个动作（身体动画）。根据对话场景选最合适的动作，"
+                        "可用动作：\n" + "\n".join(f"- {a['name']}：{a['label_zh']}" for a in actions)
+                    ),
+                )
+            )
+        if expressions:
+            out.append(
+                StructuredTool.from_function(
+                    func=_make_set_expression(expressions),
+                    name="set_expression",
+                    description=(
+                        "切换桌宠的面部表情（blend shape）。根据对话情绪选最合适的表情，"
+                        "可用表情：\n"
+                        + "\n".join(f"- {e['name']}：{e['label_zh']}" for e in expressions)
+                    ),
+                )
+            )
+        return out
 
     @staticmethod
     def _sanitize_tool(tool, index: int):
@@ -153,6 +182,34 @@ class PluginService:
             "version": manifest.version,
             "description": manifest.description,
         }
+
+
+def _make_do_action(actions: list):
+    """闭包工厂：do_action 工具函数（参数 action 返回桌宠播放 payload）。"""
+    labels = {a["name"]: a["label_zh"] for a in actions}
+
+    def _do(action: str) -> str:
+        return json.dumps(
+            {"motion": action, "expressions": [], "label": labels.get(action, action)},
+            ensure_ascii=False,
+        )
+
+    _do.__doc__ = "让桌宠做出一个动作。"
+    return _do
+
+
+def _make_set_expression(expressions: list):
+    """闭包工厂：set_expression 工具函数（参数 expression 返回表情播放 payload）。"""
+    labels = {e["name"]: e["label_zh"] for e in expressions}
+
+    def _set(expression: str) -> str:
+        return json.dumps(
+            {"motion": None, "expressions": [expression], "label": labels.get(expression, expression)},
+            ensure_ascii=False,
+        )
+
+    _set.__doc__ = "切换桌宠的面部表情。"
+    return _set
 
 
 plugin_service = PluginService()

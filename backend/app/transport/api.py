@@ -220,67 +220,39 @@ async def delete_chat_thread(agent_id: str, thread_id: str) -> dict:
     return {"ok": True}
 
 
-def _resolve_pet_action(tool_name: str) -> dict | None:
-    """根据工具名查当前激活模型，返回桌宠该播放的完整 payload。
+def _resolve_pet_action(tool_name: str, args: str = "") -> dict | None:
+    """根据工具名 + 参数解析桌宠播放 payload（方案B 动态工具）。
 
+    - do_action：args.action → {"motion": action, "expressions": [], "label"}
+    - set_expression：args.expression → {"motion": None, "expressions": [expression], "label"}
     返回 None 表示该工具不是桌宠动作工具（不广播给壳）。
-    payload: {"motion": "...", "expressions": [...], "label": "..."}
     """
-    from app.domain.pet.service import get_active_model, list_models
-    import json
-    from pathlib import Path
+    import json as _json
 
-    active = get_active_model()
-    if not active:
+    from app.domain.pet.service import _action_label, _expression_label
+
+    if tool_name not in ("do_action", "set_expression"):
         return None
-
-    # 读当前激活模型的 actions.json（VRM 模型在 plugins/<id>/ 下）
-    actions_path = Path(settings.workspace_path) / "plugins" / active / "actions.json"
-    actions: dict = {}
-    if actions_path.is_file():
-        try:
-            actions = json.loads(actions_path.read_text(encoding="utf-8")).get("actions") or {}
-        except Exception:
-            pass
-
-    if tool_name in actions:
-        spec = actions[tool_name]
-        return {
-            "motion": spec.get("motion") or None,
-            "expressions": spec.get("expressions") or [],
-            "label": spec.get("label_zh") or tool_name,
-        }
-
-    # 表情工具：set_expression_<name> → payload {motion: None, expressions: [name], label}
-    if tool_name.startswith("set_expression_"):
-        expr_name = tool_name[len("set_expression_"):]
-        try:
-            data = json.loads(actions_path.read_text(encoding="utf-8"))
-        except Exception:
-            data = {}
-        expr_specs = data.get("expressions") or {}
-        espec = expr_specs.get(expr_name) if isinstance(expr_specs, dict) else None
-        label = espec.get("label_zh") if isinstance(espec, dict) else expr_name
-        return {"motion": None, "expressions": [expr_name], "label": label or expr_name}
-    return None
-
-    # Live2D fallback：裸 motion/expression 名
-    for m in list_models():
-        if m["id"] != active:
-            continue
-        if tool_name in m.get("motions", []):
-            return {"motion": tool_name, "expressions": [], "label": tool_name}
-        if tool_name in m.get("expressions", []):
-            return {"motion": None, "expressions": [tool_name], "label": tool_name}
-        break
-    return None
+    try:
+        args_dict = _json.loads(args) if args else {}
+    except (ValueError, TypeError):
+        args_dict = {}
+    if tool_name == "do_action":
+        action = (args_dict.get("action") or "").strip()
+        if not action:
+            return None
+        return {"motion": action, "expressions": [], "label": _action_label(action)}
+    expression = (args_dict.get("expression") or "").strip()
+    if not expression:
+        return None
+    return {"motion": None, "expressions": [expression], "label": _expression_label(expression)}
 
 
 async def _publish_actions(events):
     """转发内部事件流，并把工具调用（动作/表情）广播给桌宠壳。"""
     async for ev in events:
         if ev.get("type") == "tool_call" and ev.get("name"):
-            payload = _resolve_pet_action(ev["name"])
+            payload = _resolve_pet_action(ev["name"], ev.get("args") or "")
             if payload:
                 pet_events.publish(payload)
                 pet_events.publish_status("working")
@@ -616,11 +588,6 @@ async def import_plugin_git(body: GitImportBody) -> dict:
 
 @router.patch("/plugins/{plugin_id}")
 async def patch_plugin(plugin_id: str, body: PluginPatchBody) -> dict:
-    if body.enabled is not None and plugin_id in plugin_service.model_plugin_ids():
-        raise HTTPException(
-            status_code=400,
-            detail="桌宠模型插件由「桌宠」页切换模型控制（同一时间只启用一个），不能手动启停",
-        )
     row = (
         plugin_service.set_enabled(plugin_id, body.enabled)
         if body.enabled is not None
@@ -628,16 +595,15 @@ async def patch_plugin(plugin_id: str, body: PluginPatchBody) -> dict:
     )
     if row is None:
         raise HTTPException(status_code=404, detail="插件不存在")
+    if body.enabled is not None:
+        # 工具集随插件启停变化：释放全部实例，下次对话重建（参考技能启停做法）
+        manager.close()
     return row
 
 
 @router.delete("/plugins/{plugin_id}")
 async def delete_plugin(plugin_id: str) -> dict:
-    """删除插件（含插件目录）。模型插件由「桌宠」删除模型时级联删除。"""
-    if plugin_id in plugin_service.model_plugin_ids():
-        raise HTTPException(
-            status_code=400, detail="桌宠模型插件由「桌宠」页删除模型时级联删除，不能单独删除"
-        )
+    """删除插件（含插件目录）。"""
     if not plugin_service.delete(plugin_id):
         raise HTTPException(status_code=404, detail="插件不存在")
     manager.close()  # 释放全部实例：下次对话重建，不再携带被删插件工具
@@ -980,6 +946,10 @@ class ConnectorBody(BaseModel):
     transport: str = "stdio"
     command: str = ""
     args: list[str] = Field(default_factory=list)
+    env: dict[str, str] = Field(default_factory=dict)  # 子进程环境变量（harness 注入 MCP stdio）
+
+
+_ENV_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def _validate_connector_spec(body: ConnectorBody) -> dict:
@@ -990,10 +960,18 @@ def _validate_connector_spec(body: ConnectorBody) -> dict:
         )
     if transport == "stdio" and not (body.command or "").strip():
         raise HTTPException(status_code=400, detail="stdio 传输需要 command")
+    env = {k.strip(): v for k, v in (body.env or {}).items() if k and k.strip()}
+    invalid = [k for k in env if not _ENV_KEY_RE.match(k)]
+    if invalid:
+        raise HTTPException(
+            status_code=400,
+            detail=f"环境变量名不合法（须字母/数字/下划线且以字母或 _ 开头）: {', '.join(sorted(invalid))}",
+        )
     return {
         "transport": transport,
         "command": (body.command or "").strip(),
         "args": list(body.args or []),
+        "env": env,
     }
 
 
@@ -1013,6 +991,7 @@ async def list_connectors() -> list[dict]:
             "transport": spec.get("transport", "stdio"),
             "command": spec.get("command", ""),
             "args": spec.get("args", []),
+            "env": spec.get("env") or {},
         }
         for name, spec in settings.mcp_servers.items()
     ]
@@ -1107,30 +1086,20 @@ class PetStatusBody(BaseModel):
 
 @router.put("/pet/status")
 async def set_pet_status(body: PetStatusBody) -> dict:
-    """设置桌宠开关：写壳 config.json ui.pet_enabled + 模型插件联动。
+    """设置桌宠开关：写壳 config.json ui.pet_enabled + 共享 VRM 插件联动。
 
-    关闭 → 停用全部模型插件（动作/表情工具不再进 LLM 工具集，避免"虚空"调用）；
-    开启 → 恢复启用当前选中模型的插件（互斥，与切换模型一致）。
+    方案B（2026-10-04）：只有一个共享桌宠插件 vrm-pet——
+    关闭 → 停用（动作/表情工具不再进 LLM 工具集）；开启 → 启用。
     工具随插件启停装配；释放 shell agent 实例，下次对话重建。
     """
     from app.domain.pet.service import (
-        get_active_model,
+        VRM_PET_PLUGIN_ID,
         get_shell_agent_id,
         set_pet_enabled,
     )
 
     enabled = set_pet_enabled(body.enabled)
-    model_plugin_ids = plugin_service.model_plugin_ids()
-    activated_plugin = None
-    if not enabled:
-        for pid in model_plugin_ids:
-            plugin_service.set_enabled(pid, False)
-    else:
-        active_model = get_active_model()
-        for pid in model_plugin_ids:
-            plugin_service.set_enabled(pid, pid == active_model)
-        if active_model in model_plugin_ids:
-            activated_plugin = active_model
+    plugin_service.set_enabled(VRM_PET_PLUGIN_ID, enabled)
     agent_id = get_shell_agent_id()
     if agent_id:
         # 工具集随插件启停变化：释放 agent 实例，下次对话重建
@@ -1138,68 +1107,46 @@ async def set_pet_status(body: PetStatusBody) -> dict:
     return {
         "enabled": enabled,
         "agent_id": agent_id,
-        "activated_plugin": activated_plugin,
+        "activated_plugin": VRM_PET_PLUGIN_ID if enabled else None,
     }
 
 
 @router.post("/pet/models/switch")
 async def switch_pet_model(body: PetModelSwitchBody) -> dict:
-    """切换桌宠模型：更新壳 config.json + 插件互斥联动（只启用该模型的插件）。
+    """切换桌宠模型：更新壳 config.json（方案B：不碰插件启停）。
 
-    模型插件互斥走插件启停（热生效）：同一时间只启用激活模型的插件，
-    其他模型插件禁用 → 工具未挂载自然不进 LLM 工具集，无需装配层过滤。
-    专家不绑定插件（2026-10-04 解耦）：释放 shell agent 实例，下次对话重建
-    即携带新模型插件的动作/表情工具。
+    工具动态化：do_action/set_expression 的 enum 按当前激活模型 GLB 与
+    animations/*.vrma 实时装配（PluginService.tools()），切模型后释放
+    shell agent 实例，下次对话重建即携带新模型的动态工具。
     """
-    import asyncio
-
     from app.domain.pet.service import (
-        MODEL_DIR,
-        enrich_model,
-        get_pet_enabled,
         get_shell_agent_id,
         switch_model,
     )
-
-    # 新模型没有动作清单 → 同步等 AI 分析完成再切（前端显示 loading）
-    enrich_status = "skipped"
-    actions_path = MODEL_DIR / body.model_id / "actions.json"
-    if not actions_path.is_file():
-        enrich_status = "analyzing"
-        enrich_result = await asyncio.to_thread(enrich_model, body.model_id)
-        enrich_status = "done" if enrich_result.get("ok") else "failed"
 
     try:
         model = switch_model(body.model_id)
     except KeyError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
 
-    model_plugin_ids = plugin_service.model_plugin_ids()
-    has_plugin = model["id"] in model_plugin_ids
-    pet_enabled = get_pet_enabled()
-    # 模型插件互斥：无论新模型有没有插件，先全禁用；有插件再启用它
-    for pid in model_plugin_ids:
-        plugin_service.set_enabled(pid, pet_enabled and pid == model["id"] and has_plugin)
-    # 桌宠关闭时切模型仅换形象（config），不激活插件——插件保持全停，开桌宠时恢复
     agent_id = get_shell_agent_id()
     if agent_id:
-        # 工具集随插件启停变化：释放 agent 实例，下次对话重建（带新模型插件工具）
+        # 表情 enum 随激活模型变化：释放实例，下次对话重建（零重启）
         manager.release(agent_id)
 
     return {
         "ok": True,
         "model": model,
         "agent_id": agent_id,
-        "activated_plugin": model["id"] if (pet_enabled and has_plugin) else None,
-        "enrich": enrich_status,
+        "enrich": "skipped",
     }
 
 
 @router.delete("/pet/models/{model_id}")
 async def delete_pet_model(model_id: str) -> dict:
-    """删除桌宠模型：级联删模型插件 + 资产目录；删除激活模型自动切到剩余模型。
+    """删除桌宠模型：删资产目录；删除激活模型自动切到剩余模型（方案B：无插件级联）。
 
-    内置模型（种子分发）页面不提供删除入口；即便绕过删除，启动播种也会自愈复原。
+    内置模型（种子分发）页面不提供删除入口。
     """
     from app.domain.pet.service import delete_model
 
@@ -1213,5 +1160,5 @@ async def delete_pet_model(model_id: str) -> dict:
 
         agent_id = get_shell_agent_id()
         if agent_id:
-            manager.release(agent_id)  # 模型/插件已变，释放实例下次对话重建
+            manager.release(agent_id)  # 激活模型已变，释放实例下次对话重建
     return {"ok": True, **result, "agent_id": agent_id}

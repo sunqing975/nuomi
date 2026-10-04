@@ -3,14 +3,20 @@ import {
   Avatar, Button, Card, Empty, Form, Input, List, Modal, Popconfirm, Select, Space,
   Tag, Typography, message,
 } from 'antd';
-import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons';
+import { DeleteOutlined, EditOutlined, MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import { del, get, post, put, type ConnectorServer } from '../api';
+
+interface EnvItem {
+  key?: string;
+  value?: string;
+}
 
 interface McpFormValues {
   name?: string;
   transport: string;
   command: string;
   args?: string[];
+  env?: EnvItem[];
 }
 
 const AVATAR_COLORS = ['#f59e0b', '#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
@@ -47,6 +53,7 @@ export default function McpPage() {
     form.resetFields();
     form.setFieldsValue({
       name: s.name, transport: s.transport, command: s.command, args: s.args,
+      env: Object.entries(s.env || {}).map(([key, value]) => ({ key, value })),
     });
     setModalOpen(true);
   };
@@ -55,7 +62,11 @@ export default function McpPage() {
     const v = await form.validateFields();
     setSaving(true);
     try {
-      const payload = { transport: v.transport, command: v.command, args: v.args || [] };
+      const env: Record<string, string> = {};
+      (v.env || []).forEach(({ key, value }) => {
+        if (key && key.trim()) env[key.trim()] = value ?? '';
+      });
+      const payload = { transport: v.transport, command: v.command, args: v.args || [], env };
       if (editing) {
         await put(`/connectors/${editing.name}`, payload);
         message.success(`连接器 ${editing.name} 已更新（下次对话生效）`);
@@ -87,6 +98,7 @@ export default function McpPage() {
     const color = AVATAR_COLORS[(s.name.charCodeAt(0) || 0) % AVATAR_COLORS.length];
     const cmd = s.command || '—';
     const args = (s.args || []).join(' ');
+    const envKeys = Object.keys(s.env || {});
     return (
       <List.Item>
         <Card size="small" style={{ height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
@@ -107,6 +119,11 @@ export default function McpPage() {
               {args && (
                 <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block' }} ellipsis title={args}>
                   {args}
+                </Typography.Text>
+              )}
+              {envKeys.length > 0 && (
+                <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block' }} ellipsis title={envKeys.join(', ')}>
+                  ENV: {envKeys.join(', ')}
                 </Typography.Text>
               )}
             </div>
@@ -198,6 +215,39 @@ export default function McpPage() {
           </Form.Item>
           <Form.Item name="args" label="参数">
             <Select mode="tags" placeholder="回车添加参数（可选）" open={false} suffixIcon={null} />
+          </Form.Item>
+          <Form.Item label="环境变量" style={{ marginBottom: 4 }}>
+            <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 8 }}>
+              注入到 MCP 子进程（stdio 传输生效）；值仅存本机 connectors.json，不在卡片上显示。
+            </Typography.Paragraph>
+            <Form.List name="env">
+              {(fields, { add, remove }) => (
+                <>
+                  {fields.map(({ key, name, ...restField }) => (
+                    <div key={key} style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'flex-start' }}>
+                      <Form.Item
+                        {...restField}
+                        name={[name, 'key']}
+                        style={{ marginBottom: 0, flex: 1 }}
+                        rules={[
+                          { required: true, message: '键名' },
+                          { pattern: /^[A-Za-z_][A-Za-z0-9_]*$/, message: '字母/数字/下划线' },
+                        ]}
+                      >
+                        <Input placeholder="键名，如 GITHUB_TOKEN" />
+                      </Form.Item>
+                      <Form.Item {...restField} name={[name, 'value']} style={{ marginBottom: 0, flex: 2 }}>
+                        <Input placeholder="值（可选）" />
+                      </Form.Item>
+                      <Button type="text" icon={<MinusCircleOutlined />} onClick={() => remove(name)} />
+                    </div>
+                  ))}
+                  <Button type="dashed" onClick={() => add()} block icon={<PlusOutlined />}>
+                    添加环境变量
+                  </Button>
+                </>
+              )}
+            </Form.List>
           </Form.Item>
         </Form>
       </Modal>

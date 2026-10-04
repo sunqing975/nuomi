@@ -65,7 +65,6 @@ export interface Plugin {
   description: string;
   enabled: boolean;
   tool_count: number;
-  model_plugin?: boolean;
 }
 
 export interface Skill {
@@ -115,6 +114,7 @@ export interface ConnectorServer {
   transport: string;
   command: string;
   args: string[];
+  env?: Record<string, string>;
 }
 
 export interface WorkspaceOverview {
