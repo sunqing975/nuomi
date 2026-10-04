@@ -36,7 +36,7 @@ nuomi/
 | 技能 Skill | SKILL.md（frontmatter + 提示词），随 harness 注入；目录 `工作区/skills/<slug>/` |
 | 技能包 Skill Package | SkillHub 技能集的本地安装（一包多技能，`skill_packages/<id>/skills/<slug>/`）；**包级整体启停/删除**（禁用=不注入）；**不做版本更新** |
 | MCP | stdio 外部工具服务器，`NUOMI_MCP_SERVERS` 配置 |
-| 桌宠模型 Model | 表现层资产（Live2D，`2D/<id>/`）；选中模型 = 激活对应插件 + 绑定该模型专属会话（互斥） |
+| 桌宠模型 Model | 表现层资产（Live2D，**工作区 `models/2D/<id>/`**，2026-10-04 迁出壳仓库；仓库仅留可分发种子 `assets/models/2D/hiyori`，扫描时幂等播种）；选中模型 = 激活对应插件（互斥）；**与会话解耦**（2026-10-04 起切模型不换会话） |
 | 动作播放链 | 对话触发模型插件工具（动作/表情）→ 后端事件总线（`/api/pet/events` SSE）→ 壳常驻订阅播放（断线 3s 重连） |
 | 表现层协议 | v3 octop 事件帧（token/tool_call_chunk/tool_result/usage/done，带 node+thread_id）；**无 emotion 事件** |
 
@@ -61,8 +61,8 @@ cd shells/myspy && npm start
 
 环境：
 - Python：uv 管理（`.venv/bin/python`，无 pip）；Node：frontend/ 与 shells/myspy/ 各自 npm install
-- 工作区 `~/Documents/Nuomi`（agents/会话/plugins/{weather, aidang, cat, hiyori}/skills）
-- 数据根 `~/Library/Application Support/Nuomi`（nuomi.db）；会话权威配置 `shells/myspy/config.json`（nuomi.threads，后端读写）
+- 工作区与数据根 **同一目录 `/Users/superman/Nuomi`**（2026-10-04 起单根设计；.env 设 `NUOMI_HOME=/Users/superman/Nuomi`，**无 NUOMI_WORKSPACE**，workspace=数据根）；内含 agents/plugins/{weather, aidang, cat, hiyori}/skills + models/2D + nuomi.db + memory.sqlite + nuomi-state.json
+- 会话权威配置 `/Users/superman/Nuomi/nuomi-state.json`（nuomi.*：threads/thread_id/agent_id，2026-10-04 起迁出壳 config）；壳 `shells/myspy/config.json` 仅存表现层偏好（ui.model/ui.model_path，后端写、壳 watch 重载，无绝对业务状态）
 - .env 在仓库根，改后必须重启 uvicorn
 
 ## 4. API 清单（全部 /api 前缀，见 app/transport/api.py）
@@ -73,13 +73,13 @@ cd shells/myspy && npm start
 
 **技能/技能包**：`GET|PATCH|DELETE /skills/{name}` · `POST /skills/install`（SkillHub 单技能）· `GET /skillhub/search|rankings|skillsets{?q,/{slug}}` · `GET|POST /skill-packages` · `POST /skill-packages/from-skillhub` · `PATCH|DELETE /skill-packages/{id}`
 
-**其他**：`GET /mcp` · `DELETE /mcp/{name}`（持久化 mcp_servers.json）· `GET /workspace` · `GET /pet/models` · `POST /pet/models/switch` · `DELETE /pet/models/{id}`（级联删插件+资产+会话换绑）
+**其他**：`GET /mcp` · `DELETE /mcp/{name}`（持久化 mcp_servers.json）· `GET /workspace` · `GET /pet/models` · `POST /pet/models/switch` · `DELETE /pet/models/{id}`（级联删插件+资产，**不换会话**）
 
 OpenAI 兼容：`app/transport/openai_compat.py`（`/v1/chat/completions`，model 形如 `nuomi/agent:<id>`）。
 
 ## 5. 已验证链路（回归依据；细节以代码/实测为准）
 
-插件链（weather 触发 tool_call→tool_result）、技能链（frontmatter+启停）、MCP 链（pet_mood）、协议链（/chat octop 帧 56 帧无解析错误）、控制台链（各板块无 console 错误）、壳链（面板重试/订阅断线重连）、**SkillHub 链**（真实市场：search/rankings/skillsets、单技能安装、技能集建包 6 技能、包启停/删除、chat 注入均实测通过）、模型切换链（插件互斥+manager.release+会话换绑）、会话链（一个桌宠一个会话）。
+插件链（weather 触发 tool_call→tool_result）、技能链（frontmatter+启停）、MCP 链（pet_mood）、协议链（/chat octop 帧 56 帧无解析错误）、控制台链（各板块无 console 错误）、壳链（面板重试/订阅断线重连）、**SkillHub 链**（真实市场：search/rankings/skillsets、单技能安装、技能集建包 6 技能、包启停/删除、chat 注入均实测通过）、模型切换链（插件互斥+manager.release，**不换会话**，2026-10-04 起）、会话链（真实线程列表，无 default 合成）。
 
 **注意**：部分市场技能 SKILL.md 的 description 含裸 `: ` 导致 harness YAML 解析失败被跳过（如 superpowers-tdd）——与 Octop 行为一致，非 nuomi bug。
 
@@ -97,7 +97,7 @@ OpenAI 兼容：`app/transport/openai_compat.py`（`/v1/chat/completions`，mode
 - **新生成/删除插件必须重启后端**：工具装配来自进程内 PluginRegistry。
 - **壳 saveConfig 覆盖 ui.model**：saveConfig 以磁盘最新为底，只覆盖 nuomi.*（否则切模型后跳回旧模型）。
 - **切换模型后工具集不变**：`/pet/models/switch` 必须 `manager.release(agent_id)` 让下次对话重建。
-- **LLM 幻觉调用旧模型工具名**：模型专属会话（无旧历史）可根治——"一个桌宠一个会话"的核心价值。
+- **LLM 幻觉调用旧模型工具名**：曾用"模型专属会话（无旧历史）"根治；**2026-10-04 废除**（桌宠=纯表现层拦截工具调用，会话与模型解耦），幻觉风险由会话切换/清空兜底。
 - **python websockets 连 octop 8088 WS 恒 403**：curl/aiohttp 可通；真切 WS 用 aiohttp。
 - **市场技能 frontmatter 质量**：description 裸冒号 → harness 安全跳过（见 §5）。
 

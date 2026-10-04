@@ -4,8 +4,8 @@
     POST /api/agents/{agent_id}/chat   body={"messages": "...", "thread_id": "..."}
     → OpenAI Chat Completions 流式格式（delta.content / delta.tool_calls / [DONE]）
 
-会话：以壳 config.json 为权威（nuomi.thread_id / nuomi.threads），
-控制台与桌宠共用同一「当前会话」——一个 thread_id 逻辑。
+会话：以工作区 nuomi-state.json 为权威（thread_id / threads，2026-10-04 起，
+无 default 桌宠线程、无模型专属会话；桌宠=纯表现层，拦截工具调用播放动作）。
 """
 from __future__ import annotations
 
@@ -59,7 +59,7 @@ async def health() -> dict:
     return {"status": "ok"}
 
 
-# ---------- 会话管理（壳 config.json 权威，桌宠与控制台共用） ----------
+# ---------- 会话管理（工作区 nuomi-state.json 权威，控制台读写） ----------
 
 
 class ChatNewBody(BaseModel):
@@ -85,13 +85,13 @@ async def chat_state(agent_id: str) -> dict:
 
 @router.post("/chat/new")
 async def chat_new(body: ChatNewBody) -> dict:
-    """新建会话并设为当前（壳「新会话」按钮 / 控制台共用）。"""
+    """新建会话并设为当前（控制台「新会话」）。"""
     return chat_sessions.new(body.agent_id)
 
 
 @router.post("/chat/switch")
 async def chat_switch(body: ChatSwitchBody) -> dict:
-    """切换当前会话（写 config.json，壳下一次对话自动跟随）。"""
+    """切换当前会话（写 nuomi-state.json，控制台会话列表）。"""
     ok = chat_sessions.switch(body.agent_id, body.thread_id)
     if not ok:
         raise HTTPException(status_code=404, detail="会话不存在")
@@ -603,7 +603,7 @@ async def workspace_overview() -> dict:
 
 
 class PetModelSwitchBody(BaseModel):
-    model_id: str = Field(description="模型 id（shells/myspy/2D/ 下的目录名）")
+    model_id: str = Field(description="模型 id（工作区 models/2D/ 下的目录名）")
 
 
 @router.get("/pet/models")

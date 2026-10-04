@@ -42,12 +42,6 @@ class Settings(BaseSettings):
     # --- 单一数据根（NUOMI_HOME；不设置则用默认用户应用数据目录） ---
     nuomi_home: str | None = None
 
-    # --- 工作区根：用户可见（~/Documents/Nuomi），NUOMI_WORKSPACE 覆盖 ---
-    workspace_dir: str = Field(
-        default="~/Documents/Nuomi",
-        validation_alias=AliasChoices("NUOMI_WORKSPACE", "WORKSPACE_DIR"),
-    )
-
     # --- CORS（桌宠前端 dev） ---
     cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
@@ -72,10 +66,8 @@ class Settings(BaseSettings):
 
     @property
     def workspace_path(self) -> Path:
-        """工作区根（Agent 沙箱锚点；自动创建）。"""
-        p = Path(self.workspace_dir).expanduser()
-        if not p.is_absolute():
-            p = self.data_root / p
+        """工作区根（Agent 沙箱锚点；单根设计 = 数据根本身，2026-10-04 起）。"""
+        p = self.data_root
         p.mkdir(parents=True, exist_ok=True)
         return p
 

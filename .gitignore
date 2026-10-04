@@ -21,6 +21,3 @@ backend/data/
 
 # make 脚本的 PID 与日志
 .logs/
-
-# 版权受限的 Live2D 模型资产（碧蓝航线游戏提取，个人自用不可分发）
-shells/myspy/2D/aidang/

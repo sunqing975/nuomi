@@ -20,15 +20,6 @@ full-hub/bert-hub/*.safetensors
 # Voice models
 Voice_Model_Factory/
 
-# 3D models (too large for git)
-3D/*.vrm
-
-# 2D model textures (large PNG files)
-2D/*/*.4096/
-2D/*/*.2048/
-2D/*/*.8192/
-2D/*/motion/
-
 # Runtime logs
 *.log
 
@@ -50,15 +41,8 @@ AI记录室/
 full-hub/
 plugins-dlc/
 
-# nuomi 定制：保留 hiyori 贴图（当前唯一可用模型，体积小）
-!2D/hiyori/Hiyori.2048/
-
-# nuomi 定制：只保留 hiyori（贴图完整可用），排除无贴图的旧模型
-2D/baimeimo/
-2D/cat/
-2D/LSS/
-2D/Roxy/
-2D/MO/
+# nuomi 定制：模型资产已迁工作区 /Users/superman/Nuomi/models/2D（2026-10-04）
+# 仓库仅保留可分发种子 assets/models/2D/hiyori
 
 # nuomi 定制：排除 Windows 启动脚本（macOS 用不到）
 启动.bat

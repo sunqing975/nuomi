@@ -1,7 +1,14 @@
 // app.js - 渲染进程入口
 const fs = require('fs')
 const path = require('path')
+const { pathToFileURL } = require('url')
 const { ipcRenderer } = require('electron')
+
+// 模型资产在工作区（后端下发绝对路径）→ 转 file:// URL 供 PIXI 加载
+function toModelUrl(p) {
+    if (typeof p === 'string' && p.startsWith('/')) return pathToFileURL(p).href
+    return p
+}
 const { TTSClient } = require('./js/tts-client')
 const { ModelInteractionController } = require('./js/model/model-interaction.js')
 const { TTSStreamProcessor } = require('./js/tts-stream-processor')
@@ -89,7 +96,8 @@ function _applyEmotionExpression(emotion) {
     if (!charName) return
 
     for (const exprName of exprNames) {
-        const exprPath = path.join(__dirname, '2D', charName, exprName + '.exp3.json')
+        // 表情文件与模型同目录（工作区模型资产）
+        const exprPath = path.join(path.dirname(modelPath), exprName + '.exp3.json')
         if (!fs.existsSync(exprPath)) continue
         try {
             const exprData = JSON.parse(fs.readFileSync(exprPath, 'utf8'))
@@ -404,9 +412,9 @@ async function main() {
             }
         }
 
-        // 兜底默认值
+        // 兜底默认值（模型路径由后端下发；无则报错提示，不再指向仓库内置路径）
         if (!modelType) modelType = 'live2d'
-        if (!modelPath) modelPath = '2D/feiniu/hiyori_pro_t11.model3.json'
+        if (!modelPath) logToTerminal('error', '未配置模型路径（后端未下发 ui.model_path）')
 
         logToTerminal('info', `模型类型: ${modelType}, 路径: ${modelPath}`)
 
@@ -517,7 +525,7 @@ async function main() {
             app.view.style.width = `${actualWidth}px`
             app.view.style.height = `${actualHeight}px`
 
-            const live2dModel = await PIXI.live2d.Live2DModel.from(modelPath)
+            const live2dModel = await PIXI.live2d.Live2DModel.from(toModelUrl(modelPath))
             app.stage.addChild(live2dModel)
 
             // 用统一适配器包装 Live2D 模型
@@ -646,7 +654,7 @@ async function main() {
                     if (model && model.innerModel) {
                         app.stage.removeChild(model.innerModel)
                     }
-                    const live2dModel = await PIXI.live2d.Live2DModel.from(newPath)
+                    const live2dModel = await PIXI.live2d.Live2DModel.from(toModelUrl(newPath))
                     app.stage.addChild(live2dModel)
                     model = new UnifiedModelAdapter(live2dModel, app, 'live2d', config)
                     model.visible = config?.ui?.show_model !== false
@@ -825,12 +833,12 @@ async function main() {
                 if (!inner.internalModel || !inner.internalModel.coreModel) return
                 const cm = inner.internalModel.coreModel
 
-                // 读取表情文件获取参数
+                // 读取表情文件获取参数（表情文件与模型同目录，工作区模型资产）
                 const fs = require('fs')
                 const modelPath = config?.ui?.model_path || ''
                 const charMatch = modelPath.match(/2D\/([^\/]+)\//)
                 const charName = charMatch ? charMatch[1] : ''
-                const exprPath = path.join(__dirname, '2D', charName, data.file)
+                const exprPath = path.join(path.dirname(modelPath), data.file)
                 if (!fs.existsSync(exprPath)) {
                     log('表情文件不存在: ' + data.file, 'warn')
                     return

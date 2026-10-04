@@ -17,7 +17,7 @@ interface SessionMeta {
 
 interface ChatState {
   agent_id: string;
-  current: string;
+  current: string | null;
   sessions: SessionMeta[];
 }
 

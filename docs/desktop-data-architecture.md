@@ -14,7 +14,7 @@
 | # | 决策 | 内容 |
 |---|---|---|
 | 1 | 多用户形态 | **不再考虑**。移除 JWT 登录、users.json、`/api/auth/*`、PG checkpointer 路径 |
-| 2 | 工作区 | 默认 `~/Documents/Nuomi/`（用户可见、可在设置/首启向导中改） |
+| 2 | 工作区 | 本机 `/Users/superman/Nuomi`（2026-10-04 起与数据根合一，.env `NUOMI_WORKSPACE`）；代码默认 `~/Documents/Nuomi/`（用户可见、可在设置/首启向导中改） |
 | 3 | 存储 | **全合一 SQLite**：checkpointer + 项目/会话 + 记忆事实 + 设置收敛进单个 `nuomi.db` |
 | 4 | 目录结构 | `backend/app/` 散落的 ~19 个 py 按职责收敛为功能子包 |
 | 5 | 数据根 | **不做 dev/packaged 双 profile**（用户否决：增加复杂度）。单一规则：所有运行时数据锚定 `NUOMI_HOME`，开发/打包/桌面完全同源 |
@@ -23,6 +23,7 @@
 
 ```
 解析优先级：NUOMI_HOME 环境变量 > 默认 ~/Library/Application Support/Nuomi（macOS）/ ~/.nuomi（其他）
+> 2026-10-04 本机迁移：`NUOMI_HOME=/Users/superman/Nuomi`（与工作区合一，见 §3.2 注）
 ```
 
 - 数据根之下所有路径（DB、记忆、知识库、日志、设置、插件组合配置）一律派生自 `NUOMI_HOME`，**不再相对仓库解析**。
@@ -72,24 +73,26 @@ nuomi/
 └── docs/desktop-data-architecture.md
 ```
 
-### 3.2 `NUOMI_HOME` 内部布局（单一数据根）
+### 3.2 `NUOMI_HOME` 内部布局（单一数据根 = 工作区，2026-10-04 实测）
+
+> 本文为 2026-10-02 历史设计文档（描述的 V3 内核已被 v0.13 推倒重来）；以下为当前运行布局，权威以 HANDOVER.md 为准。
 
 ```
-~/Library/Application Support/Nuomi/
-├── nuomi.db          # 统一库：LangGraph checkpoints + projects/threads + facts + settings（user_version 版本化）
-├── nuomi.json        # V3 插件组合配置（profile，composer 读写）
-├── memories/         # 预留（当前记忆已入 nuomi.db 的 facts 表；保留目录语义）
-├── knowledge/        # Chroma 向量库（RAG 插件数据）
-├── logs/trace.jsonl  # 可观测日志（按大小轮转）
-├── audio/            # 语音产物
-└── plugins/          # 用户级插件（可装卸；打包形态在线安装的落点）
+/Users/superman/Nuomi/      # 本机 NUOMI_HOME（工作区=数据根，单目录；代码默认仍 ~/Library/Application Support/Nuomi）
+├── nuomi.db          # 业务库：agents/plugins/skills/skill_packages/agent_plugins（v0.13 起）
+├── nuomi-state.json  # 会话状态（nuomi.*：threads/thread_id/agent_id；2026-10-04 起迁出壳 config.json）
+├── memory.sqlite     # harness 记忆（octop 标准位置 {workspace}/memory.sqlite，LangGraph checkpoints 也在此）
+├── mcp_servers.json  # MCP 服务器配置（控制台增删持久化）
+├── agents/           # 专家实例工作区
+├── plugins/          # 插件（weather + 模型插件 aidang/cat/hiyori）
+├── skills/           # 技能
+├── skill_packages/   # 技能包（SkillHub 安装）
+├── sessions/         # 会话 jsonl
+├── models/2D/<id>/   # 桌宠模型资产（2026-10-04 迁出壳仓库；内置种子 assets/models/2D 幂等播种）
+└── _builtin_skills/  # harness 内置技能
 ```
 
-工作区（独立于数据根，用户可见）：
-
-```
-~/Documents/Nuomi/    # 默认工作区；一个项目 = 一个目录
-```
+工作区即数据根本身（单根设计，2026-10-04 起）：
 
 ## 4. 存储合一（决策 3 的落地）
 

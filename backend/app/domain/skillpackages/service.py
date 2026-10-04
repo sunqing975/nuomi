@@ -128,7 +128,9 @@ class SkillPackageService:
                    VALUES (?, ?, ?, ?, 1, datetime('now'), datetime('now'))""",
                 (package_id, name, description, icon_url),
             )
-        return self.get(package_id)
+        result = self.get(package_id)
+        assert result is not None  # 刚插入，必然存在
+        return result
 
     def install_from_skillhub(self, slug: str, name: str | None = None) -> dict:
         """从 SkillHub 技能集建包：取详情 → 逐个技能下载 → 写入包内。"""
@@ -178,7 +180,9 @@ class SkillPackageService:
                     (package_id, skill_slug),
                 )
         logger.info("技能包已安装: %s (%d 个技能)", package_name, len(installed))
-        return self.get(package_id)
+        result = self.get(package_id)
+        assert result is not None  # 刚安装，必然存在
+        return result
 
     def set_enabled(self, package_id: str, enabled: bool) -> dict | None:
         with db.connect() as conn:

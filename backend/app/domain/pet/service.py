@@ -1,19 +1,27 @@
 """桌宠模型资产管理（表现层资产，由后端统一管理）。
 
-- 模型目录：shells/myspy/2D/<model_id>/<xxx>.model3.json（壳的固定资产目录）
+- 模型目录：工作区 models/2D/<model_id>/<xxx>.model3.json（2026-10-04 起，资产迁出壳仓库）
+- 内置种子：仓库 assets/models/2D/<id>/（可分发内置模型；扫描时幂等播种到工作区）
 - 元数据：读 model3.json 的 FileReferences.Motions/Expressions 提取动作与表情名
 - 切换：更新壳 config.json 的 ui.model / ui.model_path（壳 watch 后自动重载）
+- 会话状态：nuomi.* 已迁出壳 config → 工作区 nuomi-state.json（见 chat.service）
 """
 from __future__ import annotations
 
 import json
+import logging
 import re
+import shutil
 from pathlib import Path
 
 from app.config import REPO_ROOT, settings
 
-MODEL_DIR = REPO_ROOT / "shells" / "myspy" / "2D"
+logger = logging.getLogger(__name__)
+
+MODEL_DIR = settings.workspace_path / "models" / "2D"
+SEED_MODEL_DIR = REPO_ROOT / "assets" / "models" / "2D"
 SHELL_CONFIG = REPO_ROOT / "shells" / "myspy" / "config.json"
+STATE_FILE = settings.workspace_path / "nuomi-state.json"
 
 
 def _load_json(path: Path) -> dict:
@@ -21,6 +29,23 @@ def _load_json(path: Path) -> dict:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {}
+
+
+def _seed_builtin_models() -> None:
+    """幂等播种内置模型（仓库 assets/models/2D → 工作区 models/2D）。
+
+    仅复制工作区中缺失的模型目录；内置模型保证至少一个桌宠可用。
+    """
+    if not SEED_MODEL_DIR.is_dir():
+        return
+    MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    for seed_dir in sorted(SEED_MODEL_DIR.iterdir()):
+        if not seed_dir.is_dir():
+            continue
+        target = MODEL_DIR / seed_dir.name
+        if not target.exists():
+            shutil.copytree(seed_dir, target)
+            logger.info("播种内置模型: %s", seed_dir.name)
 
 
 def _group_has_files(model_dir: Path, meta: dict, group: str) -> bool:
@@ -40,6 +65,7 @@ def list_models() -> list[dict]:
 
     motions/expressions 只列文件真实存在的（资产不完整的模型如实显示为空）。
     """
+    _seed_builtin_models()
     models: list[dict] = []
     if not MODEL_DIR.is_dir():
         return models
@@ -63,7 +89,8 @@ def list_models() -> list[dict]:
         models.append(
             {
                 "id": char_dir.name,
-                "path": f"2D/{char_dir.name}/{model_files[0].name}",
+                # 绝对路径（资产在工作区）；壳侧转 file:// URL 加载
+                "path": str(char_dir / model_files[0].name),
                 "motions": motions,
                 "expressions": expressions,
             }
@@ -77,16 +104,16 @@ def get_active_model() -> str | None:
 
 
 def get_shell_agent_id() -> str | None:
-    """壳对话绑定的 agent（config.nuomi.agent_id），用于联动插件激活。"""
-    cfg = _load_json(SHELL_CONFIG)
-    return (cfg.get("nuomi") or {}).get("agent_id")
+    """桌宠对话绑定的 agent（工作区 nuomi-state.json 的 agent_id），用于联动插件激活。"""
+    cfg = _load_json(STATE_FILE)
+    return cfg.get("agent_id")
 
 
 def switch_model(model_id: str) -> dict:
     """切换桌宠模型：更新壳 config.json 的 ui.model / ui.model_path。
 
-    联动会话：一个桌宠一个会话——切换模型即绑定该模型的专属会话
-    （无则新建干净会话，见 ChatSessionService.ensure_model_session）。
+    2026-10-04 起**不换会话**：桌宠=纯表现层，切换仅影响形象与插件工具集，
+    当前对话线程保持不变。
     """
     target = next((m for m in list_models() if m["id"] == model_id), None)
     if target is None:
@@ -98,12 +125,6 @@ def switch_model(model_id: str) -> dict:
     ui["model_path"] = target["path"]
     ui["model_type"] = "live2d"
     SHELL_CONFIG.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
-
-    agent_id = (cfg.get("nuomi") or {}).get("agent_id")
-    if agent_id:
-        from app.domain.chat.service import chat_sessions
-
-        chat_sessions.ensure_model_session(agent_id, target["id"])
     return target
 
 
@@ -112,10 +133,10 @@ def delete_model(model_id: str) -> dict:
 
     级联顺序：
     1. 删模型插件（DB 记录 + agent 绑定 + 插件目录）
-    2. 删模型资产目录（shells/myspy/2D/<id>/）
-    3. 若删的是当前激活模型：自动切到剩余第一个模型（联动插件互斥 + 会话换绑）；
+    2. 删模型资产目录（工作区 models/2D/<id>/）
+    3. 若删的是当前激活模型：自动切到剩余第一个模型（联动插件互斥；会话不变）；
        无剩余模型 → ui.model 置空（壳 watch 变化，加载兜底）。
-    非激活模型：config 不动（该模型的专属会话保留，属对话历史）。
+    非激活模型：config 不动（会话与模型解耦，属对话历史）。
     """
     target = next((m for m in list_models() if m["id"] == model_id), None)
     if target is None:
@@ -137,7 +158,6 @@ def delete_model(model_id: str) -> dict:
     cfg = _load_json(SHELL_CONFIG)
     ui = cfg.setdefault("ui", {})
     was_active = ui.get("model") == model_id
-    agent_id = (cfg.get("nuomi") or {}).get("agent_id")
     if was_active:
         remaining = [m for m in list_models() if m["id"] != model_id]
         if remaining:
@@ -149,10 +169,6 @@ def delete_model(model_id: str) -> dict:
             # 插件互斥：只启用新模型插件（删掉插件后 model_plugin_ids 已更新）
             for pid in plugin_service.model_plugin_ids():
                 plugin_service.set_enabled(pid, pid == nxt["id"])
-            if agent_id:
-                from app.domain.chat.service import chat_sessions
-
-                chat_sessions.ensure_model_session(agent_id, nxt["id"])
         else:
             ui.pop("model", None)
             ui.pop("model_path", None)
