@@ -5,7 +5,7 @@ const fs = require('fs');
 // GLTFLoader.js 是纯ESM模块，Electron 28 (Node 18) 无法 require() ESM
 // 因此使用 esbuild 预打包的 CJS 版本
 const { GLTFLoader } = require('../lib/gltf-loader-bundle.cjs');
-const { VRMLoaderPlugin, VRMUtils } = require('@pixiv/three-vrm');
+const { VRMImporter, VRMUtils } = require('@pixiv/three-vrm');
 const { VRMModelAdapter } = require('./vrm-model-adapter.js');
 const { VRMInteractionController } = require('./vrm-model-interaction.js');
 const { MusicPlayer } = require('../services/music-player.js');
@@ -177,7 +177,7 @@ class VRMModelSetup {
         console.log(`VRM文件大小: ${(fileBuffer.length / 1024 / 1024).toFixed(2)} MB`);
 
         const loader = new GLTFLoader();
-        loader.register((parser) => new VRMLoaderPlugin(parser));
+        loader.register((parser) => new VRMImporter(parser));
 
         // 使用 parse 直接解析 ArrayBuffer，而非走 HTTP fetch
         // 第二个参数是资源基础路径，用于加载VRM引用的外部资源
