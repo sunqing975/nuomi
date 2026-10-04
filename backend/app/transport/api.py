@@ -576,12 +576,41 @@ async def delete_skill_package(package_id: str) -> dict:
     return {"ok": True}
 
 
-# ---------- MCP 服务器（对齐 Octop：配置在 settings，对话经 mcp_use_default 启用） ----------
+# ---------- MCP 服务器（连接器：控制台增删改，写 data_root/mcp_servers.json，manager.close 重载） ----------
+
+_MCP_TRANSPORTS = ("stdio", "sse", "http")
+
+
+class McpServerBody(BaseModel):
+    name: str | None = None  # POST 创建时必填；PUT 以路径名为准
+    transport: str = "stdio"
+    command: str = ""
+    args: list[str] = Field(default_factory=list)
+
+
+def _validate_mcp_spec(body: McpServerBody) -> dict:
+    transport = (body.transport or "stdio").strip().lower()
+    if transport not in _MCP_TRANSPORTS:
+        raise HTTPException(status_code=400, detail=f"transport 仅支持 {', '.join(_MCP_TRANSPORTS)}")
+    if transport == "stdio" and not (body.command or "").strip():
+        raise HTTPException(status_code=400, detail="stdio 传输需要 command")
+    return {
+        "transport": transport,
+        "command": (body.command or "").strip(),
+        "args": list(body.args or []),
+    }
+
+
+def _persist_mcp_servers() -> None:
+    """写 data_root/mcp_servers.json（重启后由 main._sync_mcp_file 读回，json 为权威）。"""
+    p = settings.data_root / "mcp_servers.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(settings.mcp_servers, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 @router.get("/mcp")
 async def list_mcp_servers() -> list[dict]:
-    """MCP 服务器列表（配置来自 settings.mcp_servers）。"""
+    """MCP 服务器列表（配置来自 settings.mcp_servers，json 权威）。"""
     return [
         {
             "name": name,
@@ -593,6 +622,33 @@ async def list_mcp_servers() -> list[dict]:
     ]
 
 
+@router.post("/mcp")
+async def create_mcp_server(body: McpServerBody) -> dict:
+    """新增 MCP 服务器：写配置 + 释放实例，下次对话挂载其工具。"""
+    name = (body.name or "").strip()
+    if not name or not re.match(r"^[a-zA-Z0-9_-]+$", name):
+        raise HTTPException(status_code=400, detail="服务器名仅限字母/数字/_/-")
+    if name in settings.mcp_servers:
+        raise HTTPException(status_code=400, detail=f"MCP 服务器已存在: {name}")
+    spec = _validate_mcp_spec(body)
+    settings.mcp_servers[name] = spec
+    _persist_mcp_servers()
+    manager.close()  # 重载：下次对话重建实例，挂载新 MCP 工具
+    return {"ok": True, "name": name, **spec}
+
+
+@router.put("/mcp/{name}")
+async def update_mcp_server(name: str, body: McpServerBody) -> dict:
+    """编辑 MCP 服务器：更新配置 + 释放实例（下次对话生效）。"""
+    if name not in settings.mcp_servers:
+        raise HTTPException(status_code=404, detail="MCP 服务器不存在")
+    spec = _validate_mcp_spec(body)
+    settings.mcp_servers[name] = spec
+    _persist_mcp_servers()
+    manager.close()
+    return {"ok": True, "name": name, **spec}
+
+
 @router.delete("/mcp/{name}")
 async def delete_mcp_server(name: str) -> dict:
     """删除 MCP 服务器：从运行配置移除并持久化（data_root/mcp_servers.json），
@@ -601,12 +657,7 @@ async def delete_mcp_server(name: str) -> dict:
     if name not in settings.mcp_servers:
         raise HTTPException(status_code=404, detail="MCP 服务器不存在")
     settings.mcp_servers.pop(name)
-    mcp_file = settings.data_root / "mcp_servers.json"
-    mcp_file.parent.mkdir(parents=True, exist_ok=True)
-    mcp_file.write_text(
-        json.dumps(settings.mcp_servers, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    _persist_mcp_servers()
     manager.close()
     return {"ok": True}
 

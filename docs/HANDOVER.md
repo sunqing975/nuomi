@@ -73,7 +73,7 @@ cd shells/myspy && npm start
 
 **技能/技能包**：`GET|PATCH|DELETE /skills/{name}` · `POST /skills/import`（zip 导入）· `POST /skills/install`（SkillHub 单技能）· `GET /skillhub/search|rankings|skillsets{?q,/{slug}}` · `GET|POST /skill-packages` · `POST /skill-packages/from-skillhub` · `PATCH|DELETE /skill-packages/{id}`
 
-**其他**：`GET /mcp` · `DELETE /mcp/{name}`（持久化 mcp_servers.json）· `GET /workspace` · `GET /pet/models` · `POST /pet/models/switch` · `DELETE /pet/models/{id}`（级联删插件+资产，**不换会话**）
+**其他**：`GET|POST /mcp` · `PUT|DELETE /mcp/{name}`（控制台增删改，json 持久化，变更下次对话生效）· `GET /workspace` · `GET /pet/models` · `POST /pet/models/switch` · `DELETE /pet/models/{id}`（级联删插件+资产，**不换会话**）
 
 OpenAI 兼容：`app/transport/openai_compat.py`（`/v1/chat/completions`，model 形如 `nuomi/agent:<id>`）。
 
