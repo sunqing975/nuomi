@@ -107,7 +107,7 @@ export default function PetModelsPage() {
 
       {models.length === 0 && <Empty description="2D/ 目录下没有可用的桌宠形象" />}
 
-      <Row gutter={[14, 14]}>
+      <Row gutter={[14, 14]} className="nuomi-grid">
         {models.map(m => {
           const isActive = m.id === active;
           const hasCapability = m.motions.length > 0 || m.expressions.length > 0;
@@ -117,6 +117,9 @@ export default function PetModelsPage() {
                 size="small"
                 hoverable
                 style={{
+                  height: '100%',
+                  display: 'flex',
+                  flexDirection: 'column',
                   borderColor: isActive ? '#f59e0b' : undefined,
                   boxShadow: isActive ? '0 0 0 2px rgba(245,158,11,.18)' : undefined,
                 }}
