@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  Button, Card, Empty, Input, List, Modal, Popconfirm, Space, Switch, Table, Tabs,
+  Avatar, Button, Card, Empty, Input, List, Modal, Popconfirm, Space, Switch, Table, Tabs,
   Tag, Typography, Upload, message,
 } from 'antd';
 import { CloudUploadOutlined, DeleteOutlined, DownloadOutlined, GithubOutlined, ReloadOutlined } from '@ant-design/icons';
@@ -216,49 +216,58 @@ export default function SkillsPage() {
     },
   ];
 
+  const AVATAR_COLORS = ['#f59e0b', '#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
+
+  const initialAvatar = (item: SkillHubItem) => {
+    const name = item.display_name || item.slug || '?';
+    const ch = (name[0] || '?').toUpperCase();
+    const color = AVATAR_COLORS[(name.charCodeAt(0) || 0) % AVATAR_COLORS.length];
+    return <Avatar size={40} style={{ backgroundColor: color, flexShrink: 0 }}>{ch}</Avatar>;
+  };
+
   const renderHubItem = (item: SkillHubItem) => {
     const installingNow = installing === item.slug;
+    const name = item.display_name || item.slug;
+    const desc = item.summary || item.description || '—';
     return (
-      <List.Item
-        actions={[
-          hubTab === 'skills' ? (
-            <Button key="s" size="small" type="primary" loading={installingNow}
-              icon={<DownloadOutlined />} onClick={() => installSkill(item)}>
-              安装技能
+      <List.Item>
+        <Card size="small" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+            {item.icon_url ? (
+              <img src={item.icon_url} alt="" width={40} height={40}
+                style={{ borderRadius: 8, objectFit: 'cover', flexShrink: 0 }} />
+            ) : initialAvatar(item)}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <Typography.Text strong ellipsis style={{ display: 'block' }} title={name}>
+                {name}
+              </Typography.Text>
+              <Space size={4} wrap style={{ marginTop: 2 }}>
+                <Typography.Text code style={{ fontSize: 11 }}>{item.slug}</Typography.Text>
+                {item.requires_api_key && (
+                  <Tag color="orange" style={{ marginInlineEnd: 0 }}
+                    title="该技能需要 API Key，安装后在「设置 → 环境变量」配置">
+                    需 API Key
+                  </Tag>
+                )}
+                {hubTab === 'skillsets' && item.skill_count != null && (
+                  <Tag color="blue" style={{ marginInlineEnd: 0 }}>{item.skill_count} 技能</Tag>)}
+              </Space>
+            </div>
+          </div>
+          <Typography.Paragraph
+            type="secondary" style={{ fontSize: 12, marginTop: 8, marginBottom: 0, flex: 1 }}
+            ellipsis={{ rows: 3, tooltip: desc }}
+          >
+            {desc}
+          </Typography.Paragraph>
+          <div style={{ marginTop: 10 }}>
+            <Button size="small" type="primary" block loading={installingNow}
+              icon={<DownloadOutlined />}
+              onClick={() => (hubTab === 'skills' ? installSkill(item) : installPackage(item))}>
+              {hubTab === 'skills' ? '安装技能' : '安装技能包'}
             </Button>
-          ) : (
-            <Button key="p" size="small" type="primary" loading={installingNow}
-              icon={<DownloadOutlined />} onClick={() => installPackage(item)}>
-              安装技能包
-            </Button>
-          ),
-        ]}
-      >
-        <List.Item.Meta
-          avatar={item.icon_url ? (
-            <img src={item.icon_url} alt="" width={36} height={36}
-              style={{ borderRadius: 8, objectFit: 'cover' }} />
-          ) : null}
-          title={<Space>{item.display_name}
-            <Typography.Text code>{item.slug}</Typography.Text>
-            {item.requires_api_key && (
-              <Tag color="orange" title="该技能需要 API Key，安装后在「设置 → 环境变量」配置">
-                需 API Key
-              </Tag>
-            )}
-            {hubTab === 'skillsets' && item.skill_count != null && (
-              <Tag color="blue">{item.skill_count} 技能</Tag>)}
-          </Space>}
-          description={(
-            <Space direction="vertical" size={0}>
-              <span>{item.summary || item.description || '—'}</span>
-              <span style={{ color: '#9ca3af', fontSize: 12 }}>
-                下载 {item.downloads || 0} · {item.publisher || '未知发布者'}
-                {item.scene ? ` · ${item.scene}` : ''}
-              </span>
-            </Space>
-          )}
-        />
+          </div>
+        </Card>
       </List.Item>
     );
   };
@@ -359,6 +368,7 @@ export default function SkillsPage() {
                   ]}
                 />
                 <List
+                  grid={{ gutter: 12, xs: 1, sm: 2, md: 3, lg: 3, xl: 4, xxl: 5 }}
                   dataSource={hubItems} loading={hubLoading} size="small"
                   locale={{ emptyText: <Empty description="暂无结果，换个关键词试试" /> }}
                   renderItem={renderHubItem}

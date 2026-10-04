@@ -1,22 +1,41 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  Alert, Card, Col, Empty, Popconfirm, Row, Tag, Typography, message,
+  Alert, Card, Col, Empty, Popconfirm, Row, Switch, Tag, Typography, message,
 } from 'antd';
 import { CheckCircleFilled, DeleteOutlined, SmileOutlined } from '@ant-design/icons';
-import { del, get, post, type PetModel, type PetModelsResponse } from '../api';
+import { del, get, post, put, type PetModel, type PetModelsResponse } from '../api';
 
 export default function ModelsPage() {
   const [models, setModels] = useState<PetModel[]>([]);
   const [active, setActive] = useState<string | null>(null);
   const [switching, setSwitching] = useState<string | null>(null);
+  const [petEnabled, setPetEnabled] = useState(true);
+  const [toggling, setToggling] = useState(false);
 
   const load = useCallback(async () => {
     const d = await get<PetModelsResponse>('/pet/models');
     setModels(d.models);
     setActive(d.active);
+    try {
+      const s = await get<{ enabled: boolean }>('/pet/status');
+      setPetEnabled(s.enabled);
+    } catch { /* 状态读取失败时保持默认开 */ }
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const togglePet = async (enabled: boolean) => {
+    setToggling(true);
+    try {
+      const r = await put<{ enabled: boolean }>('/pet/status', { enabled });
+      setPetEnabled(r.enabled);
+      message.success(r.enabled ? '桌宠已开启' : '桌宠已关闭（窗口已销毁，可随时再开）');
+    } catch (e) {
+      message.error(`操作失败：${(e as Error).message}`);
+    } finally {
+      setToggling(false);
+    }
+  };
 
   const switchModel = async (m: PetModel) => {
     if (m.id === active) return;
@@ -50,6 +69,27 @@ export default function ModelsPage() {
 
   return (
     <>
+      <Card
+        size="small"
+        style={{ marginBottom: 16 }}
+        title={<b style={{ fontSize: 14 }}>桌宠开关</b>}
+        extra={
+          <Switch
+            checked={petEnabled}
+            loading={toggling}
+            onChange={togglePet}
+            checkedChildren="开"
+            unCheckedChildren="关"
+          />
+        }
+      >
+        <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 0 }}>
+          {petEnabled
+            ? '桌宠窗口显示中。关闭将完全销毁桌宠窗口（释放资源），后端对话能力不受影响，可随时重新开启。'
+            : '桌宠窗口已完全停止（释放资源）。开启后桌宠窗口会重新出现，可随时切换。'}
+        </Typography.Paragraph>
+      </Card>
+
       <Alert
         type="info"
         showIcon

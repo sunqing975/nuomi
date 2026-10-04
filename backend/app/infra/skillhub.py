@@ -83,12 +83,19 @@ def search(query: str = "", page: int = 1, page_size: int = 20) -> list[dict]:
     """市场搜索：返回条目列表（slug/displayName/summary/scene/icon_url/downloads…）。
 
     服务端固定 10 条/页：内部循环翻页凑够 page_size（对齐 octop 一次展示更多）。
+    跨页去重（服务端分页抖动会重复返回同一技能，如「编程专家.Skill」）。
     """
     items: list[dict] = []
+    seen: set[str] = set()
     for sp in range(1, _MAX_SEARCH_PAGES + 1):
         data = _get(SEARCH_ENDPOINT, params={"q": query, "page": sp})
         results = data.get("results") or []
-        items.extend(_normalize_item(item) for item in results)
+        for item in results:
+            norm = _normalize_item(item)
+            if norm["slug"] in seen:
+                continue
+            seen.add(norm["slug"])
+            items.append(norm)
         if len(results) < 10:  # 服务端尽头
             break
     start = (page - 1) * page_size
@@ -124,7 +131,16 @@ def skillset_list(query: str = "", page: int = 1, page_size: int = 20) -> list[d
         params={"page": page, "pageSize": max(page_size, 100)},
     )
     raw = data.get("skillSets") or []
-    items = [_normalize_item(x) for x in raw if isinstance(x, dict)]
+    seen: set[str] = set()
+    items = []
+    for x in raw:
+        if not isinstance(x, dict):
+            continue
+        norm = _normalize_item(x)
+        if norm["slug"] in seen:
+            continue
+        seen.add(norm["slug"])
+        items.append(norm)
     q = query.strip().lower()
     if q:
         items = [

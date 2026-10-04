@@ -769,6 +769,26 @@ async def list_pet_models() -> dict:
     return {"models": list_models(), "active": get_active_model()}
 
 
+@router.get("/pet/status")
+async def get_pet_status() -> dict:
+    """桌宠开关状态（壳 config.json ui.pet_enabled）。"""
+    from app.domain.pet.service import get_pet_enabled
+
+    return {"enabled": get_pet_enabled()}
+
+
+class PetStatusBody(BaseModel):
+    enabled: bool = Field(description="桌宠开关：true=开（创建桌宠窗口），false=关（销毁窗口）")
+
+
+@router.put("/pet/status")
+async def set_pet_status(body: PetStatusBody) -> dict:
+    """设置桌宠开关：写壳 config.json ui.pet_enabled，壳 watch 后创建/销毁桌宠窗口。"""
+    from app.domain.pet.service import set_pet_enabled
+
+    return {"enabled": set_pet_enabled(body.enabled)}
+
+
 @router.post("/pet/models/switch")
 async def switch_pet_model(body: PetModelSwitchBody) -> dict:
     """切换桌宠模型：更新壳 config.json + 插件互斥联动（只启用该模型的插件）。

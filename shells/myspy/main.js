@@ -135,7 +135,15 @@ function unregisterPTTShortcut() {
 }
 
 app.whenReady().then(() => {
-    petWindow = createWindow()
+    let initialConfig = {}
+    try { initialConfig = JSON.parse(fs.readFileSync(configPath, 'utf8')) } catch (e) {}
+    const petEnabled = (initialConfig.ui || {}).pet_enabled !== false // 缺省开
+
+    if (petEnabled) {
+        petWindow = createWindow()
+    } else {
+        console.log('桌宠开关为关，跳过创建桌宠窗口')
+    }
     controlPanel = createControlPanel()
 
     // 转发渲染进程日志到主进程 stdout（便于排查切换/加载问题）
@@ -145,8 +153,10 @@ app.whenReady().then(() => {
         })
     }
 
-    // 监听 config.json 的 ui.model 变化 → 自动切换模型（后端 /api/pet/models/switch 写入 config）
+    // 监听 config.json 的 ui.model 变化 → 自动切换模型（后端 /api/pet/models/switch 写入 config）；
+    // ui.pet_enabled 变化 → 创建/销毁桌宠窗口（控制台「模型」页开关）
     let lastModelId = null
+    let lastPetEnabled = petEnabled
     try {
         lastModelId = (JSON.parse(fs.readFileSync(configPath, 'utf8'))?.ui || {}).model || null
     } catch (e) {}
@@ -154,8 +164,27 @@ app.whenReady().then(() => {
         setTimeout(() => {
             try {
                 const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'))
-                const modelId = (cfg?.ui || {}).model || null
-                const modelPath = (cfg?.ui || {}).model_path || null
+                const ui = (cfg?.ui) || {}
+                // 桌宠开关
+                const petEnabledNow = ui.pet_enabled !== false
+                if (petEnabledNow !== lastPetEnabled) {
+                    lastPetEnabled = petEnabledNow
+                    if (petEnabledNow) {
+                        if (!petWindow || petWindow.isDestroyed()) {
+                            petWindow = createWindow()
+                            console.log('桌宠开关打开，创建桌宠窗口')
+                        }
+                    } else {
+                        if (petWindow && !petWindow.isDestroyed()) {
+                            petWindow.destroy()
+                            petWindow = null
+                            console.log('桌宠开关关闭，销毁桌宠窗口')
+                        }
+                    }
+                }
+                // 模型切换
+                const modelId = ui.model || null
+                const modelPath = ui.model_path || null
                 if (modelId && modelId !== lastModelId && petWindow && !petWindow.isDestroyed()) {
                     lastModelId = modelId
                     if (modelPath) {
@@ -172,12 +201,12 @@ app.whenReady().then(() => {
         app.quit()
     })
 
-    // 读取初始 PTT 配置
+    // 读取初始 PTT 配置（桌宠关闭时不注册 PTT）
     try {
         let pttConfig = {}
         try { pttConfig = JSON.parse(fs.readFileSync(configPath, 'utf8')) } catch (e) {}
         pttKey = pttConfig.asr?.ptt_key || 'v'
-        if (pttConfig.asr?.ptt_enabled) {
+        if (petEnabled && pttConfig.asr?.ptt_enabled) {
             registerPTTShortcut()
         }
     } catch (e) {}

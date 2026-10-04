@@ -112,6 +112,25 @@ def get_active_model() -> str | None:
     return (cfg.get("ui") or {}).get("model")
 
 
+def get_pet_enabled() -> bool:
+    """读取桌宠开关（壳 config.json ui.pet_enabled，缺省开）。
+
+    壳 main.js 启动时据此决定是否创建桌宠窗口；watch config 变化时
+    据其创建/销毁窗口。控制台「模型」页的开关读写此字段。
+    """
+    cfg = _load_json(SHELL_CONFIG)
+    return (cfg.get("ui") or {}).get("pet_enabled", True)
+
+
+def set_pet_enabled(enabled: bool) -> bool:
+    """写桌宠开关到壳 config.json（壳 watch 后创建/销毁桌宠窗口）。"""
+    cfg = _load_json(SHELL_CONFIG)
+    ui = cfg.setdefault("ui", {})
+    ui["pet_enabled"] = bool(enabled)
+    SHELL_CONFIG.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+    return ui["pet_enabled"]
+
+
 def get_shell_agent_id() -> str | None:
     """桌宠对话绑定的 agent（工作区 nuomi-state.json 的 agent_id），用于联动插件激活。"""
     cfg = _load_json(STATE_FILE)
