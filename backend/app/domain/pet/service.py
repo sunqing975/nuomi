@@ -670,28 +670,28 @@ def _enrich_vrm(model_id: str, vrm_path: Path) -> dict:
     """
     # 通用表情（blend shape，所有 VRM 模型基本都有）
     expressions = {
-        "happy":    {"label": "开心微笑", "emotions": ["happy", "greeting", "praise"]},
-        "angry":    {"label": "生气", "emotions": ["angry", "displeased"]},
-        "sad":      {"label": "难过", "emotions": ["sad", "disappointed"]},
-        "relaxed":  {"label": "放松", "emotions": ["calm", "thinking", "listening"]},
-        "surprised":{"label": "惊讶张嘴", "emotions": ["surprised", "thinking", "question"]},
-        "blink":    {"label": "眨眼", "emotions": ["neutral"]},
-        "neutral":  {"label": "中性表情", "emotions": ["idle", "neutral"]},
+        "happy":    {"label_zh": "开心微笑", "emotions": ["happy", "greeting", "praise"]},
+        "angry":    {"label_zh": "生气", "emotions": ["angry", "displeased"]},
+        "sad":      {"label_zh": "难过", "emotions": ["sad", "disappointed"]},
+        "relaxed":  {"label_zh": "放松", "emotions": ["calm", "thinking", "listening"]},
+        "surprised":{"label_zh": "惊讶张嘴", "emotions": ["surprised", "thinking", "question"]},
+        "blink":    {"label_zh": "眨眼", "emotions": ["neutral"]},
+        "neutral":  {"label_zh": "中性表情", "emotions": ["idle", "neutral"]},
     }
     # 预设动作（壳里用骨骼旋转实现）
     actions = {
-        "wave_hand":       {"label": "挥手打招呼", "motion": "wave_hand", "emotions": ["greeting", "happy", "bye"]},
-        "nod":             {"label": "点头", "motion": "nod", "emotions": ["agree", "yes", "understanding"]},
-        "shake_head":      {"label": "摇头", "motion": "shake_head", "emotions": ["deny", "no", "disagree"]},
-        "tilt_head":       {"label": "歪头", "motion": "tilt_head", "emotions": ["curious", "thinking", "question"]},
-        "raise_right_hand":{"label": "举起右手", "motion": "raise_right_hand", "emotions": ["point", "show", "explain"]},
-        "raise_left_hand": {"label": "举起左手", "motion": "raise_left_hand", "emotions": ["point", "show", "explain"]},
-        "look_left":       {"label": "看向左边", "motion": "look_left", "emotions": ["thinking", "shy"]},
-        "look_right":      {"label": "看向右边", "motion": "look_right", "emotions": ["thinking", "shy"]},
-        "look_up":         {"label": "抬头看", "motion": "look_up", "emotions": ["thinking", "surprised"]},
-        "look_down":       {"label": "低头看", "motion": "look_down", "emotions": ["shy", "sad", "thoughtful"]},
-        "hands_on_hips":   {"label": "叉腰", "motion": "hands_on_hips", "emotions": ["confident", "angry", "explain"]},
-        "shrug":           {"label": "耸肩", "motion": "shrug", "emotions": ["helpless", "don't_know", "casual"]},
+        "wave_hand":       {"label_zh": "挥手打招呼", "motion": "wave_hand", "emotions": ["greeting", "happy", "bye"]},
+        "nod":             {"label_zh": "点头同意", "motion": "nod", "emotions": ["agree", "yes", "understanding"]},
+        "shake_head":      {"label_zh": "摇头拒绝", "motion": "shake_head", "emotions": ["deny", "no", "disagree"]},
+        "tilt_head":       {"label_zh": "歪头好奇", "motion": "tilt_head", "emotions": ["curious", "thinking", "question"]},
+        "raise_right_hand":{"label_zh": "举起右手指向", "motion": "raise_right_hand", "emotions": ["point", "show", "explain"]},
+        "raise_left_hand": {"label_zh": "举起左手指向", "motion": "raise_left_hand", "emotions": ["point", "show", "explain"]},
+        "look_left":       {"label_zh": "看向左边", "motion": "look_left", "emotions": ["thinking", "shy"]},
+        "look_right":      {"label_zh": "看向右边", "motion": "look_right", "emotions": ["thinking", "shy"]},
+        "look_up":         {"label_zh": "抬头看", "motion": "look_up", "emotions": ["thinking", "surprised"]},
+        "look_down":       {"label_zh": "低头思考", "motion": "look_down", "emotions": ["shy", "sad", "thoughtful"]},
+        "hands_on_hips":   {"label_zh": "叉腰", "motion": "hands_on_hips", "emotions": ["confident", "angry", "explain"]},
+        "shrug":           {"label_zh": "耸肩无奈", "motion": "shrug", "emotions": ["helpless", "don't_know", "casual"]},
     }
 
     actions_json = {
@@ -713,10 +713,10 @@ def _enrich_vrm(model_id: str, vrm_path: Path) -> dict:
 这是一个 3D VRM 模型。你可以通过工具直接控制 ta 的表情和身体动作。
 
 ## 可用表情（调 set_expression 工具，weight 0~1）
-{chr(10).join(f'- **{k}**：{v["label"]}' for k, v in expressions.items())}
+{chr(10).join(f'- **{k}**：{v["label_zh"]}' for k, v in expressions.items())}
 
 ## 可用动作（调 do_action 工具）
-{chr(10).join(f'- **{k}**：{v["label"]}' for k, v in actions.items())}
+{chr(10).join(f'- **{k}**：{v["label_zh"]}' for k, v in actions.items())}
 
 ## 使用建议
 - 对话时根据情绪自动切换表情（开心→happy，思考→relaxed，惊讶→surprised）
@@ -728,6 +728,22 @@ def _enrich_vrm(model_id: str, vrm_path: Path) -> dict:
 
     # 生成插件（直接传 actions，不走 list_models）
     _generate_semantic_plugin(model_id, actions_json["actions"])
+
+    # _generate_semantic_plugin 会覆盖 instructions.md，这里重写成 VRM 专用
+    instructions = f"""# {model_id}（VRM 3D 桌宠）
+
+这是一个 3D VRM 模型。你可以通过工具直接控制 ta 的表情和身体动作。
+
+## 可用动作工具
+{chr(10).join(f'- **{k}**：{v["label_zh"]}' for k, v in actions.items())}
+
+## 使用建议
+- 对话时根据情绪主动调用动作工具让身体动起来，不要只靠文字和 emoji
+- 打招呼用 wave_hand，同意用 nod，不同意用 shake_head，好奇时 tilt_head
+- 思考时 look_left/look_right，开心时配合 wave_hand
+- 调用动作后简短回应即可，不要长篇大论
+"""
+    (plugin_dir / "instructions.md").write_text(instructions, encoding="utf-8")
 
     logger.info("enrich_vrm %s done: %d expressions, %d actions",
                 model_id, len(expressions), len(actions))

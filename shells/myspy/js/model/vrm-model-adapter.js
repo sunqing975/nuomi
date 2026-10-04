@@ -214,16 +214,88 @@ class VRMModelAdapter extends EventEmitter {
     }
 
     // 兼容Live2D的motion方法
-    motion(group, index) {
-        // VRM没有与Live2D完全相同的Motion系统
-        // 简单实现：触发一个随机表情动画
-        if (!this.vrm || !this.vrm.expressionManager) return;
+    motion(name) {
+        if (!this.vrm || !this.vrm.humanoid) return;
+        console.log('[VRM动作]', name);
 
-        if (group === 'Tap' || group === 'TapBody') {
-            // 点击时随机播放一个表情
-            const expressions = ['happy', 'surprised', 'relaxed'];
-            const randomExpr = expressions[Math.floor(Math.random() * expressions.length)];
-            this._playExpression(randomExpr, 2000);
+        const bones = this.vrm.humanoid;
+        const head = bones.getNormalizedBoneNode('head');
+        const rightArm = bones.getNormalizedBoneNode('rightUpperArm');
+        const leftArm = bones.getNormalizedBoneNode('leftUpperArm');
+
+        // 动作动画：用简单的关键帧插值
+        const animate = (bone, targetRot, duration = 600) => {
+            if (!bone) return;
+            const startRot = bone.rotation.clone();
+            const start = performance.now();
+            const tick = () => {
+                const t = Math.min(1, (performance.now() - start) / duration);
+                const ease = t < 0.5 ? 2*t*t : -1+(4-2*t)*t; // easeInOut
+                bone.rotation.set(
+                    startRot.x + (targetRot.x - startRot.x) * ease,
+                    startRot.y + (targetRot.y - startRot.y) * ease,
+                    startRot.z + (targetRot.z - startRot.z) * ease
+                );
+                if (t < 1) requestAnimationFrame(tick);
+            };
+            tick();
+        };
+
+        switch(name) {
+            case 'wave_hand':
+                // 右臂举起，前后摆动
+                if (rightArm) {
+                    rightArm.rotation.set(0, 0, -Math.PI * 0.8); // 举起来
+                    let swings = 0;
+                    const swing = () => {
+                        if (swings++ >= 3) { animate(rightArm, new THREE.Vector3(0,0,0), 300); return; }
+                        rightArm.rotation.z = -Math.PI * 0.8 + Math.sin(swings * Math.PI) * 0.3;
+                        setTimeout(swing, 200);
+                    };
+                    setTimeout(swing, 300);
+                }
+                break;
+            case 'nod':
+                if (head) animate(head, new THREE.Vector3(0.3, 0, 0), 300);
+                setTimeout(() => { if (head) animate(head, new THREE.Vector3(0,0,0), 300); }, 400);
+                break;
+            case 'shake_head':
+                if (head) animate(head, new THREE.Vector3(0, 0.3, 0), 250);
+                setTimeout(() => { if (head) animate(head, new THREE.Vector3(0, -0.3, 0), 250); }, 300);
+                setTimeout(() => { if (head) animate(head, new THREE.Vector3(0,0,0), 300); }, 600);
+                break;
+            case 'tilt_head':
+                if (head) animate(head, new THREE.Vector3(0, 0, 0.3), 400);
+                setTimeout(() => { if (head) animate(head, new THREE.Vector3(0,0,0), 400); }, 1200);
+                break;
+            case 'look_left':
+                if (head) animate(head, new THREE.Vector3(0, 0.3, 0), 400);
+                setTimeout(() => { if (head) animate(head, new THREE.Vector3(0,0,0), 400); }, 1500);
+                break;
+            case 'look_right':
+                if (head) animate(head, new THREE.Vector3(0, -0.3, 0), 400);
+                setTimeout(() => { if (head) animate(head, new THREE.Vector3(0,0,0), 400); }, 1500);
+                break;
+            case 'look_up':
+                if (head) animate(head, new THREE.Vector3(-0.3, 0, 0), 400);
+                setTimeout(() => { if (head) animate(head, new THREE.Vector3(0,0,0), 400); }, 1500);
+                break;
+            case 'look_down':
+                if (head) animate(head, new THREE.Vector3(0.3, 0, 0), 400);
+                setTimeout(() => { if (head) animate(head, new THREE.Vector3(0,0,0), 400); }, 1500);
+                break;
+            case 'raise_right_hand':
+                if (rightArm) animate(rightArm, new THREE.Vector3(0, 0, -Math.PI * 0.6), 400);
+                break;
+            case 'raise_left_hand':
+                if (leftArm) animate(leftArm, new THREE.Vector3(0, 0, Math.PI * 0.6), 400);
+                break;
+            default:
+                // 未知动作：随机眨眼
+                if (this.vrm.expressionManager) {
+                    this.vrm.expressionManager.setValue('blink', 1);
+                    setTimeout(() => this.vrm.expressionManager.setValue('blink', 0), 200);
+                }
         }
     }
 
