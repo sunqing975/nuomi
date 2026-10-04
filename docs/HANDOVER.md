@@ -1,6 +1,6 @@
 # Nuomi 交接文档（HANDOVER）
 
-> 最后更新：2026-10-04 · 分支 main · HEAD `3492b20`（工作区干净）
+> 最后更新：2026-10-04 · 分支 main · HEAD `9a00db8`（工作区干净）
 > 本文件面向「下一个接手的人」：先读它，再读代码。已实现的细节以代码为准（`git show <commit>` 可查）。
 
 ---
@@ -31,11 +31,11 @@ nuomi/
 
 | 概念 | 关键约束 |
 |---|---|
-| 专家 Expert | 有名字/人格/系统提示词的 AI 角色，可启停 |
-| 插件 Plugin | `plugin.yaml` + `main.py`（`ctx.tool(...)` 注册）给 LLM 的工具集；**模型对应插件在插件页只读不可启停**（模型 1:1 对应插件） |
-| 技能 Skill | SKILL.md（frontmatter + 提示词），随 harness 注入；目录 `工作区/skills/<slug>/` |
-| 技能包 Skill Package | SkillHub 技能集的本地安装（一包多技能，`skill_packages/<id>/skills/<slug>/`）；**包级整体启停/删除**（禁用=不注入）；**不做版本更新** |
-| 连接器 | 外部工具服务（MCP 协议，stdio/sse/http），`NUOMI_CONNECTORS` 种子 + `connectors.json` 权威 |
+| 专家 Expert | 有名字/人格/系统提示词的 AI 角色，可启停；**不绑定插件**（2026-10-04 解耦） |
+| 插件 Plugin | `plugin.yaml` + `main.py`（`ctx.tool(...)` 注册）给 LLM 的工具集；**全局启停**（启用即对所有专家可用，无专家绑定）；**模型对应插件只读不可启停**（模型 1:1 对应插件，互斥切换） |
+| 技能 Skill | SKILL.md（frontmatter + 提示词），随 harness 注入；目录 `工作区/skills/<slug>/`；**per-turn 可白名单选择**（对话请求 skills 字段） |
+| 技能包 Skill Package | SkillHub 技能集的本地安装（一包多技能，`skill_packages/<id>/skills/<slug>/`）；**包级整体启停/删除**（禁用=不注入）；**不做版本更新**；包内技能随包注入，per-turn 同样可被 skills 白名单命中（slug） |
+| 连接器 | 外部工具服务（MCP 协议，stdio/sse/http），`NUOMI_CONNECTORS` 种子 + `connectors.json` 权威；**per-turn 可指定挂载**（对话请求 connectors 字段；不传=默认全挂，空=不挂） |
 | 桌宠模型 Model | 表现层资产（Live2D，**工作区 `models/2D/<id>/`**，2026-10-04 迁出壳仓库；仓库仅留可分发种子 `assets/models/2D/hiyori`，扫描时幂等播种）；选中模型 = 激活对应插件（互斥）；**与会话解耦**（2026-10-04 起切模型不换会话） |
 | 动作播放链 | 对话触发模型插件工具（动作/表情）→ 后端事件总线（`/api/pet/events` SSE）→ 壳常驻订阅播放（断线 3s 重连） |
 | 表现层协议 | v3 octop 事件帧（token/tool_call_chunk/tool_result/usage/done，带 node+thread_id）；**无 emotion 事件** |
@@ -67,9 +67,9 @@ cd shells/myspy && npm start
 
 ## 4. API 清单（全部 /api 前缀，见 app/transport/api.py）
 
-**对话/会话**：`POST /agents/{id}/chat`（SSE，octop 帧，body `{messages: str, thread_id}`）· `GET /agents/{id}/chat/history` · `GET /chat/state` · `POST /chat/new|switch|touch` · `DELETE /chat/threads/{tid}`（删会话+检查点历史）
+**对话/会话**：`POST /agents/{id}/chat`（SSE，octop 帧，body `{messages, thread_id, skills?, connectors?}`——skills: None=全量技能 / [] / [name|slug...] 白名单（非法名 400）；connectors: None=默认全挂 / [] / [name...] 只挂载）· `GET /agents/{id}/chat/history` · `GET /chat/state` · `POST /chat/new|switch|touch` · `DELETE /chat/threads/{tid}`（删会话+检查点历史）
 
-**专家/插件**：`GET|POST /agents` · `GET|PATCH|DELETE /agents/{id}` · `POST /agents/{id}/start|stop|status` · `GET|PUT /agents/{id}/plugins` · `GET /plugins` · `POST /plugins/sync` · `POST /plugins/import`（zip）· `POST /plugins/import-git`（git 仓库）· `PATCH /plugins/{id}`（启停）· `DELETE /plugins/{id}`（模型插件 400 拒绝，由桌宠删除级联）
+**专家/插件**：`GET|POST /agents` · `GET|PATCH|DELETE /agents/{id}` · `POST /agents/{id}/start|stop|status` · `GET /plugins` · `POST /plugins/sync` · `POST /plugins/import`（zip）· `POST /plugins/import-git`（git 仓库）· `PATCH /plugins/{id}`（启停）· `DELETE /plugins/{id}`（模型插件 400 拒绝，由桌宠删除级联）。**已废除**：`GET|PUT /agents/{id}/plugins`（专家-插件绑定，2026-10-04 解耦删除）
 
 **技能/技能包**：`GET /skills` · `GET /skills/builtin`（内置只读）· `GET|PATCH|DELETE /skills/{name}` · `POST /skills/import`（zip）· `POST /skills/import-git`（git 仓库）· `POST /skills/install`（SkillHub 单技能，requires_api_key 标注）· `GET /skillhub/search|rankings|skillsets{?q,/{slug}}`（search 循环翻页一次 50） · `GET /settings/env` · `PUT /settings/env`（应用设置环境变量，{workspace}/env.json → os.environ，技能/连接器 API key 在此配置）· `GET|POST /skill-packages` · `POST /skill-packages/from-skillhub` · `PATCH|DELETE /skill-packages/{id}`
 
@@ -79,7 +79,7 @@ OpenAI 兼容：`app/transport/openai_compat.py`（`/v1/chat/completions`，mode
 
 ## 5. 已验证链路（回归依据；细节以代码/实测为准）
 
-插件链（weather 触发 tool_call→tool_result；zip/git 导入均实测）、技能链（frontmatter+启停；git 导入实测 anthropics/skills→template-skill）、技能链（frontmatter+启停）、连接器链（pet_mood，MCP 协议）、协议链（/chat octop 帧 56 帧无解析错误）、控制台链（各板块无 console 错误）、壳链（面板重试/订阅断线重连）、**SkillHub 链**（真实市场：search/rankings/skillsets、单技能安装、技能集建包 6 技能、包启停/删除、chat 注入均实测通过）、模型切换链（插件互斥+manager.release，**不换会话**，2026-10-04 起）、**桌宠开关链**（控制台「桌宠」页开关 → /pet/status → config watch → 窗口创建/销毁，启动时按开关决定是否创建，2026-10-04）、会话链（真实线程列表，无 default 合成）、**管理页卡片化链**（专家/技能（已安装+市场）/桌宠/插件/连接器五页统一卡片网格，浏览器实测同行严格等高：技能页 5 列 179px、桌宠 sm 2 列 306px，2026-10-04）。
+插件链（weather 触发 tool_call→tool_result；zip/git 导入均实测）、技能链（frontmatter+启停；git 导入实测 anthropics/skills→template-skill）、技能链（frontmatter+启停）、连接器链（pet_mood，MCP 协议）、协议链（/chat octop 帧 56 帧无解析错误）、控制台链（各板块无 console 错误）、壳链（面板重试/订阅断线重连）、**SkillHub 链**（真实市场：search/rankings/skillsets、单技能安装、技能集建包 6 技能、包启停/删除、chat 注入均实测通过）、模型切换链（插件互斥+manager.release，**不换会话**，2026-10-04 起）、**桌宠开关链**（控制台「桌宠」页开关 → /pet/status → config watch → 窗口创建/销毁，启动时按开关决定是否创建，2026-10-04）、会话链（真实线程列表，无 default 合成）、**管理页卡片化链**（专家/技能（已安装+市场）/桌宠/插件/连接器五页统一卡片网格，浏览器实测同行严格等高：技能页 5 列 179px、桌宠 sm 2 列 306px，2026-10-04）、**专家-插件解耦链**（/agents/{id}/plugins 404；插件全局启停即对所有专家生效；weather 对话触发工具调用，2026-10-04）、**对话框能力选择链**（技能选择器选中→chip→对话携带 skills 白名单；weather 工具调用→消息气泡折叠步骤（tool_call args + tool_result content）→轨迹抽屉时间线，浏览器实测，2026-10-04）。
 
 **注意**：部分市场技能 SKILL.md 的 description 含裸 `: ` 导致 harness YAML 解析失败被跳过（如 superpowers-tdd）——与 Octop 行为一致，非 nuomi bug。
 
@@ -102,6 +102,8 @@ OpenAI 兼容：`app/transport/openai_compat.py`（`/v1/chat/completions`，mode
 - **市场技能 frontmatter 质量**：description 裸冒号 → harness 安全跳过（见 §5）。
 - **antd5 grid 卡片等高**：grid List 渲染为 `.ant-row > div`（**无 `.ant-list-items`**，也无 `.ant-col` 类——列是原生 div + colStyle）；Row 默认 `align: top` 列不拉伸，必须 CSS `align-items: stretch`；`nuomi-grid` 类若挂在 List 容器上选择器写 `.nuomi-grid .ant-row`，若挂在 Row 自身（桌宠页）写 `.ant-row.nuomi-grid`——两形态都要覆盖（frontend/src/index.css `.nuomi-grid` 块已兼容）。
 - **壳加载的是 build 产物**：控制面板指向 `http://127.0.0.1:8000/console/`（后端挂 dist），**不是** 5173 vite dev；改前端验证要走 build + 强制刷新（`?v=n` nonce），5173 的 vite proxy 未配置好也不影响壳。
+- **StreamingResponse generator 内抛 HTTPException 不转 400**：fastapi 对 generator 内异常不会返回错误响应（连接直接中断）；per-turn 参数校验（skills/connectors）必须在端点函数体、`async def gen()` 之前执行（2026-10-04）。
+- **per-turn 技能注入走 harness 原生**：`ChatRequest.skills`（None 全量 / [] 禁用全部 / 列表白名单，SkillFilterMiddleware 消费）+ `mcp_servers`/`mcp_use_default` 控制连接器挂载，无需自研过滤；nuomi 只做存在性校验（技能名须在「已启用工作区技能 + 已启用技能包内技能」集合）。
 
 ## 7. 项目主线清单（用户需求 → 状态）
 
@@ -114,7 +116,7 @@ OpenAI 兼容：`app/transport/openai_compat.py`（`/v1/chat/completions`，mode
 | 3 | 工作区单根化 + 数据迁移 | ✅ | `NUOMI_HOME=/Users/superman/Nuomi` 即数据根（**无 NUOMI_WORKSPACE**）；skills/plugins/skill_packages/models/connectors.json/env.json/nuomi-state.json 全部在内 |
 | 4 | 插件导入 | ✅ | `POST /plugins/import`（zip）+ `POST /plugins/import-git`（Git 仓库，浅克隆/50MB/已存在拒绝） |
 | 5 | 技能导入 | ✅ | `POST /skills/import`（zip）+ `POST /skills/import-git`；实测 anthropics/skills 真实仓库 |
-| 6 | 对话框大改动（参考 octop） | ⬜ 暂缓 | 用户 2026-10-04 拍板先不做；已调研 octop dashboard Chat 组件（MessageBubble/MessageList/ChatInput/Trajectory 系列等），改动范围待定 |
+| 6 | 对话框大改动（参考 octop） | ✅ | per-turn 能力注入（skills/connectors）+ 技能/连接器选择器 + 能力 chips + 工具步骤折叠 + 轨迹抽屉（2026-10-04 完成，见 §8 遗留增强项） |
 | 7 | 桌宠模型导入 | ✅ | 种子机制：仓库仅留 `assets/models/2D/hiyori`，扫描幂等播种到工作区 `models/2D/`；内置模型页只读不可删 |
 | 8 | 桌宠模型升级（现太呆板） | ⬜ 暂缓 | 现为纯动作/表情表现层（Live2D）；升级方案未定 |
 | 9 | 技能市场（SkillHub） | ✅ | search 循环翻页（服务端固定 10 条/页）+ slug 去重；rankings/skillsets；单技能安装/技能集建包；`requires_api_key` 标注 |
@@ -124,7 +126,11 @@ OpenAI 兼容：`app/transport/openai_compat.py`（`/v1/chat/completions`，mode
 
 ## 8. 遗留事项 / 下一步
 
-- [ ] **对话框大改动**（暂缓，见主线 #6）：改动范围待用户拍板
+- [x] **对话框大改动**（主线 #6，2026-10-04 完成）：per-turn 能力注入 + 选择器/chips/工具步骤/轨迹抽屉
+- [x] **专家-插件解耦**（2026-10-04 完成）：agent_plugins 全删，插件全局启停
+- [ ] **轨迹抽屉增强**（简版已上线）：octop 完整版含 Timeline/Inspector/MetricsBar/搜索，可后续补
+- [ ] **斜杠技能注入**（/slug）：本轮按用户拍板用「工具条选择器+chips」，octop 的 /slug 文本插入可后续加
+- [ ] **对话上下文保留**：当前切会话/加载历史无 tool_events（checkpointer 历史只有 text），工具步骤仅本次会话内存可见
 - [ ] **桌宠模型升级**（暂缓，见主线 #8）：表现层增强/新模型表现力
 - [ ] **桌宠直接说话（TTS）**（用户已拍板待办）：桌宠现为纯动作/表情层；TTS 客户端代码（`js/tts-client.js`、`TTSStreamProcessor`）已保留未删，届时恢复"收到回复文本→TTS 播报"入口
 - [ ] **octop WS 迁移**（暂缓）：事件帧已对齐，通道仍 HTTP SSE；注意 websockets 403 坑
@@ -158,6 +164,8 @@ e65477d  插件/连接器页卡片化（桌宠模型橙色标、传输协议角�
 5e3a268  卡片等高 CSS（首版选择器未命中，见 §6 踩坑）
 dc242b1  卡片等高修复：antd5 grid 列为裸 div，.ant-row > div（amend 掉误提交的 .vite 缓存）
 3492b20  桌宠页等高：补 .ant-row.nuomi-grid 形态 + align-items: stretch
+03eed82  feat: 专家-插件解耦 + 对话框 per-turn 能力注入（skills/connectors）+ 能力选择器/chips/工具步骤/轨迹抽屉
+9a00db8  docs: HANDOVER 回填（解耦 + 对话框大改动）
 ```
 
 开发规范：`make lint`（ruff）/ `make typecheck`（mypy），CI 在 .github/workflows。
