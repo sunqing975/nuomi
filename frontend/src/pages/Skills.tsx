@@ -11,7 +11,9 @@ import {
 export default function SkillsPage() {
   // —— 已安装 ——
   const [skills, setSkills] = useState<Skill[]>([]);
+  const [builtins, setBuiltins] = useState<Skill[]>([]);
   const [packages, setPackages] = useState<SkillPackage[]>([]);
+  const [envVars, setEnvVars] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   // —— 市场 ——
   const [hubTab, setHubTab] = useState<'skills' | 'skillsets'>('skills');
@@ -26,12 +28,16 @@ export default function SkillsPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [s, p] = await Promise.all([
+      const [s, p, b, e] = await Promise.all([
         get<Skill[]>('/skills'),
         get<SkillPackage[]>('/skill-packages'),
+        get<Skill[]>('/skills/builtin'),
+        get<Record<string, string>>('/settings/env'),
       ]);
       setSkills(s);
       setPackages(p);
+      setBuiltins(b);
+      setEnvVars(e);
     } finally {
       setLoading(false);
     }
@@ -121,6 +127,9 @@ export default function SkillsPage() {
     try {
       await post('/skills/install', { slug: item.slug });
       message.success(`技能 ${item.display_name} 已安装`);
+      if (item.requires_api_key) {
+        message.warning('该技能需要 API Key，请到「设置 → 环境变量」配置后重启对话生效', 5);
+      }
       load();
     } catch (e) {
       message.error(`安装失败：${(e as Error).message}`);
@@ -142,10 +151,22 @@ export default function SkillsPage() {
     }
   };
 
+  const missingEnv = (s: Skill) => (s.requires_env || []).filter(v => !envVars[v] && !(v in envVars));
+
   const skillColumns = [
     { title: '技能', dataIndex: 'name', render: (n: string) => <b>{n}</b> },
     { title: '描述', dataIndex: 'description', render: (d: string) => (
         <span style={{ color: '#6b7280' }}>{d || '—'}</span>),
+    },
+    { title: '密钥', width: 120, render: (_: unknown, s: Skill) => {
+        const miss = missingEnv(s);
+        if (!s.requires_env || s.requires_env.length === 0) return <span style={{ color: '#9ca3af' }}>—</span>;
+        return miss.length > 0 ? (
+          <Tag color="orange" title={`缺少：${miss.join(', ')}`}>需配置 {miss.join(', ')}</Tag>
+        ) : (
+          <Tag color="green">已配置</Tag>
+        );
+      },
     },
     { title: '启用', width: 90, render: (_: unknown, s: Skill) => (
         <Switch checked={s.enabled} onChange={v => toggleSkill(s, v)} />),
@@ -159,6 +180,17 @@ export default function SkillsPage() {
         >
           <Button size="small" type="text" danger icon={<DeleteOutlined />} />
         </Popconfirm>),
+    },
+  ];
+
+  const builtinColumns = [
+    { title: '内置技能', dataIndex: 'name', render: (n: string) => <span><b>{n}</b> <Tag color="blue">内置</Tag></span> },
+    { title: '语言', dataIndex: 'lang', width: 80, render: (l: string) => l || '—' },
+    { title: '描述', dataIndex: 'description', render: (d: string) => (
+        <span style={{ color: '#6b7280' }}>{d || '—'}</span>),
+    },
+    { title: '说明', width: 220, render: () => (
+        <span style={{ color: '#9ca3af', fontSize: 12 }}>随 harness 注入，只读</span>),
     },
   ];
 
@@ -209,6 +241,11 @@ export default function SkillsPage() {
           ) : null}
           title={<Space>{item.display_name}
             <Typography.Text code>{item.slug}</Typography.Text>
+            {item.requires_api_key && (
+              <Tag color="orange" title="该技能需要 API Key，安装后在「设置 → 环境变量」配置">
+                需 API Key
+              </Tag>
+            )}
             {hubTab === 'skillsets' && item.skill_count != null && (
               <Tag color="blue">{item.skill_count} 技能</Tag>)}
           </Space>}
@@ -269,8 +306,14 @@ export default function SkillsPage() {
                   />
                 </Modal>
                 <Table<Skill>
+                  rowKey="name" columns={builtinColumns} dataSource={builtins}
+                  loading={loading} pagination={false} size="small"
+                  title={() => <b style={{ fontSize: 13 }}>内置技能（随 harness 分发，仅查看）</b>}
+                />
+                <Table<Skill>
                   rowKey="name" columns={skillColumns} dataSource={skills}
                   loading={loading} pagination={false} size="small"
+                  style={{ marginTop: 16 }}
                   title={() => <b style={{ fontSize: 13 }}>技能（单技能，目录 工作区/skills/）</b>}
                 />
                 <Table<SkillPackage>

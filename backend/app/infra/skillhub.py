@@ -159,6 +159,9 @@ def _normalize_item(raw: dict) -> dict:
         "namespace": str(ns.get("canonicalName") or ""),
         "skill_slugs": skill_slugs,
         "skill_count": len(skill_slugs) or None,
+        # SkillHub 条目带 labels.requires_api_key（"true"/"false"）→ 前端展示「需 API Key」标签
+        "requires_api_key": str((raw.get("labels") or {}).get("requires_api_key", "")).lower()
+        == "true",
     }
 
 

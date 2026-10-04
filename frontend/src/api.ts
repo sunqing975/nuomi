@@ -73,6 +73,9 @@ export interface Skill {
   path: string;
   description: string;
   enabled: boolean;
+  requires_env?: string[];
+  builtin?: boolean;
+  lang?: string;
 }
 
 export interface SkillHubItem {
@@ -88,6 +91,7 @@ export interface SkillHubItem {
   namespace: string;
   skill_slugs?: string[];
   skill_count?: number | null;
+  requires_api_key?: boolean;
 }
 
 export interface SkillPackageSkill {

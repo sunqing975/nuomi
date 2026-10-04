@@ -27,7 +27,7 @@ from app.domain.chat.service import chat_sessions
 from app.domain.plugins.service import plugin_service
 from app.domain.skillpackages.service import skill_package_service
 from app.domain.skills.service import skill_service
-from app.infra import skillhub
+from app.infra import env_store, skillhub
 from app.infra.harness.chat import stream_chat, stream_octop_sse
 from app.infra.harness.manager import manager
 from app.infra.pet_events import pet_events
@@ -430,6 +430,12 @@ async def list_skills() -> list[dict]:
     return skill_service.list_all()
 
 
+@router.get("/skills/builtin")
+async def list_builtin_skills() -> list[dict]:
+    """harness 包内置技能（只读展示，不可编辑/删除）。"""
+    return skill_service.builtin()
+
+
 @router.post("/skills/import")
 async def import_skill_zip(file: UploadFile = File(...)) -> dict:
     """从 zip 导入技能到工作区 skills/<name>/（格式：SKILL.md，实时扫描自动可见）。
@@ -498,6 +504,26 @@ class SkillPackagePatchBody(BaseModel):
     name: str | None = None
     description: str | None = None
     icon_url: str | None = None
+
+
+class EnvSaveBody(BaseModel):
+    """环境变量整体保存请求体（应用设置，对齐 octop）。"""
+
+    values: dict[str, str] = Field(default_factory=dict)
+
+
+@router.get("/settings/env")
+async def get_app_env() -> dict[str, str]:
+    """应用环境变量（技能/连接器 API key 等；存 {workspace}/env.json）。"""
+    return env_store.load()
+
+
+@router.put("/settings/env")
+async def put_app_env(body: EnvSaveBody) -> dict[str, str]:
+    """整体保存环境变量：即时注入进程 env，并释放 agent 实例（下次对话生效）。"""
+    saved = env_store.save(body.values)
+    manager.close()
+    return saved
 
 
 @router.get("/skillhub/search")

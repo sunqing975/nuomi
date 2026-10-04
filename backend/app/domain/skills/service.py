@@ -89,10 +89,11 @@ class SkillService:
 
     @staticmethod
     def _read_skill(dir_path: Path) -> dict:
-        """解析 SKILL.md frontmatter（name/description），fallback 目录名。"""
+        """解析 SKILL.md frontmatter（name/description/requires_env），fallback 目录名。"""
         content = (dir_path / "SKILL.md").read_text(encoding="utf-8")
         name = dir_path.name
         description = ""
+        requires_env: list[str] = []
         if content.startswith("---"):
             end = content.find("---", 4)
             if end > 0:
@@ -102,9 +103,47 @@ class SkillService:
                     if slug and _SKILL_NAME_RE.match(slug):
                         name = slug
                     description = str(meta.get("description") or "").strip()
+                    raw_env = meta.get("requires_env") or meta.get("requires_api_key") or ""
+                    if isinstance(raw_env, str):
+                        requires_env = [x.strip() for x in raw_env.split(",") if x.strip()]
+                    elif isinstance(raw_env, list):
+                        requires_env = [str(x).strip() for x in raw_env if str(x).strip()]
                 except yaml.YAMLError:
                     pass
-        return {"name": name, "path": str(dir_path), "description": description}
+        return {
+            "name": name,
+            "path": str(dir_path),
+            "description": description,
+            "requires_env": requires_env,
+        }
+
+    def builtin(self) -> list[dict]:
+        """harness 包内置技能（只读，随包分发，不可编辑/删除）。
+
+        扫描 octop_harness/builtin/skills/{zh,en}/*/SKILL.md，按目录名去重
+        （zh/en 同名技能只展示一次，zh 优先）。
+        """
+        import importlib.util
+
+        spec = importlib.util.find_spec("octop_harness")
+        if spec is None or spec.submodule_search_locations is None:
+            return []
+        pkg_root = Path(spec.submodule_search_locations[0])
+        builtin_root = pkg_root / "builtin" / "skills"
+        out: dict[str, dict] = {}
+        for lang in ("zh", "en"):
+            lang_dir = builtin_root / lang
+            if not lang_dir.is_dir():
+                continue
+            for item in sorted(lang_dir.iterdir()):
+                skill_md = item / "SKILL.md"
+                if not skill_md.is_file():
+                    continue
+                info = self._read_skill(item)
+                name = info["name"]
+                if name not in out:  # zh 优先（先遍历 zh）
+                    out[name] = {**info, "builtin": True, "lang": lang}
+        return list(out.values())
 
 
 skill_service = SkillService()

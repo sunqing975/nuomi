@@ -40,6 +40,7 @@ def seed_default_agent() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    _sync_env_file()  # 应用设置 env（env.json）→ 进程环境，先于一切
     init_db()
     seed_default_agent()
     _ensure_model_plugins()
@@ -47,6 +48,13 @@ async def lifespan(_: FastAPI):
     _sync_connectors_file()
     yield
     manager.close()
+
+
+def _sync_env_file() -> None:
+    """环境变量源：{workspace}/env.json（应用设置页维护）→ os.environ。"""
+    from app.infra.env_store import apply
+
+    apply()
 
 
 def _sync_connectors_file() -> None:
