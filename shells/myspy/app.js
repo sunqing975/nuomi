@@ -865,7 +865,7 @@ async function main() {
         })
 
 
-        log('myspy 启动完成')
+        log('糯米启动完成')
 
         // 订阅后端动作广播：控制台等来源的对话也会驱动桌宠动作
         subscribePetEvents()

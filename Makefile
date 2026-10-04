@@ -1,21 +1,20 @@
 # =============================================================================
 # 糯米 Nuomi · 启动 / 关闭脚本（Makefile）
 #
-# 默认形态（2026-10-02 起）：桌面版。`cargo tauri dev` 全自动管理——
-# tauri CLI 自行拉起 vite(:5173) 与源码后端（带 token，随机空闲端口，
-# 8000 已有可用后端则复用），应用退出时自动回收后端。
+# 默认形态（v0.13 起）：桌面 = 桌宠壳（shells/myspy，Electron）。
+#   make start        启动桌宠壳（默认形态；依赖后端 :8000）
+#   make web          调试形态：后端:8000 + 控制台前端:5173（浏览器调试用）
 #
 # 常用：
-#   make start       启动桌面版（推荐，日常用这个）
-#   make stop        停止桌面版 / web 模式
+#   make start       启动桌宠壳（默认形态，日常用这个）
+#   make stop        停止桌宠壳 / web 模式
 #   make status      查看运行状态
 #   make logs        查看最近日志
-#   make web         显式启动 web 模式（后端:8000 + 前端:5173，浏览器调试用）
 #   make check       质量门禁：lint + 格式检查 + typecheck + pytest（提交前跑这个）
 #   make lint        后端 ruff lint（backend + plugins）
 #   make typecheck   后端 mypy 类型检查
 #   make test        运行后端 pytest
-#   make build       前端构建（tsc + vite build，桌面版加载 dist）
+#   make build       前端构建（tsc + vite build）
 #
 # 进程管理：PID 与日志落在 .logs/（已 gitignore），端口占用则跳过启动。
 # =============================================================================
@@ -23,8 +22,8 @@
 SHELL         := /bin/bash
 ROOT          := $(CURDIR)
 LOGDIR        := $(ROOT)/.logs
-DESKTOP_PID   := $(LOGDIR)/desktop.pid
-DESKTOP_LOG   := $(LOGDIR)/desktop.log
+SHELL_PID     := $(LOGDIR)/shell.pid
+SHELL_LOG     := $(LOGDIR)/shell.log
 BACKEND_PID   := $(LOGDIR)/backend.pid
 FRONTEND_PID  := $(LOGDIR)/frontend.pid
 BACKEND_LOG   := $(LOGDIR)/backend.log
@@ -39,13 +38,13 @@ FRONTEND_PORT := 5173
 help:
 	@echo "糯米 Nuomi 启动/关闭脚本"
 	@echo ""
-	@echo "  make start          启动桌面版（cargo tauri dev，自动起 vite + 后端）"
-	@echo "  make stop           停止桌面版 / web 模式"
+	@echo "  make start          启动桌宠壳（默认形态；依赖后端 :$(BACKEND_PORT)）"
+	@echo "  make stop           停止桌宠壳 / web 模式"
 	@echo "  make restart        重启"
 	@echo "  make status         查看运行状态"
 	@echo "  make logs           查看最近日志"
 	@echo "  make logs-follow    实时跟踪日志（Ctrl-C 退出）"
-	@echo "  make web            显式启动 web 模式（后端:$(BACKEND_PORT) + 前端:$(FRONTEND_PORT)）"
+	@echo "  make web            调试形态：后端:$(BACKEND_PORT) + 前端:$(FRONTEND_PORT)（浏览器调试用）"
 	@echo "  make check          质量门禁：lint + 格式检查 + typecheck + pytest"
 	@echo "  make lint           后端 ruff lint（backend + plugins）"
 	@echo "  make typecheck      后端 mypy 类型检查"
@@ -54,23 +53,23 @@ help:
 	@echo "  make build          前端构建（tsc + vite build）"
 	@echo "  make clean          清理 PID 文件与日志"
 
-# ---- 桌面版（默认） ----
+# ---- 桌宠壳（默认形态） ----
 start: desktop
 
 desktop:
 	@mkdir -p $(LOGDIR)
-	@if [ -f $(DESKTOP_PID) ] && kill -0 $$(cat $(DESKTOP_PID)) 2>/dev/null; then \
-		echo "⚠ 桌面版已在运行 (PID $$(cat $(DESKTOP_PID)))，先 make stop 再启动"; \
-	elif lsof -nP -iTCP:$(FRONTEND_PORT) -sTCP:LISTEN >/dev/null 2>&1 || pgrep -x nuomi-desktop >/dev/null 2>&1; then \
-		echo "⚠ 检测到残留桌面版进程（:$(FRONTEND_PORT) 或 nuomi-desktop），先 make stop 清理"; \
+	@if [ -f $(SHELL_PID) ] && kill -0 $$(cat $(SHELL_PID)) 2>/dev/null; then \
+		echo "⚠ 桌宠壳已在运行 (PID $$(cat $(SHELL_PID)))，先 make stop 再启动"; \
+	elif pgrep -f "shells/myspy/node_modules/electron" >/dev/null 2>&1; then \
+		echo "⚠ 检测到残留桌宠壳进程，先 make stop 清理"; \
 	else \
-		cd $(ROOT)/desktop && nohup cargo tauri dev >$(DESKTOP_LOG) 2>&1 </dev/null & \
-		echo $$! > $(DESKTOP_PID); \
-		echo "✔ 桌面版已启动 (PID $$(cat $(DESKTOP_PID)))，日志 $(DESKTOP_LOG)"; \
-		echo "  窗口就绪后即打开；后端由 tauri 自动拉起/回收"; \
+		cd $(ROOT)/shells/myspy && nohup npm start >$(SHELL_LOG) 2>&1 </dev/null & \
+		echo $$! > $(SHELL_PID); \
+		echo "✔ 桌宠壳已启动 (PID $$(cat $(SHELL_PID)))，日志 $(SHELL_LOG)"; \
+		echo "  窗口就绪后即显示桌宠；依赖后端 :$(BACKEND_PORT)（未启动请先 make backend）"; \
 	fi
 
-# ---- web 模式（可选，浏览器调试） ----
+# ---- web 模式（调试形态，浏览器调试用） ----
 web: backend frontend
 	@echo ""
 	@echo "✔ web 模式启动完成：前端 http://localhost:$(FRONTEND_PORT)（vite 代理 /api → :$(BACKEND_PORT)）"
@@ -100,15 +99,15 @@ frontend:
 	fi
 
 stop:
-	@echo "== 停止桌面版 =="
-	@if [ -f $(DESKTOP_PID) ]; then \
-		DPID=$$(cat $(DESKTOP_PID)); \
-		if kill -0 $$DPID 2>/dev/null; then kill $$DPID 2>/dev/null || true; echo "  已终止 tauri dev (PID $$DPID)"; fi; \
-		rm -f $(DESKTOP_PID); \
+	@echo "== 停止桌宠壳 =="
+	@if [ -f $(SHELL_PID) ]; then \
+		SPID=$$(cat $(SHELL_PID)); \
+		if kill -0 $$SPID 2>/dev/null; then kill $$SPID 2>/dev/null || true; echo "  已终止桌宠启动进程 (PID $$SPID)"; fi; \
+		rm -f $(SHELL_PID); \
 	fi
-	@if pgrep -x nuomi-desktop >/dev/null 2>&1; then \
-		pkill -x nuomi-desktop 2>/dev/null || true; \
-		echo "  已终止桌面应用 (nuomi-desktop)"; \
+	@if pgrep -f "shells/myspy/node_modules/electron" >/dev/null 2>&1; then \
+		pkill -f "shells/myspy/node_modules/electron" 2>/dev/null || true; \
+		echo "  已终止桌宠壳 (Electron)"; \
 	fi
 	@echo "== 停止 web 模式 =="
 	@if [ -f $(BACKEND_PID) ]; then \
@@ -130,22 +129,13 @@ stop:
 			echo "  已回收 :$$P 残留进程 (PID $$VPID)"; \
 		fi; \
 	done
-	@BP=$$(grep -oE 'http://127\.0\.0\.1:[0-9]+' $(DESKTOP_LOG) 2>/dev/null | tail -1 | grep -oE '[0-9]+$$'); \
-	if [ -n "$$BP" ]; then \
-		if lsof -nP -iTCP:$$BP -sTCP:LISTEN >/dev/null 2>&1; then \
-			VPID=$$(lsof -tiTCP:$$BP -sTCP:LISTEN | head -1); \
-			kill $$VPID 2>/dev/null || true; \
-			echo "  已回收 tauri 自起后端 :$$BP (PID $$VPID)"; \
-		fi; \
-	fi
 	@echo "✔ 全部停止"
 
 restart: stop start
 
 status:
 	@echo "== 糯米 Nuomi 运行状态 =="
-	@if [ -f $(DESKTOP_PID) ] && kill -0 $$(cat $(DESKTOP_PID)) 2>/dev/null; then echo "  桌面版     运行中 (tauri dev PID $$(cat $(DESKTOP_PID)))"; else echo "  桌面版     未运行"; fi
-	@if pgrep -x nuomi-desktop >/dev/null 2>&1; then echo "  应用窗口   运行中 (PID $$(pgrep -x nuomi-desktop | head -1))"; else echo "  应用窗口   未运行"; fi
+	@if pgrep -f "shells/myspy/node_modules/electron" >/dev/null 2>&1; then echo "  桌宠壳     运行中 (Electron)"; else echo "  桌宠壳     未运行"; fi
 	@if [ -f $(BACKEND_PID) ] && kill -0 $$(cat $(BACKEND_PID)) 2>/dev/null; then echo "  web 后端   运行中 (PID $$(cat $(BACKEND_PID)))"; else echo "  web 后端   未运行"; fi
 	@if [ -f $(FRONTEND_PID) ] && kill -0 $$(cat $(FRONTEND_PID)) 2>/dev/null; then echo "  web 前端   运行中 (PID $$(cat $(FRONTEND_PID)))"; else echo "  web 前端   未运行"; fi
 	@echo "  端口监听:"
@@ -153,8 +143,8 @@ status:
 	@lsof -nP -iTCP:$(FRONTEND_PORT) -sTCP:LISTEN 2>/dev/null | tail -n +1 || true
 
 logs:
-	@echo "===== 桌面版日志 ($(DESKTOP_LOG)) ====="
-	@tail -n 30 $(DESKTOP_LOG) 2>/dev/null || echo "(暂无日志)"
+	@echo "===== 桌宠壳日志 ($(SHELL_LOG)) ====="
+	@tail -n 30 $(SHELL_LOG) 2>/dev/null || echo "(暂无日志)"
 	@echo ""
 	@echo "===== 后端日志 ($(BACKEND_LOG)) ====="
 	@tail -n 30 $(BACKEND_LOG) 2>/dev/null || echo "(暂无日志)"
@@ -163,7 +153,7 @@ logs:
 	@tail -n 30 $(FRONTEND_LOG) 2>/dev/null || echo "(暂无日志)"
 
 logs-follow:
-	@tail -f $(DESKTOP_LOG) $(BACKEND_LOG) $(FRONTEND_LOG)
+	@tail -f $(SHELL_LOG) $(BACKEND_LOG) $(FRONTEND_LOG)
 
 test:
 	@cd $(ROOT)/backend && .venv/bin/python -m pytest -q
@@ -189,5 +179,5 @@ build:
 	@cd $(ROOT)/frontend && npm run build
 
 clean:
-	@rm -f $(DESKTOP_PID) $(BACKEND_PID) $(FRONTEND_PID) $(DESKTOP_LOG) $(BACKEND_LOG) $(FRONTEND_LOG)
+	@rm -f $(SHELL_PID) $(BACKEND_PID) $(FRONTEND_PID) $(SHELL_LOG) $(BACKEND_LOG) $(FRONTEND_LOG)
 	@echo "✔ 已清理 PID 文件与日志"

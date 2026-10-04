@@ -1072,6 +1072,22 @@ async def switch_pet_model(body: PetModelSwitchBody) -> dict:
         # 工具集随插件启停变化：释放 agent 实例，下次对话重建（带新模型插件工具）
         manager.release(agent_id)
 
+    # 新模型没有 actions.json → 后台异步跑 AI 分析（不阻塞响应）
+    from app.domain.pet.service import MODEL_DIR, enrich_model
+
+    actions_path = MODEL_DIR / body.model_id / "actions.json"
+    if not actions_path.is_file():
+        import asyncio
+
+        async def _enrich():
+            await asyncio.to_thread(enrich_model, body.model_id)
+            # 分析完重新激活插件 + release agent
+            plugin_service.set_enabled(body.model_id, True)
+            if agent_id:
+                manager.release(agent_id)
+
+        asyncio.create_task(_enrich())
+
     return {
         "ok": True,
         "model": model,

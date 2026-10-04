@@ -209,7 +209,7 @@ app.whenReady().then(() => {
         }
     } catch (e) {}
 
-    console.log('myspy 启动完成')
+    console.log('糯米启动完成')
 })
 
 app.on('window-all-closed', () => {

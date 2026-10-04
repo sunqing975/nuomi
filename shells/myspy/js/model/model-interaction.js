@@ -1,6 +1,6 @@
 const { ipcRenderer } = require('electron');
 
-// 模型交互控制器类（从原项目复制，适配 myspy）
+// 模型交互控制器类（从原项目复制，适配 nuomi 糯米）
 class ModelInteractionController {
     constructor() {
         this.model = null;

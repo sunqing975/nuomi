@@ -460,3 +460,174 @@ def load_pet_instructions() -> str:
         return instructions_path.read_text(encoding="utf-8").strip()
     except OSError:
         return ""
+
+
+# ---------- AI 自动分析模型 → 生成 actions.json + instructions.md ----------
+
+def _summarize_expression_file(path: Path) -> dict:
+    """读单个 .exp3.json，提取非零参数变化（AI 据此判断情绪）。"""
+    try:
+        d = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return {
+        p["Id"]: p["Value"]
+        for p in d.get("Parameters", [])
+        if abs(p.get("Value", 0)) > 0.1
+    }
+
+
+def _summarize_motion_file(path: Path) -> dict:
+    """读单个 .motion3.json，提取关键曲线摘要（哪些参数变化大）。"""
+    try:
+        d = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    meta = d.get("Meta", {})
+    notable = []
+    for c in d.get("Curves", []):
+        pid = c.get("Id", "")
+        segs = c.get("Segments", [])
+        if len(segs) < 2:
+            continue
+        try:
+            vals = [
+                segs[i]
+                for i in range(1, len(segs), 2)
+                if isinstance(segs[i], (int, float))
+            ]
+            if vals:
+                rng = max(vals) - min(vals)
+                if rng > 1.0:
+                    notable.append(f"{pid}(range={rng:.1f})")
+        except (IndexError, TypeError):
+            pass
+    return {
+        "duration_s": round(meta.get("Duration", 0), 1),
+        "loop": meta.get("Loop", False),
+        "active_params": notable[:8],
+    }
+
+
+def enrich_model(model_id: str) -> dict:
+    """用 AI 分析模型目录，生成 actions.json + instructions.md。
+
+    流程：
+    1. 读 model3.json 拿到 motions/expressions 列表
+    2. 读所有 .exp3.json 参数 + motion 曲线摘要（分段，控制 token）
+    3. 调 LLM 生成语义动作映射 + 身体使用说明
+    4. 写 actions.json + 重生成插件
+
+    失败时返回 {"ok": False, "error": ...}，不影响模型使用（fallback 到裸工具名）。
+    """
+    model_dir = MODEL_DIR / model_id
+    model_files = sorted(model_dir.glob("*.model3.json"))
+    if not model_files:
+        return {"ok": False, "error": "model3.json not found"}
+    meta = _load_json(model_files[0])
+    fr = meta.get("FileReferences") or {}
+
+    # 1. 表情摘要
+    expressions: dict[str, dict] = {}
+    for e in fr.get("Expressions", []):
+        if not isinstance(e, dict):
+            continue
+        name = e.get("Name") or Path(e.get("File", "")).stem
+        exp_path = model_dir / e.get("File", "")
+        if exp_path.is_file():
+            expressions[name] = _summarize_expression_file(exp_path)
+
+    # 2. motion 摘要
+    motion_groups: dict[str, list[str]] = {}
+    motion_details: dict[str, dict] = {}
+    for group, files in (fr.get("Motions") or {}).items():
+        motion_groups[group] = []
+        for f in files:
+            fname = f.get("File", "") if isinstance(f, dict) else ""
+            if not fname:
+                continue
+            motion_groups[group].append(Path(fname).stem)
+            mpath = model_dir / fname
+            if mpath.is_file():
+                motion_details[Path(fname).stem] = _summarize_motion_file(mpath)
+
+    # 3. 调 LLM
+    from openai import OpenAI
+
+    providers_data = json.loads(
+        (settings.workspace_path / "providers.json").read_text(encoding="utf-8")
+    )
+    providers = providers_data.get("providers") or []
+    if not providers:
+        return {"ok": False, "error": "no LLM provider configured"}
+    p = providers[0]
+    client = OpenAI(api_key=p["api_key"], base_url=p["base_url"])
+    model_name = p["models"][0]["id"] if p.get("models") else p.get("model", "deepseek-chat")
+
+    prompt = f"""你是 Live2D 模型动作分析专家。根据以下表情参数和动作曲线摘要，生成语义动作映射。
+
+模型：{model_id}
+
+表情列表（参数变化大的才列出）：
+{json.dumps(expressions, ensure_ascii=False, indent=2)}
+
+动作分组：
+{json.dumps(motion_groups, ensure_ascii=False, indent=2)}
+
+动作曲线摘要：
+{json.dumps(motion_details, ensure_ascii=False, indent=2)}
+
+请输出严格 JSON：
+{{
+  "actions": {{
+    "snake_case动作名": {{
+      "motion": "motion组名",
+      "expressions": ["表情名"],
+      "label_zh": "中文标签"
+    }}
+  }},
+  "instructions": "一段给 AI 角色的身体使用说明（100字内），列出可用动作，告诉它什么时候用，不要用 emoji 代替动作"
+}}
+
+要求：
+- motion 必须是上面分组里的 group 名
+- expressions 必须从上面表情列表选
+- 覆盖日常对话：打招呼/思考/惊讶/开心/生气/害羞/放松/被摸
+- instructions 要自然，不要八股"""
+
+    try:
+        resp = client.chat.completions.create(
+            model=model_name,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
+        )
+        raw = resp.choices[0].message.content.strip()
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+        result = json.loads(raw)
+    except Exception as e:
+        logger.warning("enrich_model %s failed: %s", model_id, e)
+        return {"ok": False, "error": str(e)}
+
+    # 4. 写 actions.json
+    actions_path = model_dir / "actions.json"
+    actions_path.write_text(
+        json.dumps({"actions": result["actions"]}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    # 5. 写 instructions.md（AI 生成，覆盖模板）
+    plugin_dir = settings.workspace_path / "plugins" / model_id
+    instructions_path = plugin_dir / "instructions.md"
+    if instructions_path.parent.is_dir():
+        instructions_path.write_text(
+            result.get("instructions", "").strip(), encoding="utf-8"
+        )
+
+    # 6. 重新生成插件
+    model_info = next((m for m in list_models() if m["id"] == model_id), None)
+    if model_info:
+        generate_model_plugin(model_info)
+
+    logger.info("enrich_model %s done: %d actions", model_id, len(result["actions"]))
+    return {"ok": True, "actions": len(result["actions"])}

@@ -15,12 +15,12 @@
   "ui": {
     "intro_text": "你好，我是糯米。",
     "model_type": "live2d",
-    "model_path": "/Users/superman/Nuomi/models/2D/aidang/aidang_2.model3.json",
+    "model_path": "/Users/superman/Nuomi/models/2D/natori/Natori.model3.json",
     "show_chat_box": true,
     "show_model": true,
-    "model_x": 54.72404827855439,
-    "model_y": 354.90677972560974,
-    "model": "aidang",
+    "model_x": -81.41493749999995,
+    "model_y": 191.96721875000003,
+    "model": "natori",
     "pet_enabled": true
   },
   "subtitle_labels": {

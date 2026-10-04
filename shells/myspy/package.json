@@ -1,7 +1,7 @@
 {
-  "name": "myspy",
+  "name": "nuomi-pet",
   "version": "1.0.0",
-  "description": "Minimal Live2D AI Companion Desktop Pet",
+  "description": "糯米 AI 桌宠表现层（基于 myspy, MIT）",
   "main": "main.js",
   "scripts": {
     "start": "electron ."
