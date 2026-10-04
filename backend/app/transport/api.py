@@ -227,26 +227,36 @@ def _resolve_pet_action(tool_name: str) -> dict | None:
     payload: {"motion": "...", "expressions": [...], "label": "..."}
     """
     from app.domain.pet.service import get_active_model, list_models
+    import json
+    from pathlib import Path
 
     active = get_active_model()
     if not active:
         return None
+
+    # 读当前激活模型的 actions.json（VRM 模型在 plugins/<id>/ 下）
+    actions_path = Path(settings.workspace_path) / "plugins" / active / "actions.json"
+    actions = {}
+    if actions_path.is_file():
+        try:
+            actions = json.loads(actions_path.read_text(encoding="utf-8")).get("actions") or {}
+        except Exception:
+            pass
+
+    if tool_name in actions:
+        spec = actions[tool_name]
+        return {
+            "motion": spec.get("motion") or None,
+            "expressions": spec.get("expressions") or [],
+            "label": spec.get("label_zh") or tool_name,
+        }
+
+    # Live2D fallback：裸 motion/expression 名
     for m in list_models():
         if m["id"] != active:
             continue
-        # 1. 语义动作（actions.json）：工具名 = wave/dance/nod...
-        actions = m.get("actions") or {}
-        if tool_name in actions:
-            spec = actions[tool_name]
-            return {
-                "motion": spec.get("motion") or None,
-                "expressions": spec.get("expressions") or [],
-                "label": spec.get("label_zh") or tool_name,
-            }
-        # 2. fallback：裸 motion group 名
         if tool_name in m.get("motions", []):
             return {"motion": tool_name, "expressions": [], "label": tool_name}
-        # 3. fallback：裸 expression 名
         if tool_name in m.get("expressions", []):
             return {"motion": None, "expressions": [tool_name], "label": tool_name}
         break

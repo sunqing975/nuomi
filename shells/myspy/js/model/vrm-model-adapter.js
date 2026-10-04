@@ -243,16 +243,26 @@ class VRMModelAdapter extends EventEmitter {
 
         switch(name) {
             case 'wave_hand':
-                // 右臂举起，前后摆动
+                // 右臂举起平举，前臂上下摆动
                 if (rightArm) {
-                    rightArm.rotation.set(0, 0, -Math.PI * 0.8); // 举起来
+                    const rightLowerArm = bones.getNormalizedBoneNode('rightLowerArm');
+                    // 上臂举到侧面平举
+                    rightArm.rotation.set(0, 0, -Math.PI * 0.5);
                     let swings = 0;
                     const swing = () => {
-                        if (swings++ >= 3) { animate(rightArm, new THREE.Vector3(0,0,0), 300); return; }
-                        rightArm.rotation.z = -Math.PI * 0.8 + Math.sin(swings * Math.PI) * 0.3;
-                        setTimeout(swing, 200);
+                        if (swings++ >= 3) {
+                            // 放下手臂
+                            if (rightLowerArm) rightLowerArm.rotation.set(0,0,0);
+                            animate(rightArm, new THREE.Vector3(0,0,0), 300);
+                            return;
+                        }
+                        // 前臂上下摆动
+                        if (rightLowerArm) {
+                            rightLowerArm.rotation.z = Math.sin(swings * Math.PI) * 0.5 - 0.3;
+                        }
+                        setTimeout(swing, 250);
                     };
-                    setTimeout(swing, 300);
+                    setTimeout(swing, 350);
                 }
                 break;
             case 'nod':
@@ -289,6 +299,59 @@ class VRMModelAdapter extends EventEmitter {
                 break;
             case 'raise_left_hand':
                 if (leftArm) animate(leftArm, new THREE.Vector3(0, 0, Math.PI * 0.6), 400);
+                break;
+            case 'dance':
+                // 跳舞：左右摆身体 + 手臂上下交替
+                {
+                    const leftArm = bones.getNormalizedBoneNode('leftUpperArm');
+                    const hips = bones.getNormalizedBoneNode('hips');
+                    let beats = 0;
+                    const danceStep = () => {
+                        if (beats++ >= 6) {
+                            if (rightArm) animate(rightArm, new THREE.Vector3(0,0,0), 300);
+                            if (leftArm) animate(leftArm, new THREE.Vector3(0,0,0), 300);
+                            if (hips) animate(hips, new THREE.Vector3(0,0,0), 300);
+                            return;
+                        }
+                        const t = beats % 2 === 0 ? 1 : -1;
+                        if (rightArm) rightArm.rotation.z = -Math.PI * 0.5 * t;
+                        if (leftArm) leftArm.rotation.z = Math.PI * 0.5 * t;
+                        if (hips) hips.rotation.y = t * 0.15;
+                        setTimeout(danceStep, 300);
+                    };
+                    danceStep();
+                }
+                break;
+            case 'jump':
+                // 跳一下：hips 下蹲再跳起
+                {
+                    const hips = bones.getNormalizedBoneNode('hips');
+                    if (hips) {
+                        const origY = hips.position.y;
+                        hips.position.y = origY - 0.1;
+                        setTimeout(() => { hips.position.y = origY + 0.15; }, 150);
+                        setTimeout(() => { animate(hips.position ? new THREE.Vector3(0, origY, 0) : null); hips.position.y = origY; }, 400);
+                    }
+                }
+                break;
+            case 'spin':
+                // 转一圈：身体 y 轴旋转
+                {
+                    const spine = bones.getNormalizedBoneNode('spine');
+                    if (spine) animate(spine, new THREE.Vector3(0, Math.PI * 2, 0), 800);
+                }
+                break;
+            case 'stretch':
+                // 伸懒腰：双手举过头顶
+                {
+                    const leftArm = bones.getNormalizedBoneNode('leftUpperArm');
+                    if (rightArm) animate(rightArm, new THREE.Vector3(0, 0, -Math.PI * 0.9), 300);
+                    if (leftArm) animate(leftArm, new THREE.Vector3(0, 0, Math.PI * 0.9), 300);
+                    setTimeout(() => {
+                        if (rightArm) animate(rightArm, new THREE.Vector3(0,0,0), 300);
+                        if (leftArm) animate(leftArm, new THREE.Vector3(0,0,0), 300);
+                    }, 1500);
+                }
                 break;
             default:
                 // 未知动作：随机眨眼
