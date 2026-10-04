@@ -79,7 +79,7 @@ OpenAI 兼容：`app/transport/openai_compat.py`（`/v1/chat/completions`，mode
 
 ## 5. 已验证链路（回归依据；细节以代码/实测为准）
 
-插件链（weather 触发 tool_call→tool_result；zip/git 导入均实测）、技能链（frontmatter+启停；git 导入实测 anthropics/skills→template-skill）、技能链（frontmatter+启停）、连接器链（pet_mood，MCP 协议）、协议链（/chat octop 帧 56 帧无解析错误）、控制台链（各板块无 console 错误）、壳链（面板重试/订阅断线重连）、**SkillHub 链**（真实市场：search/rankings/skillsets、单技能安装、技能集建包 6 技能、包启停/删除、chat 注入均实测通过）、模型切换链（插件互斥+manager.release，**不换会话**，2026-10-04 起）、**桌宠开关链**（控制台「模型」页开关 → /pet/status → config watch → 窗口创建/销毁，启动时按开关决定是否创建，2026-10-04）、会话链（真实线程列表，无 default 合成）。
+插件链（weather 触发 tool_call→tool_result；zip/git 导入均实测）、技能链（frontmatter+启停；git 导入实测 anthropics/skills→template-skill）、技能链（frontmatter+启停）、连接器链（pet_mood，MCP 协议）、协议链（/chat octop 帧 56 帧无解析错误）、控制台链（各板块无 console 错误）、壳链（面板重试/订阅断线重连）、**SkillHub 链**（真实市场：search/rankings/skillsets、单技能安装、技能集建包 6 技能、包启停/删除、chat 注入均实测通过）、模型切换链（插件互斥+manager.release，**不换会话**，2026-10-04 起）、**桌宠开关链**（控制台「桌宠」页开关 → /pet/status → config watch → 窗口创建/销毁，启动时按开关决定是否创建，2026-10-04）、会话链（真实线程列表，无 default 合成）。
 
 **注意**：部分市场技能 SKILL.md 的 description 含裸 `: ` 导致 harness YAML 解析失败被跳过（如 superpowers-tdd）——与 Octop 行为一致，非 nuomi bug。
 

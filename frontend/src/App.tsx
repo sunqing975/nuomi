@@ -10,7 +10,7 @@ import PluginsPage from './pages/Plugins';
 import SkillsPage from './pages/Skills';
 import ConnectorsPage from './pages/Connectors';
 import StoragePage from './pages/Storage';
-import ModelsPage from './pages/Models';
+import PetModelsPage from './pages/PetModels';
 import SettingsPage from './pages/Settings';
 
 const { Sider, Content, Header } = Layout;
@@ -21,7 +21,7 @@ const NAV = [
   { key: 'plugins', icon: <ApiOutlined />, label: '插件', title: '插件' },
   { key: 'skills', icon: <ReadOutlined />, label: '技能', title: '技能' },
   { key: 'connectors', icon: <GlobalOutlined />, label: '连接器', title: '连接器（MCP 协议）' },
-  { key: 'models', icon: <SmileOutlined />, label: '桌宠', title: '桌宠模型资产' },
+  { key: 'petModels', icon: <SmileOutlined />, label: '桌宠', title: '桌宠模型资产' },
   { key: 'settings', icon: <SettingOutlined />, label: '设置', title: '设置 / 环境变量' },
   { key: 'storage', icon: <DatabaseOutlined />, label: '存储', title: '存储 / 总览' },
 ];
@@ -84,7 +84,7 @@ export default function App() {
           {page === 'plugins' && <PluginsPage />}
           {page === 'skills' && <SkillsPage />}
           {page === 'connectors' && <ConnectorsPage />}
-          {page === 'models' && <ModelsPage />}
+          {page === 'petModels' && <PetModelsPage />}
           {page === 'settings' && <SettingsPage />}
           {page === 'storage' && <StoragePage />}
         </Content>

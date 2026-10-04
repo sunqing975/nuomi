@@ -40,7 +40,7 @@ SSE 事件协议（桌宠前端消费）：`token` / `tool_call` / `tool_result`
 - R2 新 backend 骨架 ✅：app/{main,config,transport/api,infra/harness/{config,manager,chat}}，ruff+mypy 全绿
 - R3 最小对话 API ✅：`POST /api/chat` SSE 流式验证通过（token 流 + done；糯米人设生效）
 - 工具调用：插件未接入（M5），模型无工具时诚实回答
-- **桌宠开关（2026-10-04）**：控制台「模型」页开关 → `GET|PUT /api/pet/status` → 壳 config.json `ui.pet_enabled` → 壳 watch 创建/销毁桌宠窗口（关闭=完全停止窗口释放资源，壳进程与后端对话不受影响；启动时按开关决定是否创建）
+- **桌宠开关（2026-10-04）**：控制台「桌宠」页开关 → `GET|PUT /api/pet/status` → 壳 config.json `ui.pet_enabled` → 壳 watch 创建/销毁桌宠窗口（关闭=完全停止窗口释放资源，壳进程与后端对话不受影响；启动时按开关决定是否创建）
 - 后续：M3 Agent 生命周期 → M4 会话 → M5 插件 → M6 技能/连接器/知识库 → M7 桌宠前端 → M8 产品体验
 
 ## 环境事实（重要）
