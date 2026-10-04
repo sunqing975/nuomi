@@ -281,9 +281,29 @@ async def pet_events_sse(request: Request) -> StreamingResponse:
     )
 
 
+def _message_text(m) -> str:
+    """BaseMessage.content 归一化为纯文本（可能是 str 或结构化块列表）。"""
+    content = getattr(m, "content", None)
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for b in content:
+            if isinstance(b, dict) and b.get("type") == "text":
+                parts.append(str(b.get("text", "")))
+            elif isinstance(b, str):
+                parts.append(b)
+        return "".join(parts)
+    return ""
+
+
 @router.get("/agents/{agent_id}/chat/history")
 async def chat_history(agent_id: str, thread_id: str, limit: int = 100) -> list[dict]:
-    """按线程取对话历史（octop checkpointer，专家工作区 memory.sqlite）。"""
+    """按线程取对话历史，返回有序片段流（按真实时间顺序）。
+
+    片段类型：user / reasoning（深度思考）/ tool_call / tool_result / text。
+    前端据此还原「思考→调工具→看结果→正文」的穿插顺序，而非只拿正文。
+    """
     agent_row = agent_service.get(agent_id)
     if agent_row is None:
         raise HTTPException(status_code=404, detail="Agent 不存在")
@@ -291,16 +311,38 @@ async def chat_history(agent_id: str, thread_id: str, limit: int = 100) -> list[
     msgs = await agent.aget_history(thread_id, limit=limit)
     out: list[dict] = []
     for m in msgs:
-        role = {"human": "user", "ai": "assistant"}.get(getattr(m, "type", ""))
-        content = getattr(m, "content", None)
-        if not role or not content:
-            continue
-        if not isinstance(content, str):
-            try:
-                content = json.dumps(content, ensure_ascii=False)
-            except Exception:
-                continue
-        out.append({"role": role, "content": content})
+        mtype = getattr(m, "type", "")
+        if mtype == "human":
+            text = _message_text(m)
+            if text:
+                out.append({"type": "user", "content": text})
+        elif mtype == "ai":
+            # 深度思考（reasoner 模型的 reasoning_content）
+            reasoning = getattr(m, "reasoning_content", None) or (
+                getattr(m, "additional_kwargs", {}) or {}
+            ).get("reasoning_content")
+            if reasoning:
+                out.append({"type": "reasoning", "content": reasoning})
+            text = _message_text(m)
+            if text:
+                out.append({"type": "text", "content": text})
+            for tc in getattr(m, "tool_calls", None) or []:
+                args = tc.get("args") or tc.get("args_dict") or {}
+                out.append(
+                    {
+                        "type": "tool_call",
+                        "name": tc.get("name", ""),
+                        "args": json.dumps(args, ensure_ascii=False),
+                    }
+                )
+        elif mtype == "tool":
+            out.append(
+                {
+                    "type": "tool_result",
+                    "name": getattr(m, "name", "") or "",
+                    "content": _message_text(m),
+                }
+            )
     return out
 
 

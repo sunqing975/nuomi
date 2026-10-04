@@ -160,7 +160,7 @@ export interface ProvidersResponse {
 // ---------- 对话（octop 原生事件帧 SSE） ----------
 
 export interface ChatEvent {
-  type: 'token' | 'tool_call' | 'tool_result' | 'done';
+  type: 'token' | 'reasoning' | 'tool_call' | 'tool_result' | 'done';
   content?: string;
   name?: string;
   detail?: string;
@@ -172,9 +172,20 @@ export interface ToolEvent {
   detail?: string;
 }
 
+/** 有序片段：一次对话按真实时间顺序穿插（思考→调工具→看结果→正文） */
+export interface Segment {
+  type: 'text' | 'reasoning' | 'tool_call' | 'tool_result';
+  content?: string;
+  name?: string;
+  args?: string;
+}
+
 export interface ChatMessage {
   role: 'user' | 'assistant';
-  content: string;
+  /** 有序片段（历史回读/流式累积统一结构；text 片段即正文） */
+  segments: Segment[];
+  /** 兼容旧字段：首段正文（渲染优先用 segments） */
+  content?: string;
   tool_events?: ToolEvent[];
 }
 

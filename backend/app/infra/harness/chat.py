@@ -111,6 +111,9 @@ async def stream_chat(
         if kind == AgentEventType.TOKEN.value and event.get("content"):
             text_parts.append(event["content"])
             yield {"type": "token", "content": event["content"]}
+        elif kind == AgentEventType.REASONING.value and event.get("content"):
+            # 深度思考（reasoner 模型）：单独事件流，不计入正文 answer
+            yield {"type": "reasoning", "content": event["content"]}
         elif kind == AgentEventType.TOOL_CALL_CHUNK.value:
             # 聚合工具调用分块（name 首个 chunk 携带，args 分块累积）
             idx = event.get("index", 0)
@@ -228,6 +231,15 @@ async def stream_octop_sse(
             yield format_sse(
                 {
                     "type": "token",
+                    "content": ev.get("content", ""),
+                    "node": "model",
+                    "thread_id": thread_id,
+                }
+            )
+        elif t == "reasoning":
+            yield format_sse(
+                {
+                    "type": "reasoning",
                     "content": ev.get("content", ""),
                     "node": "model",
                     "thread_id": thread_id,

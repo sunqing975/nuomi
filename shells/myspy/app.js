@@ -950,25 +950,34 @@ const STATUS_EXPRESSION = {
 
 function playStatusExpression(status) {
     if (!model) return
-    const expr = STATUS_EXPRESSION[status]
-    if (!expr) return
-    log('桌宠状态: ' + status + ' → ' + expr, 'info')
+    log('桌宠状态: ' + status, 'info')
     try {
-        model.expression(expr)
-        // 状态表情不自动恢复（持续保持直到下一个状态）
         if (_expressionRecoveryTimer) {
             clearTimeout(_expressionRecoveryTimer)
             _expressionRecoveryTimer = null
         }
-        // 额外参数：thinking 时张嘴（Surprised 的 exp3 里 MouthOpenY=0，手动加）
+
         const inner = model.innerModel || model
-        if (inner.internalModel && inner.internalModel.coreModel) {
-            const cm = inner.internalModel.coreModel
-            if (status === 'thinking') {
-                try { cm.setParameterValueById('ParamMouthOpenY', 0.4) } catch (e) {}
-            } else {
+        const cm = inner.internalModel?.coreModel
+
+        if (status === 'idle') {
+            // 空闲：重置所有表情参数到默认（嘴闭上、脸恢复）
+            try { model.expression() } catch (e) {}
+            if (cm) {
                 try { cm.setParameterValueById('ParamMouthOpenY', 0) } catch (e) {}
+                try { cm.setParameterValueById('ParamMouthForm', 0) } catch (e) {}
             }
+            return
+        }
+
+        const expr = STATUS_EXPRESSION[status]
+        if (!expr) return
+        model.expression(expr)
+        // thinking 时额外张嘴
+        if (cm && status === 'thinking') {
+            try { cm.setParameterValueById('ParamMouthOpenY', 0.4) } catch (e) {}
+        } else if (cm) {
+            try { cm.setParameterValueById('ParamMouthOpenY', 0) } catch (e) {}
         }
     } catch (e) { log('状态表情失败: ' + e.message, 'warn') }
 }
