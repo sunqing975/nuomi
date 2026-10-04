@@ -943,9 +943,9 @@ const EXPRESSION_RECOVERY_MS = 5000
 
 // 状态→表情映射（第 2 层：LLM 状态自动切脸）
 const STATUS_EXPRESSION = {
-    thinking: 'Sad',       // 思考中 → 皱眉
-    working: 'Surprised',  // 干活中 → 惊讶
-    idle: 'Normal',        // 空闲 → 恢复
+    thinking: 'Surprised',  // 思考中 → 瞪眼张嘴（夸张）
+    working: 'Angry',       // 干活中 → 倒八字眉（用力）
+    idle: 'Normal',         // 空闲 → 恢复
 }
 
 function playStatusExpression(status) {
