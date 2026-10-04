@@ -1,7 +1,8 @@
 # Nuomi 交接文档（HANDOVER）
 
-> 最后更新：2026-10-04 · 分支 main · HEAD `eda6753`
+> 最后更新：2026-10-05 · 分支 main · HEAD `7abd166`
 > 本文件面向「下一个接手的人」：先读它，再读代码。已实现的细节以代码为准（`git show <commit>` 可查）。
+> ⚠ 2026-10-05 命名变更：API 前缀已从 `/api/pet/*` 全量改名为 `/api/avatar/*`（模型/动作/表情/预览/开关），插件 `vrm-pet`→`vrm-avatar`、`shells/myspy`→`shells/nuomi-avatar`；产品概念「桌宠」→「AI 数字人」。本文 §4 历史条目保留旧名，新链路均用新名。
 
 ---
 
@@ -86,6 +87,13 @@ OpenAI 兼容：`app/transport/openai_compat.py`（`/v1/chat/completions`，mode
 
 **注意**：部分市场技能 SKILL.md 的 description 含裸 `: ` 导致 harness YAML 解析失败被跳过（如 superpowers-tdd）——与 Octop 行为一致，非 nuomi bug。
 
+**2026-10-05 AI 数字人表现层（VRM）链路**（方案B 单共享插件 vrm-avatar，动态工具）：
+- **模型热切换链**：前端切模型 → `POST /api/avatar/models/switch`（写 config.json ui.model + ui.model_path + `manager.release(shell_agent_id)`）→ 壳 main.js fs.watch → `send('switch-model')` → app.js **页面 reload**（400ms 后 `location.reload()`，渲染进程 initialize 重跑读新模型路径）→ 窗口不关、进程不重启，1-2s 换模型。双向切换（630926↔868274）实测通过（旧实现只 log「需重启」不生效，022f7c8 修复）
+- **VRM 尺寸归一化链**：加载后 `Box3().setFromObject(vrm.scene)` 测原始高度 → `vrmGroup.scale` 统一到 1.4m + 脚底对齐 y=0（实测两模型 1.17m/1.68m → 均 1.4m，日志「尺寸归一化」；492a746）
+- **表情根因链**：后端 `vrm_has_expression_data()` 解析 GLB blendShapeGroups binds / VRM1.0 morphTargetBinds → `list_models.expressions_have_data`；前端模型卡片无数据时显示警告并隐藏表情预览。three-vrm 实测语义：`_expressionMap` 键 = expressionName（'happy'）、`VRMExpression.name` = `VRMExpression_happy`（包装名），binds 空则 morph 权重 0 变化
+- **动态工具计数链**：`list_all()` 对 vrm-avatar 启用时按当前动作/表情清单统计（do_action + set_expression = 2，有数据才各计 1）；`/api/plugins` 实测 vrm-avatar tools: 2（7abd166）
+- **插件中文名**：DB plugins 表 vrm-avatar name「桌宠动作」→「AI 数字人动作」（与 plugin.yaml 一致；代码层桌宠残留 0）
+
 ## 6. 踩坑记录（再遇到不用重踩）
 
 - **uvicorn 旧进程占 8000**：新代码不生效，必须先 pkill 再重启。
@@ -103,6 +111,10 @@ OpenAI 兼容：`app/transport/openai_compat.py`（`/v1/chat/completions`，mode
 - **AI 数字人关闭时切模型 `activated_plugin` 须如实返回 null**：插件实际未激活（保持全停），返回模型 id 会让前端误报「已激活插件」（2026-10-04 修复，f8e06d6）。
 - **LLM 幻觉调用旧模型工具名**：曾用"模型专属会话（无旧历史）"根治；**2026-10-04 废除**（AI 数字人=纯表现层拦截工具调用，会话与模型解耦），幻觉风险由会话切换/清空兜底。
 - **python websockets 连 octop 8088 WS 恒 403**：curl/aiohttp 可通；真切 WS 用 aiohttp。
+- **VRM 模型可能根本没有表情数据**：VRoid 导出可去掉表情——blendShapeGroups 定义了名字但 binds 全空，setValue 后 mesh 纹丝不动。排查先看后端 `expressions_have_data`，别再花时间在无表情模型上调权重/时长（2026-10-05）。
+- **VRM 模型间尺寸差异大**（导出单位/比例不同，实测 1.17m vs 1.68m）：加载后必须 Box3 测高归一化，否则切模型观感跳变（2026-10-05）。
+- **壳 switch-model 不能只打日志**：渲染进程收到 IPC 后不重载 = 用户点切换"没反应"；最小可靠方案是 `location.reload()`（config 已由后端同步）而不是在渲染进程里重建 three 场景（TTS/交互联动复杂易漏）（2026-10-05）。
+- **函数内 `from X import NAME` + 同函数 if 条件引用同一 NAME = UnboundLocalError**：Python 视函数内 import 为局部绑定；模块级导入或提到函数顶部（2026-10-05）。
 - **市场技能 frontmatter 质量**：description 裸冒号 → harness 安全跳过（见 §5）。
 - **antd5 grid 卡片等高**：grid List 渲染为 `.ant-row > div`（**无 `.ant-list-items`**，也无 `.ant-col` 类——列是原生 div + colStyle）；Row 默认 `align: top` 列不拉伸，必须 CSS `align-items: stretch`；`nuomi-grid` 类若挂在 List 容器上选择器写 `.nuomi-grid .ant-row`，若挂在 Row 自身（AI 数字人页）写 `.ant-row.nuomi-grid`——两形态都要覆盖（frontend/src/index.css `.nuomi-grid` 块已兼容）。
 - **壳加载的是 build 产物**：控制面板指向 `http://127.0.0.1:8000/console/`（后端挂 dist），**不是** 5173 vite dev；改前端验证要走 build + 强制刷新（`?v=n` nonce），5173 的 vite proxy 未配置好也不影响壳。
@@ -144,9 +156,10 @@ OpenAI 兼容：`app/transport/openai_compat.py`（`/v1/chat/completions`，mode
 - [ ] **糯米人设源头约束**：回复仍会出现 `<开心>` 等尖括号标签，已决定从源头治理，未实施
 - [ ] 壳启动时自动拉起 uvicorn
 - [ ] 前端 bundle 1MB 可 code-split
-- [ ] 模型资产补全：cat（hijiki）动作文件缺失；表情插件（expressions 为空）待有数据可测
-- [ ] 模型插件工具语义：工具 description 只有动作名，靠 `_MOTION_ZH` 映射，可再打磨
-- [x] **Mixamo FBX → VRMA 转换链路**（2026-10-04 走通）：工具链 `shells/nuomi-avatar/tools/fbx2vrma/`（fbx2vrma-converter + FBX2glTF 0.9.7；arm64 机器需 Rosetta 2；npm install 需 --ignore-scripts）；`elbow_punch.vrma`（2.25s/22 骨骼）已生成，verify-vrma.js 用壳同款加载链验证通过（Node 需浏览器 polyfill）；**遗留**：壳 `loadVRMA` 接口无调用点，VRM 动作插件触发时尚未接 .vrma
+- [ ] **模型资产补全**：cat（hijiki）动作文件缺失（仍缺）；**表情数据已定性（2026-10-05）**：当前 VRM 模型 `6309260419351179234` 的 17 个 blendShapeGroup binds 全空 = 模型文件本身无表情变形（任何 setValue 都无视觉变化）；已导入的 `868274793854709131` binds 非空（angry=1，实测可动）——后端 `list_models` 返回 `expressions_have_data`、前端有警告标签
+- [ ] **VRMA 资源管理（2026-10-05 明确，明日待办）**：动作资产目前**只能导入（`POST /api/avatar/animations/import`）不能删除**——需要新增删除入口（后端 `DELETE /api/avatar/animations/{name}` + 壳 fs.watch 已能感知删除自动注销 + 前端动作卡片删除按钮），注意删除当前正在播放/被 idle 使用的动画的边界处理
+- [ ] **模型插件工具语义**：工具 description 只有动作名，靠 `_MOTION_ZH` 映射，可再打磨
+- [x] **Mixamo FBX → VRMA 转换链路**（2026-10-04 走通；**2026-10-05 闭环**）：工具链 `shells/nuomi-avatar/tools/fbx2vrma/`（fbx2vrma-converter + FBX2glTF 0.9.7；arm64 机器需 Rosetta 2；npm install 需 --ignore-scripts）；`elbow_punch.vrma`（2.25s/22 骨骼）、`sitting_laughing.vrma` 已转换入库；verify-vrma.js 用壳同款加载链验证通过（Node 需浏览器 polyfill）；壳 `loadVRMA` 已接：动作清单只扫 `assets/animations/*.vrma`（`list_avatar_actions()`），fs.watch 新导入自动注册，idle.vrma（virtual-avatar 包）循环待机
 
 ## 9. 关键 git 历史
 
@@ -173,7 +186,17 @@ dc242b1  卡片等高修复：antd5 grid 列为裸 div，.ant-row > div（amend 
 3492b20  AI 数字人页等高：补 .ant-row.nuomi-grid 形态 + align-items: stretch
 03eed82  feat: 专家-插件解耦 + 对话框 per-turn 能力注入（skills/connectors）+ 能力选择器/chips/工具步骤/轨迹抽屉
 1ab457e  docs: HANDOVER 回填（解耦 + 对话框大改动）
+0efee9f  方案B落地：单共享 vrm-avatar 插件 + 动态工具 + 删互斥
+066effd  方案B架构定稿（动态工具装配）
+c5a4032  全量改名桌宠→AI数字人 + 丢弃 myspy + 3D 观感 + 导入预览
+8defdc9  删内置手写动作，动作清单只以 VRMA 为准 + idle 待机循环
+66b574c  自转/表情时长/动作清单修复
+4ac8b68  表情终极根因（模型 blendShapeGroups 全空 binds）+ expressions_have_data 检测
+022f7c8  模型热切换修复（switch-model → 页面 reload 热重载）
+492a746  VRM 尺寸归一化（Box3 统一 1.4m + 脚底对齐）
+7abd166  插件列表 tool_count 动态统计（vrm-avatar=2）
 ```
+
 
 开发规范：`make lint`（ruff）/ `make typecheck`（mypy），CI 在 .github/workflows。
 6b71691  feat: 大模型配置页（providers.json CRUD）+ 模型不绑专家（default_model 列删除，对话框 per-turn 选模型）
