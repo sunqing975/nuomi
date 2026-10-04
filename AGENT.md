@@ -148,3 +148,12 @@ SSE 事件协议（AI 数字人前端消费）：`token` / `tool_call` / `tool_r
   - 端到端实测：POST /avatar/preview action=wave_hand → 壳日志 `AI 数字人动作: 挥手打招呼 / [VRM动作] wave_hand` ✓；expression=angry → `AI 数字人表情: angry` ✓；导入 VRM（test_import_vrm 导入→清单出现→DELETE 清理）✓；导入 Body Block.fbx → 转换 → watch 注册 → 预览播放 `[VRM动画] 播放 Body Block` ✓
 - **动作清单口径**：`/api/avatar/models` 的 models[].actions 仍恒 {}（list_models 硬编码），动作清单权威在 list_avatar_actions()（全局扫描 18 内置 + assets/animations/*.vrma）；预览按钮直接调 list_avatar_actions 覆盖的动作名。**未决点（低风险，未向用户确认）**：models[].actions 填充 per-model vs 全局
 - **遗留**：表情观感幅度（用户搁置）；动作名含空格（如 "Body Block"）可作 enum 值但较丑，后续可规范化（fbx stem 空格→下划线）；本轮已 git commit
+
+## 删内置动作 + idle 待机动画（2026-10-05）
+
+- **动作清单只以 VRMA 为准（用户拍板"之前的动作都删掉"）**：`list_avatar_actions()` 删 18 个内置手写动作（wave_hand/nod/dance/…），只扫 `assets/animations/*.vrma`（放文件即出现、删即消失）；ACTION_LABELS 降级为 label 中文映射（未知回退文件名）；壳 `motion()` 删手写骨骼动画 switch + animate 辅助（死代码），只播已注册 VRMA，缺失 console.warn
+- **idle 待机（VRoid Hub 预览同款思路）**：VRM 文件本身**不带动画**（0.x/1.0 均无动画 clip），VRoid Hub 页面待机是网页额外加载的 vrma——壳同样处理：`assets/animations/idle.vrma` 存在时，`_updateIdleAnimation` 无动作播放即 `playAnimation('idle', true)` 循环待机；动作播完淡出自动回 idle；原呼吸+身体微晃仅作无 idle vrma 时的兜底
+- **素材来源**：npm 开源包 `virtual-avatar`（MIT，unpkg 下载）`standard_idle.vrma`（8.22s/22 轨道）→ `idle.vrma`；`quick_formal_bow.vrma` → `bow.vrma`。同包还有 VRoid 官方免费 7 种动画（VRMA_01~07 全身/挨拶/Vサイン/撃つ/回る/ポーズ/屈伸），文件名日文需重命名后按需导入
+- **端到端实测**：壳启动日志 `[VRM动画] 加载 idle 成功, 8.22s / 播放 idle`（循环待机）；预览 bow → `播放 bow` → 播完自动 `播放 idle` ✓；动作清单 = 5 个 VRMA（Body Block/bow/elbow_punch/idle/sitting_laughing），动态工具 enum 同源
+- **清理**：删 `Illegal Elbow Punch.vrma`（与 elbow_punch.vrma 同字节重复）、`elbow_punch.fbx`（转换源文件残留）
+- **遗留**：动作名=文件名（含空格如 "Body Block" 仍可播，后续可规范化空格→下划线）；VRMA_01~07 未导入

@@ -287,156 +287,12 @@ class VRMModelAdapter extends EventEmitter {
 
     motion(name) {
         if (!this.vrm || !this.vrm.humanoid) return;
-        // 优先播放已注册的 .vrma 动画（无则回退手写骨骼动画）
+        // 动作只播已注册的 .vrma 动画（2026-10-05 删内置手写骨骼动画，以 VRMA 清单为主）
         if (this.animations[name]) {
             this.playAnimation(name);
             return;
         }
-        console.log('[VRM动作]', name);
-
-        const bones = this.vrm.humanoid;
-        const head = bones.getNormalizedBoneNode('head');
-        const rightArm = bones.getNormalizedBoneNode('rightUpperArm');
-        const leftArm = bones.getNormalizedBoneNode('leftUpperArm');
-
-        // 动作动画：用简单的关键帧插值
-        const animate = (bone, targetRot, duration = 600) => {
-            if (!bone) return;
-            const startRot = bone.rotation.clone();
-            const start = performance.now();
-            const tick = () => {
-                const t = Math.min(1, (performance.now() - start) / duration);
-                const ease = t < 0.5 ? 2*t*t : -1+(4-2*t)*t; // easeInOut
-                bone.rotation.set(
-                    startRot.x + (targetRot.x - startRot.x) * ease,
-                    startRot.y + (targetRot.y - startRot.y) * ease,
-                    startRot.z + (targetRot.z - startRot.z) * ease
-                );
-                if (t < 1) requestAnimationFrame(tick);
-            };
-            tick();
-        };
-
-        switch(name) {
-            case 'wave_hand':
-                // 右臂举起平举，前臂上下摆动
-                if (rightArm) {
-                    const rightLowerArm = bones.getNormalizedBoneNode('rightLowerArm');
-                    // 上臂举到侧面平举
-                    rightArm.rotation.set(0, 0, -Math.PI * 0.5);
-                    let swings = 0;
-                    const swing = () => {
-                        if (swings++ >= 3) {
-                            // 放下手臂
-                            if (rightLowerArm) rightLowerArm.rotation.set(0,0,0);
-                            animate(rightArm, new THREE.Vector3(0,0,0), 300);
-                            return;
-                        }
-                        // 前臂上下摆动
-                        if (rightLowerArm) {
-                            rightLowerArm.rotation.z = Math.sin(swings * Math.PI) * 0.5 - 0.3;
-                        }
-                        setTimeout(swing, 250);
-                    };
-                    setTimeout(swing, 350);
-                }
-                break;
-            case 'nod':
-                if (head) animate(head, new THREE.Vector3(0.3, 0, 0), 300);
-                setTimeout(() => { if (head) animate(head, new THREE.Vector3(0,0,0), 300); }, 400);
-                break;
-            case 'shake_head':
-                if (head) animate(head, new THREE.Vector3(0, 0.3, 0), 250);
-                setTimeout(() => { if (head) animate(head, new THREE.Vector3(0, -0.3, 0), 250); }, 300);
-                setTimeout(() => { if (head) animate(head, new THREE.Vector3(0,0,0), 300); }, 600);
-                break;
-            case 'tilt_head':
-                if (head) animate(head, new THREE.Vector3(0, 0, 0.3), 400);
-                setTimeout(() => { if (head) animate(head, new THREE.Vector3(0,0,0), 400); }, 1200);
-                break;
-            case 'look_left':
-                if (head) animate(head, new THREE.Vector3(0, 0.3, 0), 400);
-                setTimeout(() => { if (head) animate(head, new THREE.Vector3(0,0,0), 400); }, 1500);
-                break;
-            case 'look_right':
-                if (head) animate(head, new THREE.Vector3(0, -0.3, 0), 400);
-                setTimeout(() => { if (head) animate(head, new THREE.Vector3(0,0,0), 400); }, 1500);
-                break;
-            case 'look_up':
-                if (head) animate(head, new THREE.Vector3(-0.3, 0, 0), 400);
-                setTimeout(() => { if (head) animate(head, new THREE.Vector3(0,0,0), 400); }, 1500);
-                break;
-            case 'look_down':
-                if (head) animate(head, new THREE.Vector3(0.3, 0, 0), 400);
-                setTimeout(() => { if (head) animate(head, new THREE.Vector3(0,0,0), 400); }, 1500);
-                break;
-            case 'raise_right_hand':
-                if (rightArm) animate(rightArm, new THREE.Vector3(0, 0, -Math.PI * 0.6), 400);
-                break;
-            case 'raise_left_hand':
-                if (leftArm) animate(leftArm, new THREE.Vector3(0, 0, Math.PI * 0.6), 400);
-                break;
-            case 'dance':
-                // 跳舞：左右摆身体 + 手臂上下交替
-                {
-                    const leftArm = bones.getNormalizedBoneNode('leftUpperArm');
-                    const hips = bones.getNormalizedBoneNode('hips');
-                    let beats = 0;
-                    const danceStep = () => {
-                        if (beats++ >= 6) {
-                            if (rightArm) animate(rightArm, new THREE.Vector3(0,0,0), 300);
-                            if (leftArm) animate(leftArm, new THREE.Vector3(0,0,0), 300);
-                            if (hips) animate(hips, new THREE.Vector3(0,0,0), 300);
-                            return;
-                        }
-                        const t = beats % 2 === 0 ? 1 : -1;
-                        if (rightArm) rightArm.rotation.z = -Math.PI * 0.5 * t;
-                        if (leftArm) leftArm.rotation.z = Math.PI * 0.5 * t;
-                        if (hips) hips.rotation.y = t * 0.15;
-                        setTimeout(danceStep, 300);
-                    };
-                    danceStep();
-                }
-                break;
-            case 'jump':
-                // 跳一下：hips 下蹲再跳起
-                {
-                    const hips = bones.getNormalizedBoneNode('hips');
-                    if (hips) {
-                        const origY = hips.position.y;
-                        hips.position.y = origY - 0.1;
-                        setTimeout(() => { hips.position.y = origY + 0.15; }, 150);
-                        setTimeout(() => { animate(hips.position ? new THREE.Vector3(0, origY, 0) : null); hips.position.y = origY; }, 400);
-                    }
-                }
-                break;
-            case 'spin':
-                // 转一圈：身体 y 轴旋转
-                {
-                    const spine = bones.getNormalizedBoneNode('spine');
-                    if (spine) animate(spine, new THREE.Vector3(0, Math.PI * 2, 0), 800);
-                }
-                break;
-            case 'stretch':
-                // 伸懒腰：双手举过头顶
-                {
-                    const leftArm = bones.getNormalizedBoneNode('leftUpperArm');
-                    if (rightArm) animate(rightArm, new THREE.Vector3(0, 0, -Math.PI * 0.9), 300);
-                    if (leftArm) animate(leftArm, new THREE.Vector3(0, 0, Math.PI * 0.9), 300);
-                    setTimeout(() => {
-                        if (rightArm) animate(rightArm, new THREE.Vector3(0,0,0), 300);
-                        if (leftArm) animate(leftArm, new THREE.Vector3(0,0,0), 300);
-                    }, 1500);
-                }
-                break;
-            default:
-                // 未知动作：随机眨眼
-                if (this.vrm.expressionManager) {
-                    const blinkExpr = this._resolveExpression('blink');
-                    this.vrm.expressionManager.setValue(blinkExpr, 1);
-                    setTimeout(() => this.vrm.expressionManager.setValue(blinkExpr, 0), 200);
-                }
-        }
+        console.warn('[VRM动作] 未找到 VRMA:', name);
     }
 
     // 兼容Live2D的expression方法
@@ -608,9 +464,17 @@ class VRMModelAdapter extends EventEmitter {
         }
     }
 
-    // Idle动画：呼吸 + 身体微晃（每帧更新）
+    // Idle动画：idle.vrma 循环优先（无动作播放时），否则呼吸 + 身体微晃兜底
     _updateIdleAnimation(deltaTime) {
         if (!this.vrm || !this.vrm.humanoid) return;
+
+        // idle VRMA 优先：当前没有动作在播时循环播放待机动画
+        if (this.animations['idle']) {
+            if (!this.currentAction) {
+                this.playAnimation('idle', true);
+            }
+            return; // 呼吸微晃仅作无 idle vrma 时的兜底
+        }
 
         // 首次调用时应用静态Idle姿态（手臂放下）
         if (!this._idlePoseApplied) {

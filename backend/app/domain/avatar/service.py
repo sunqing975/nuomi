@@ -250,19 +250,23 @@ def _vrm_expr_name(g: dict) -> str:
 
 
 def list_avatar_actions() -> list[dict]:
-    """动作清单：内置预设（手写兜底）+ assets/animations/*.vrma（VRMA 覆盖）。
+    """动作清单：**只以 assets/animations/*.vrma 为准**（放文件即出现、删即消失）。
 
-    返回 [{"name", "label_zh", "has_vrma"}]，按 name 排序。
+    内置手写动作不再生成工具（2026-10-05 用户拍板删内置，以 VRMA 清单为主）。
+    返回 [{"name", "label_zh", "has_vrma"}]，按文件名排序；label_zh 用 ACTION_LABELS 映射美化，未知回退文件名。
     """
-    out: dict[str, dict] = {}
-    for name, label in ACTION_LABELS.items():
-        out[name] = {"name": name, "label_zh": label, "has_vrma": False}
+    out: list[dict] = []
     if SHELL_ANIM_DIR.is_dir():
         for f in sorted(SHELL_ANIM_DIR.glob("*.vrma")):
             name = f.stem
-            entry = out.setdefault(name, {"name": name, "label_zh": name, "has_vrma": True})
-            entry["has_vrma"] = True
-    return list(out.values())
+            out.append(
+                {
+                    "name": name,
+                    "label_zh": ACTION_LABELS.get(name, name),
+                    "has_vrma": True,
+                }
+            )
+    return out
 
 
 def list_avatar_expressions() -> list[dict]:
