@@ -952,13 +952,13 @@ function playStatusExpression(status) {
     if (!model) return
     log('桌宠状态: ' + status, 'info')
     try {
-        if (_expressionRecoveryTimer) {
-            clearTimeout(_expressionRecoveryTimer)
-            _expressionRecoveryTimer = null
-        }
+        // 显式表情在播时（用户主动要求 set_expression_*），状态表情让位，不覆盖
+        if (_expressionRecoveryTimer) return
 
         if (status === 'idle') {
-            // 空闲：重置所有表情参数到默认
+            // 空闲：若有显式表情在播（playPetExpression 恢复定时器未到期），不重置
+            if (_expressionRecoveryTimer) return
+            // 重置所有表情参数到默认
             try { model.expression() } catch (e) {}
             if (global.layer1Liveness) global.layer1Liveness.mouthOpenY = 0
             return

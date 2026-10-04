@@ -438,15 +438,38 @@ class VRMModelAdapter extends EventEmitter {
         if (!this.vrm || !this.vrm.expressionManager) return;
 
         if (name) {
-            // 如果传入了具体的表情名，尝试映射
-            const vrmExpr = this._expressionMap[name] || name;
+            // 统一小写 + normal 归一为 neutral（状态表情曾传 'Surprised'/'Angry'/'Normal' 首字母大写）
+            const raw = String(name).toLowerCase();
+            const normalized = raw === 'normal' ? 'neutral' : raw;
+            const vrmExpr = this._expressionMap[normalized] || normalized;
             this._playExpression(vrmExpr, 3000);
         } else {
-            // 随机表情
-            const expressions = ['happy', 'angry', 'sad', 'surprised', 'relaxed'];
-            const randomExpr = expressions[Math.floor(Math.random() * expressions.length)];
-            this._playExpression(randomExpr, 2000);
+            // 无参 = 重置所有表情到默认（与 Live2D/调用方契约一致，不做随机）
+            this._resetExpressions();
         }
+    }
+
+    // 重置所有表情权重到 0（neutral）
+    _resetExpressions() {
+        if (!this.vrm || !this.vrm.expressionManager) return;
+        if (this._expressionTimer) {
+            clearTimeout(this._expressionTimer);
+            this._expressionTimer = null;
+        }
+        try {
+            const em = this.vrm.expressionManager;
+            const names = [];
+            if (em._expressionMap) names.push(...Object.keys(em._expressionMap));
+            if (em.expressions && typeof em.expressions.keys === 'function') {
+                names.push(...Array.from(em.expressions.keys()));
+            }
+            for (const n of new Set(names)) {
+                try {
+                    em.setValue(n, 0);
+                } catch (e) {}
+            }
+        } catch (e) {}
+        this._currentExpression = null;
     }
 
     // 播放VRM表情
