@@ -647,7 +647,10 @@ async def switch_pet_model(body: PetModelSwitchBody) -> dict:
 
 @router.delete("/pet/models/{model_id}")
 async def delete_pet_model(model_id: str) -> dict:
-    """删除桌宠模型：级联删模型插件 + 资产目录；删除激活模型自动切到剩余模型。"""
+    """删除桌宠模型：级联删模型插件 + 资产目录；删除激活模型自动切到剩余模型。
+
+    内置模型（种子分发）页面不提供删除入口；即便绕过删除，启动播种也会自愈复原。
+    """
     from app.domain.pet.service import delete_model
 
     try:

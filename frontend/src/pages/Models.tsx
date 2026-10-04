@@ -54,12 +54,13 @@ export default function ModelsPage() {
         type="info"
         showIcon
         style={{ marginBottom: 16 }}
-        message="桌宠模型资产（shells/myspy/2D/）"
+        message="桌宠模型资产（工作区 models/2D/）"
         description={
           <span style={{ fontSize: 13 }}>
             插件名 = 模型名，工具名 = 模型真实动作/表情名。选中模型即激活对应插件，
             对桌宠说「给我比个心」，LLM 会直接调用该模型的动作工具来驱动桌宠。
             没有动作/表情的模型同样可以切换（作为纯外观桌宠），只是不会生成插件。
+            标注「内置」的模型由种子机制分发（随仓库分发、启动自动复原），不可删除。
           </span>
         }
       />
@@ -97,16 +98,21 @@ export default function ModelsPage() {
                     {!isActive && !hasCapability && (
                       <Tag color="default" style={{ marginRight: 8 }}>无动作/表情</Tag>
                     )}
-                    <Popconfirm
-                      title="删除模型？"
-                      description="将删除模型资产与对应桌宠插件（不可恢复）；删除使用中的模型会自动切换"
-                      okText="删除" cancelText="取消"
-                      onConfirm={() => removeModel(m)}
-                    >
-                      <DeleteOutlined
-                        style={{ color: '#dc2626', fontSize: 14 }}
-                      />
-                    </Popconfirm>
+                    {m.builtin && (
+                      <Tag color="blue" style={{ marginRight: 8 }}>内置</Tag>
+                    )}
+                    {!m.builtin && (
+                      <Popconfirm
+                        title="删除模型？"
+                        description="将删除模型资产与对应桌宠插件（不可恢复）；删除使用中的模型会自动切换"
+                        okText="删除" cancelText="取消"
+                        onConfirm={() => removeModel(m)}
+                      >
+                        <DeleteOutlined
+                          style={{ color: '#dc2626', fontSize: 14 }}
+                        />
+                      </Popconfirm>
+                    )}
                   </span>
                 }
               >

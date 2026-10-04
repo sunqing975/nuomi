@@ -107,6 +107,7 @@ export interface PetModel {
   path: string;
   motions: string[];
   expressions: string[];
+  builtin: boolean;
 }
 
 export interface PetModelsResponse {

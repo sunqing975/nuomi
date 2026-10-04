@@ -93,6 +93,9 @@ def list_models() -> list[dict]:
                 "path": str(char_dir / model_files[0].name),
                 "motions": motions,
                 "expressions": expressions,
+                # 种子机制分发的内置模型（仓库 assets/models/2D/<id>），
+                # 删除后启动播种会复原，故页面上不可删除
+                "builtin": (SEED_MODEL_DIR / char_dir.name).is_dir(),
             }
         )
     return models
