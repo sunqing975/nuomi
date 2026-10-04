@@ -1,6 +1,6 @@
 # Nuomi 交接文档（HANDOVER）
 
-> 最后更新：2026-10-04 · 分支 main · HEAD `9a00db8`（工作区干净）
+> 最后更新：2026-10-04 · 分支 main · HEAD `1ab457e`（工作区干净）
 > 本文件面向「下一个接手的人」：先读它，再读代码。已实现的细节以代码为准（`git show <commit>` 可查）。
 
 ---
@@ -165,7 +165,7 @@ e65477d  插件/连接器页卡片化（桌宠模型橙色标、传输协议角�
 dc242b1  卡片等高修复：antd5 grid 列为裸 div，.ant-row > div（amend 掉误提交的 .vite 缓存）
 3492b20  桌宠页等高：补 .ant-row.nuomi-grid 形态 + align-items: stretch
 03eed82  feat: 专家-插件解耦 + 对话框 per-turn 能力注入（skills/connectors）+ 能力选择器/chips/工具步骤/轨迹抽屉
-9a00db8  docs: HANDOVER 回填（解耦 + 对话框大改动）
+1ab457e  docs: HANDOVER 回填（解耦 + 对话框大改动）
 ```
 
 开发规范：`make lint`（ruff）/ `make typecheck`（mypy），CI 在 .github/workflows。
