@@ -94,3 +94,19 @@ SSE 事件协议（桌宠前端消费）：`token` / `tool_call` / `tool_result`
 - **`make stop` 会回收 :8000 后端进程**：重启桌宠壳前先 `make stop` 再补起后端（`cd backend && nohup .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 > /tmp/nuomi-backend.log 2>&1 &`）。
 - **消息流 = 有序片段（2026-10-04）**：对话不再是「正文气泡 + 气泡上方一堆工具折叠」。history 接口与前端统一返回/渲染 `Segment[]`：`user / reasoning（深度思考）/ tool_call / tool_result / text` 按真实时间顺序穿插（思考→调工具→看结果→正文）。harness 有 `reasoning` 事件类型（AgentEventType.REASONING），stream_chat/stream_octop_sse 已透传；history 端点从 BaseMessage 重建（human→user；ai→reasoning_content + content + tool_calls；ToolMessage→tool_result）。前端 Chat.tsx 流式累积时相邻同类合并（思考累积思考、正文累积正文），切会话回来工具链与思考不再丢失。
 - **改前端后必须 `npm run build`（2026-10-04 踩坑）**：浏览器 :5173 走 vite dev（源码热更），但**桌宠壳控制台加载的是后端 :8000/console/，挂载 `frontend/dist` 静态包**（main.py StaticFiles）。只改源码不 build，壳里跑的还是旧 bundle，表现为"web 对、桌面壳不对"。前端改动后必跑 `cd frontend && npm run build`（StaticFiles 实时读盘，无需重启后端；壳控制台窗口重载即可）。
+
+## VRM 3D 表现层进度（2026-10-04）
+
+- **已打通**：three.js 0.169 + @pixiv/three-vrm 3.3.0 + three-vrm-animation 3.3.0
+- **模型**：`/Users/superman/Nuomi/models/3D/6309260419351179234.vrm`（CC0，黑发水手服少女，VRM 0.x，17 个 blend shape）
+- **后端**：`enrich_model` 加 VRM 分支——不走 AI 分析，直接生成通用动作插件（7 表情 + 16 动作：wave_hand/nod/shake_head/tilt_head/raise_right/left_hand/look_left/right/up/down/hands_on_hips/shrug/dance/jump/spin/stretch）
+- **壳侧**：`vrm-model-adapter.js` 实现 motion() 骨骼动画（手写关键帧+easing）+ expression() blend shape 控制 + AnimationMixer 支持 .vrma 文件
+- **SSE 广播**：`_resolve_pet_action` 改成读 `plugins/<model_id>/actions.json`（VRM 模型 list_models() 里 actions={}）
+- **插件互斥 bug 修复**：切到无插件模型时所有模型插件全禁用（之前只在新模型有插件时才互斥）
+- **当前局限**：手写骨骼动画不自然（硬编码角度，无膝盖/手腕细节）
+- **待办：Mixamo FBX → VRM 动画**：
+  - 用户已注册 Mixamo，下载了 `Illegal Elbow Punch.fbx`（446KB，assets/animations/elbow_punch.fbx）
+  - 需要实现：FBXLoader 加载 → Mixamo rig 骨骼映射到 VRM humanoid → 生成 AnimationClip
+  - 参考：three.js FBXLoader + retargeting 逻辑；或 bvh2vrma 工具转换
+  - 目标：把常用动作（挥手/点头/跳舞/拳击）做成 .vrma 文件放 assets/animations/，壳里直接 playAnimation()
+  - 壳里已实现 loadVRMA(name, path) + playAnimation(name, loop) 接口，待接动画文件
