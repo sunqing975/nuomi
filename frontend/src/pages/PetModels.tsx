@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   Alert, Card, Col, Empty, Popconfirm, Row, Switch, Tag, Typography, message,
 } from 'antd';
-import { CheckCircleFilled, DeleteOutlined, SmileOutlined } from '@ant-design/icons';
+import { CheckCircleFilled, DeleteOutlined, LoadingOutlined, SmileOutlined } from '@ant-design/icons';
 import { del, get, post, put, type PetModel, type PetModelsResponse } from '../api';
 
 export default function PetModelsPage() {
@@ -132,13 +132,18 @@ export default function PetModelsPage() {
                 }
                 extra={
                   <span onClick={e => e.stopPropagation()}>
-                    {isActive && (
+                    {switching === m.id && (
+                      <Typography.Text type="warning" style={{ fontSize: 12, marginRight: 8 }}>
+                        <LoadingOutlined /> 分析中…
+                      </Typography.Text>
+                    )}
+                    {switching !== m.id && isActive && (
                       <Typography.Text type="success" style={{ fontSize: 12, marginRight: 8 }}>使用中</Typography.Text>
                     )}
-                    {!isActive && hasCapability && (
+                    {switching !== m.id && !isActive && hasCapability && (
                       <Typography.Text type="secondary" style={{ fontSize: 12, marginRight: 8 }}>点击切换</Typography.Text>
                     )}
-                    {!isActive && !hasCapability && (
+                    {switching !== m.id && !isActive && !hasCapability && (
                       <Tag color="default" style={{ marginRight: 8 }}>无动作/表情</Tag>
                     )}
                     {m.builtin && (
@@ -181,8 +186,6 @@ export default function PetModelsPage() {
                     {m.motions.map(a => <Tag key={a} style={{ marginBottom: 4 }}>{a}</Tag>)}
                   </div>
                 </div>
-
-                {switching === m.id && <Typography.Text type="warning">切换中…</Typography.Text>}
               </Card>
             </Col>
           );
