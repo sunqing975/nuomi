@@ -145,7 +145,12 @@ function ProvidersTab() {
     setCandidates([]);
     form.resetFields();
     if (p) {
-      form.setFieldsValue({ ...p, api_key: '' }); // key 留空 = 保持原值
+      // 编辑回显：models 存的是 {id,name}[]，Select tags 需要 string[]
+      form.setFieldsValue({
+        ...p,
+        api_key: '',
+        models: (p.models || []).map(m => m.id),
+      });
     } else {
       form.setFieldsValue({
         id: '', name: '', base_url: '', api_key: '', protocol: 'openai', models: [],
