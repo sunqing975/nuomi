@@ -15,7 +15,7 @@ import re
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.config import settings
 from app.domain.agents.service import (
@@ -48,13 +48,26 @@ def _all_skills_dirs() -> list:
 
 
 def _available_skill_keys() -> set[str]:
-    """per-turn 可用的技能名/slug 集合（已启用工作区技能 + 已启用技能包内技能）。"""
+    """per-turn 可用的技能名/slug 集合（已启用工作区技能 + 内置技能 + 已启用技能包内技能）。"""
     keys = {s["name"] for s in skill_service.list_all() if s.get("enabled")}
+    keys.update(b["name"] for b in skill_service.builtin())
     for pkg in skill_package_service.list_all():
         if not pkg.get("enabled"):
             continue
         keys.update(s["slug"] for s in pkg.get("skills") or [] if s.get("enabled"))
     return keys
+
+
+def _validate_knowledge_base_ids(ids: list[str] | None) -> None:
+    """per-turn 知识库校验：非 None 时全部须存在（空列表=明确不注入，跳过）。"""
+    if not ids:
+        return
+    from app.infra.knowledge.repo import KnowledgeRepo
+
+    repo = KnowledgeRepo()
+    unknown = [kb_id for kb_id in ids if repo.get_base(kb_id) is None]
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"知识库不存在: {', '.join(unknown)}")
 
 
 def _resolve_chat_abilities(skills, connectors) -> tuple[list[str] | None, list[str] | None]:
@@ -86,7 +99,7 @@ def _resolve_chat_abilities(skills, connectors) -> tuple[list[str] | None, list[
 
 
 class ChatBody(BaseModel):
-    messages: str = Field(description="用户输入文本")
+    messages: str = Field(min_length=1, description="用户输入文本（必填）")
     thread_id: str = Field(default="default", description="会话线程 ID（按线程隔离记忆）")
     skills: list[str] | None = Field(
         default=None,
@@ -100,6 +113,17 @@ class ChatBody(BaseModel):
         default=None,
         description="本次对话使用的模型（provider/model；None=默认模型）",
     )
+    knowledge_base_ids: list[str] | None = Field(
+        default=None,
+        description="本次对话检索的知识库（None/[]=本轮不注入，[id...]=只检索这些库）",
+    )
+
+    @field_validator("messages")
+    @classmethod
+    def _messages_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("消息不能为空")
+        return v
 
 
 @router.get("/health")
@@ -231,6 +255,7 @@ async def chat(agent_id: str, body: ChatBody, request: Request) -> StreamingResp
         if model not in model_refs():
             raise HTTPException(status_code=400, detail=f"模型不存在或未配置: {model}")
         model = model.strip()
+    _validate_knowledge_base_ids(body.knowledge_base_ids)
 
     async def gen():
         tools = plugin_service.tools()
@@ -250,6 +275,7 @@ async def chat(agent_id: str, body: ChatBody, request: Request) -> StreamingResp
                     skills=skills,
                     connectors=connectors,
                     model=model,
+                    knowledge_base_ids=body.knowledge_base_ids,
                 )
             ),
             thread_id=body.thread_id,
@@ -912,10 +938,39 @@ class PetStatusBody(BaseModel):
 
 @router.put("/pet/status")
 async def set_pet_status(body: PetStatusBody) -> dict:
-    """设置桌宠开关：写壳 config.json ui.pet_enabled，壳 watch 后创建/销毁桌宠窗口。"""
-    from app.domain.pet.service import set_pet_enabled
+    """设置桌宠开关：写壳 config.json ui.pet_enabled + 模型插件联动。
 
-    return {"enabled": set_pet_enabled(body.enabled)}
+    关闭 → 停用全部模型插件（动作/表情工具不再进 LLM 工具集，避免"虚空"调用）；
+    开启 → 恢复启用当前选中模型的插件（互斥，与切换模型一致）。
+    工具随插件启停装配；释放 shell agent 实例，下次对话重建。
+    """
+    from app.domain.pet.service import (
+        get_active_model,
+        get_shell_agent_id,
+        set_pet_enabled,
+    )
+
+    enabled = set_pet_enabled(body.enabled)
+    model_plugin_ids = plugin_service.model_plugin_ids()
+    activated_plugin = None
+    if not enabled:
+        for pid in model_plugin_ids:
+            plugin_service.set_enabled(pid, False)
+    else:
+        active_model = get_active_model()
+        for pid in model_plugin_ids:
+            plugin_service.set_enabled(pid, pid == active_model)
+        if active_model in model_plugin_ids:
+            activated_plugin = active_model
+    agent_id = get_shell_agent_id()
+    if agent_id:
+        # 工具集随插件启停变化：释放 agent 实例，下次对话重建
+        manager.release(agent_id)
+    return {
+        "enabled": enabled,
+        "agent_id": agent_id,
+        "activated_plugin": activated_plugin,
+    }
 
 
 @router.post("/pet/models/switch")
@@ -927,7 +982,7 @@ async def switch_pet_model(body: PetModelSwitchBody) -> dict:
     专家不绑定插件（2026-10-04 解耦）：释放 shell agent 实例，下次对话重建
     即携带新模型插件的动作/表情工具。
     """
-    from app.domain.pet.service import get_shell_agent_id, switch_model
+    from app.domain.pet.service import get_pet_enabled, get_shell_agent_id, switch_model
 
     try:
         model = switch_model(body.model_id)
@@ -936,9 +991,11 @@ async def switch_pet_model(body: PetModelSwitchBody) -> dict:
 
     model_plugin_ids = plugin_service.model_plugin_ids()
     has_plugin = model["id"] in model_plugin_ids
-    if has_plugin:
+    activated = get_pet_enabled() and has_plugin
+    if activated:
         for pid in model_plugin_ids:
             plugin_service.set_enabled(pid, pid == model["id"])
+    # 桌宠关闭时切模型仅换形象（config），不激活插件——插件保持全停，开桌宠时恢复
     agent_id = get_shell_agent_id()
     if agent_id:
         # 工具集随插件启停变化：释放 agent 实例，下次对话重建（带新模型插件工具）
@@ -948,7 +1005,7 @@ async def switch_pet_model(body: PetModelSwitchBody) -> dict:
         "ok": True,
         "model": model,
         "agent_id": agent_id,
-        "activated_plugin": model["id"] if has_plugin else None,
+        "activated_plugin": model["id"] if activated else None,
     }
 
 

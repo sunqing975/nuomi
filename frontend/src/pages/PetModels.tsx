@@ -85,8 +85,8 @@ export default function PetModelsPage() {
       >
         <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 0 }}>
           {petEnabled
-            ? '桌宠窗口显示中。关闭将完全销毁桌宠窗口（释放资源），后端对话能力不受影响，可随时重新开启。'
-            : '桌宠窗口已完全停止（释放资源）。开启后桌宠窗口会重新出现，可随时切换。'}
+            ? '桌宠窗口显示中。关闭将销毁桌宠窗口（释放资源）并停用全部桌宠动作/表情插件，后端对话能力不受影响，可随时重新开启。'
+            : '桌宠窗口已完全停止（释放资源），全部桌宠动作/表情插件已停用（LLM 不再调用动作工具）。开启后恢复当前桌宠的插件。'}
         </Typography.Paragraph>
       </Card>
 
