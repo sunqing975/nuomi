@@ -70,7 +70,7 @@ class VRMModelAdapter extends EventEmitter {
         this._vmcSender = null;
 
         // Camera orbit parameters
-        this._orbitTheta = 0;       // horizontal angle (0 = front/+Z)
+        this._orbitTheta = Math.PI; // horizontal angle (PI = front/+Z, 相机在+Z看向模型正面)
         this._orbitPhi = 0;         // vertical angle (0 = level)
         this._orbitDistance = 3.0;   // distance from orbit target
         this._orbitTarget = new THREE.Vector3(); // reusable vector
@@ -633,7 +633,7 @@ class VRMModelAdapter extends EventEmitter {
 
     // 重置摄像头轨道参数
     resetOrbit() {
-        this._orbitTheta = 0;
+        this._orbitTheta = Math.PI;
         this._orbitPhi = 0;
         this._orbitDistance = 3.0;
     }

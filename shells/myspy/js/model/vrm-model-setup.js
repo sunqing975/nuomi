@@ -120,26 +120,33 @@ class VRMModelSetup {
         musicPlayer.setEmotionMapper(emotionMapper);
         global.musicPlayer = musicPlayer;
 
-        // 设置模型和情绪映射器
-        voiceChat.setModel(model);
-        if (typeof voiceChat.setEmotionMapper === 'function') {
-            voiceChat.setEmotionMapper(emotionMapper);
+        // 设置模型和情绪映射器（失败不阻塞渲染）
+        try {
+            if (voiceChat) {
+                voiceChat.setModel(model);
+                if (typeof voiceChat.setEmotionMapper === 'function') {
+                    voiceChat.setEmotionMapper(emotionMapper);
+                }
+            }
+        } catch(e) {
+            console.warn('voiceChat 绑定跳过:', e.message);
         }
 
         // 启动渲染循环（使用视口/裁剪实现局部渲染）
         renderer.autoClear = false;
         const clock = new THREE.Clock();
+        let _frameCount = 0;
         function animate() {
             requestAnimationFrame(animate);
             const delta = clock.getDelta();
             model.update(delta);
 
-            // 清除整个画布为透明（防止拖拽后旧位置残影）
+            // 清除整个画布为透明
             renderer.setScissorTest(false);
             renderer.setViewport(0, 0, window.innerWidth, window.innerHeight);
             renderer.clear(true, true, true);
 
-            // 在视口区域内渲染模型
+            // 视口区域内渲染
             const vr = model.viewRect;
             const vpY = window.innerHeight - vr.y - vr.height;
             renderer.setViewport(vr.x, vpY, vr.width, vr.height);
@@ -196,9 +203,9 @@ class VRMModelSetup {
 
         // 优化VRM模型
         console.time('VRM优化');
-        VRMUtils.removeUnnecessaryJoints(vrm.scene);
-        if (VRMUtils.combineSkeletons) {
-            VRMUtils.combineSkeletons(vrm.scene);
+        // VRM 0.x 模型需要旋转90度才能正确朝向相机
+        if (vrm.meta?.metaVersion === '0' || !vrm.meta?.metaVersion) {
+            VRMUtils.rotateVRM0(vrm);
         }
         console.timeEnd('VRM优化');
 
@@ -210,6 +217,33 @@ class VRMModelSetup {
         console.log('VRM模型加载成功');
         console.log('可用表情:', vrm.expressionManager ?
             Object.keys(vrm.expressionManager._expressionMap || {}) : '无');
+
+        // 调试：模型 bounding box
+        const box = new THREE.Box3().setFromObject(vrm.scene);
+        const size = box.getSize(new THREE.Vector3());
+        const center = box.getCenter(new THREE.Vector3());
+        console.log(`VRM 模型尺寸: ${size.x.toFixed(2)} x ${size.y.toFixed(2)} x ${size.z.toFixed(2)}`);
+        console.log(`VRM 模型中心: ${center.x.toFixed(2)}, ${center.y.toFixed(2)}, ${center.z.toFixed(2)}`);
+
+        // 测试表情：加载后 1 秒笑一下，2 秒眨眼
+        setTimeout(() => {
+            if (vrm.expressionManager) {
+                vrm.expressionManager.setValue('happy', 0.8);
+                console.log('[VRM测试] happy 表情已触发');
+            }
+        }, 1000);
+        setTimeout(() => {
+            if (vrm.expressionManager) {
+                vrm.expressionManager.setValue('happy', 0);
+                vrm.expressionManager.setValue('blink', 1);
+                console.log('[VRM测试] blink 表情已触发');
+            }
+        }, 2000);
+        setTimeout(() => {
+            if (vrm.expressionManager) {
+                vrm.expressionManager.setValue('blink', 0);
+            }
+        }, 2500);
 
         return vrm;
     }

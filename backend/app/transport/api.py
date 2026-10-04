@@ -1153,10 +1153,10 @@ async def switch_pet_model(body: PetModelSwitchBody) -> dict:
 
     model_plugin_ids = plugin_service.model_plugin_ids()
     has_plugin = model["id"] in model_plugin_ids
-    activated = get_pet_enabled() and has_plugin
-    if activated:
-        for pid in model_plugin_ids:
-            plugin_service.set_enabled(pid, pid == model["id"])
+    pet_enabled = get_pet_enabled()
+    # 模型插件互斥：无论新模型有没有插件，先全禁用；有插件再启用它
+    for pid in model_plugin_ids:
+        plugin_service.set_enabled(pid, pet_enabled and pid == model["id"] and has_plugin)
     # 桌宠关闭时切模型仅换形象（config），不激活插件——插件保持全停，开桌宠时恢复
     agent_id = get_shell_agent_id()
     if agent_id:
@@ -1167,7 +1167,7 @@ async def switch_pet_model(body: PetModelSwitchBody) -> dict:
         "ok": True,
         "model": model,
         "agent_id": agent_id,
-        "activated_plugin": model["id"] if activated else None,
+        "activated_plugin": model["id"] if (pet_enabled and has_plugin) else None,
         "enrich": enrich_status,
     }
 
