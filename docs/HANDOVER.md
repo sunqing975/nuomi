@@ -1,6 +1,6 @@
 # Nuomi 交接文档（HANDOVER）
 
-> 最后更新：2026-10-04 · 分支 main · HEAD `1ab457e`（工作区干净）
+> 最后更新：2026-10-04 · 分支 main · HEAD `6b71691`（工作区干净，仅余 docs 回填）
 > 本文件面向「下一个接手的人」：先读它，再读代码。已实现的细节以代码为准（`git show <commit>` 可查）。
 
 ---
@@ -170,5 +170,5 @@ dc242b1  卡片等高修复：antd5 grid 列为裸 div，.ant-row > div（amend 
 ```
 
 开发规范：`make lint`（ruff）/ `make typecheck`（mypy），CI 在 .github/workflows。
-<TBD3>  feat: 大模型配置页（providers.json CRUD）+ 模型不绑专家（default_model 列删除，对话框 per-turn 选模型）
+6b71691  feat: 大模型配置页（providers.json CRUD）+ 模型不绑专家（default_model 列删除，对话框 per-turn 选模型）
 <TBD4>  docs: HANDOVER 回填（大模型配置 + 模型解耦）
