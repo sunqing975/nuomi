@@ -50,6 +50,7 @@ def list_models() -> list[dict]:
                     "type": "vrm",
                     "motions": [a["name"] for a in actions],
                     "expressions": list_vrm_expressions(vrm_file),
+                    "expressions_have_data": vrm_has_expression_data(vrm_file),
                     "actions": {a["name"]: {"label_zh": a["label_zh"], "has_vrma": a["has_vrma"]} for a in actions},
                     "builtin": False,
                 }
@@ -236,6 +237,36 @@ def list_vrm_expressions(model_path: Path) -> list[str]:
     if isinstance(exprs, dict):
         return list(exprs)
     return []
+
+
+def vrm_has_expression_data(model_path: Path) -> bool:
+    """模型的表情是否真有 mesh 变形数据（binds/morphTarget 引用非空）。
+
+    2026-10-05 实测：当前 6309260419351179234.vrm 的 17 个 blendShapeGroup 全部 binds=0
+    （VRoid 导出时去掉了表情）——setValue 后 mesh 纹丝不动，表情预览/对话触发均无视觉变化。
+    返回 False 时前端应提示"该模型无表情数据，请更换带表情的 VRM"。
+    """
+    try:
+        with open(model_path, "rb") as f:
+            head = f.read(12)
+            if head[:4] != b"glTF":
+                return False
+            chunk_len = int.from_bytes(f.read(4), "little")
+            chunk_type = f.read(4)
+            if chunk_type != b"JSON":
+                return False
+            data = f.read(chunk_len)
+        gltf = json.loads(data.decode("utf-8"))
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        return False
+    ext = gltf.get("extensions") or {}
+    groups = ((ext.get("VRM") or {}).get("blendShapeMaster") or {}).get("blendShapeGroups") or []
+    if groups:
+        return any(bool(g.get("binds")) for g in groups)
+    exprs = ((ext.get("VRMC_vrm") or {}).get("expressions") or {}).get("expressions") or {}
+    if isinstance(exprs, dict):
+        return any(bool(v.get("morphTargetBinds")) for v in exprs.values())
+    return False
 
 
 def _vrm_expr_name(g: dict) -> str:

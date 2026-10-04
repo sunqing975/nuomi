@@ -164,3 +164,11 @@ SSE 事件协议（AI 数字人前端消费）：`token` / `tool_call` / `tool_r
 - **表情预览"没效果"结论**：链路全通（前端按钮→POST /avatar/preview→SSE→壳 playAvatarActionPayload→setValue），壳日志有用户点击触发的 happy/sad/blink/neutral/aa 播放记录；看不到的根因 = ① 模型当时背朝用户（自转 bug 所致）；② 表情保持 3s 太短。修复：显式表情路径 `_playExpression(…, 3000)→8000`、app.js EXPRESSION_RECOVERY_MS 5000→8000
 - **前端动作区空（用户反馈"下面没有动作可以预览"）**：`/api/avatar/models` 的 models[].motions 恒空（list_models 硬编码）——补为 `list_avatar_actions()` 全局 VRMA 清单（motions=[name]，actions={name:{label_zh,has_vrma}}），前端卡片动作区渲染 5 个动作 + ▶ 预览按钮
 - **视觉验证限制**：数字人窗口透明全屏 + 控制台窗口遮挡，screencapture 拿不到模型画面（AX 树也无透明窗口），表情视觉验证依赖用户确认；模型 viewRect 默认 (1.0,0.6,0.5) = 屏幕右侧中部
+
+## 表情预览"仍无效果"终极根因（2026-10-05 凌晨，已定性）
+
+- **模型文件本身没有表情数据**：解包 6309260419351179234.vrm 的 GLB JSON，`blendShapeMaster.blendShapeGroups` 17 个 group（Neutral/A/Joy/Angry/Sorrow/…）**binds 全部为空数组**——VRoid 导出时去掉了表情 mesh 变形。three-vrm 验证脚本实测：`setValue('happy',1.0)` 后 `expression.weight=1` 但 `binds:0`，morph 权重变化数 0，mesh 纹丝不动
+- 链路（前端→API→SSE→壳→setValue→_expressionMap['happy']）全部正确；**问题 100% 在模型资产**——任何表情预览/对话触发都不会有视觉变化
+- 顺带确认 three-vrm v3 语义：`VRMExpression.name`=`VRMExpression_happy`（包装名）、`_expressionMap` 键=`expressionName`（'happy'），壳 `_exprByLower` 索引与 `_resolveExpression` 大小写匹配均正确
+- **新增检测**：后端 `vrm_has_expression_data(model_path)` 解析 GLB 检查任一 group binds 非空（VRM1.0 查 morphTargetBinds）；`list_models` 返回 `expressions_have_data` 字段；前端模型卡片在无数据时显示警告"⚠ 该模型无表情变形数据…"并隐藏表情预览按钮（已 build，控制台刷新可见）
+- **结论/建议**：更换带表情的 VRM（多数 VRoid Studio 导出模型带表情）即可正常预览；当前模型仅适用于动作演示

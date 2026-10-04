@@ -251,10 +251,15 @@ export default function AvatarModelsPage() {
                 {m.expressions.length > 0 && (
                   <div style={{ marginBottom: 8 }}>
                     <Typography.Text strong style={{ fontSize: 12 }}>表情 </Typography.Text>
+                    {m.expressions_have_data === false && (
+                      <Typography.Text type="warning" style={{ fontSize: 12 }}>
+                        ⚠ 该模型无表情变形数据（binds 空），预览/对话表情不会变化，请更换带表情的 VRM
+                      </Typography.Text>
+                    )}
                     {m.expressions.map(e => (
                       <Tag key={e} color="purple" style={{ marginBottom: 4 }}>
                         {e}
-                        {isActive && (
+                        {isActive && m.expressions_have_data !== false && (
                           <PlayCircleOutlined
                             style={{ marginLeft: 5, color: '#7c3aed', cursor: 'pointer' }}
                             onClick={ev => { ev.stopPropagation(); preview('expression', e); }}
