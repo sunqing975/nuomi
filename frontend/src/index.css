@@ -5,8 +5,8 @@ body {
   background: #f7f8fa;
 }
 
-/* 卡片网格等高：grid 列表的列 flex 撑满，卡片高度一致 */
-.nuomi-grid .ant-list-items > .ant-row > .ant-col {
+/* 卡片网格等高：antd 5 grid 列表结构为 .ant-row > div（无 .ant-col/.ant-list-items），列 flex 撑满 */
+.nuomi-grid .ant-row > div {
   display: flex;
 }
 .nuomi-grid .ant-list-item {

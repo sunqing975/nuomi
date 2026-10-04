@@ -21,3 +21,6 @@ backend/data/
 
 # make 脚本的 PID 与日志
 .logs/
+
+# vite dev 缓存
+frontend/.vite/
