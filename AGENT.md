@@ -59,6 +59,7 @@ SSE 事件协议（桌宠前端消费）：`token` / `tool_call` / `tool_result`
 - **对话框输入区优化（2026-10-04）**：能力选择器（技能/连接器/知识库/模型）独立一行（提示文案已移除，2026-10-04 用户要求不显示），输入框独占整行 flex:1 + autoSize（1–6 行）；会话左栏 240→200、模型 Select 180→150、placeholder 缩短
 - **模型默认自动（2026-10-04）**：对话框「模型」Select 首项新增「自动（默认）」（value 哨兵 `auto`，前端 Chat.tsx `MODEL_AUTO`），默认选中；选中「自动」时请求体 `model=null`，由后端按 agent 默认模型解析（`stream_chat` model=None → 默认模型）；用户显式选择具体模型才覆盖，移除模型 chip 回到「自动」。`ChatStreamOptions.model` 类型放开为 `string | null`。替代原「模型必选」语义（必选校验已删）
 - **形态与遗留清理（2026-10-04，用户拍板）**：默认形态 = **桌宠壳 shells/myspy**（Electron，`npm start`，经 config.json `llm.api_url` → 后端 :8000 `/api/v1` OpenAI 兼容端点对话）；**web 控制台只是调试形态**（:5173，vite 代理 /api → :8000）。Makefile 重写：`make start` 启动桌宠壳（替换已失效的 tauri desktop 目标，`desktop/` 目录 v0.13 已删）、`make web` 调试、stop/status/logs 同步改为桌宠壳；tauri 遗留（README desktop/ 引用、docs/demo-script tauri build 检查项、.logs/desktop.log）已清理，docs/desktop-data-architecture.md 加废弃标注（NUOMI_HOME/SQLite 决策仍有效，以 AGENT.md 为准）。桌宠壳重启 = 杀 Electron 进程后 `shells/myspy && npm start`
+- **连接器 env 支持（2026-10-04）**：ConnectorBody 增 `env: dict[str,str]`（键名校验 `^[A-Za-z_][A-Za-z0-9_]*$`，非法 400，空键过滤）；spec 透传 harness——octop-harness `aload_mcp_tools` 原生合并 stdio env（SDK 默认子集 + spec env，PROTECTED_ENV_KEYS 不覆盖），**sse/http 传输不注入 env**；前端连接器表单加 key-value 环境变量编辑（Form.List，卡片仅显示键名不显示值）；测试 `tests/test_connectors_api.py`（API CRUD + `load_mcp_tools` 集成验证 env 注入子进程），pytest 26 项全过 + ruff/mypy 干净；端到端实测：对话调 `read_env` 返回连接器 env 配置值 ✓
 - 后续：M3 Agent 生命周期 → M4 会话 → M5 插件 → M6 技能/连接器/知识库 → M7 桌宠前端 → M8 产品体验
 
 ## 环境事实（重要）
