@@ -2,13 +2,13 @@
 
 对齐 Octop 领域语言：
 - 插件 = 工具注册（ctx.tool）+ 技能（ctx.skills）+ 钩子（ctx.middleware）
-- 插件目录是 source of truth（plugin.yaml）；DB 只存启停状态与 agent 绑定
-- 全局启用（plugins.enabled）后，工具默认对所有 agent 可用；agent 可按需禁用/配置
+- 插件目录是 source of truth（plugin.yaml）；DB 只存启停状态
+- 全局启用（plugins.enabled）：插件启用即对所有专家可用（2026-10-04 起
+  不再有专家-插件绑定，专家不绑定插件；能力随对话请求注入见后续设计）
 """
 
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 
@@ -90,37 +90,8 @@ class PluginService:
             row = conn.execute("SELECT * FROM plugins WHERE plugin_id = ?", (plugin_id,)).fetchone()
         return dict(row) if row else None
 
-    # ---------- agent 绑定 ----------
-
-    def bind(
-        self,
-        agent_id: str,
-        plugin_id: str,
-        *,
-        enabled: bool = True,
-        tool_configs: dict | None = None,
-    ) -> None:
-        with db.connect() as conn:
-            conn.execute(
-                """INSERT OR REPLACE INTO agent_plugins (agent_id, plugin_id, enabled, tool_configs)
-                   VALUES (?, ?, ?, ?)""",
-                (
-                    agent_id,
-                    plugin_id,
-                    1 if enabled else 0,
-                    json.dumps(tool_configs or {}, ensure_ascii=False),
-                ),
-            )
-
-    def unbind(self, agent_id: str, plugin_id: str) -> None:
-        with db.connect() as conn:
-            conn.execute(
-                "DELETE FROM agent_plugins WHERE agent_id = ? AND plugin_id = ?",
-                (agent_id, plugin_id),
-            )
-
     def delete(self, plugin_id: str) -> bool:
-        """删除插件：DB 记录 + 全部 agent 绑定 + 插件目录（source of truth）。
+        """删除插件：DB 记录 + 插件目录（source of truth）。
 
         模型插件不在此删除（由「桌宠」删除模型时级联）——调用方先检查。
         删除后调用方应释放 agent 实例，避免缓存实例仍带旧插件工具。
@@ -128,29 +99,12 @@ class PluginService:
         with db.connect() as conn:
             cur = conn.execute("DELETE FROM plugins WHERE plugin_id = ?", (plugin_id,))
             deleted = cur.rowcount > 0
-            conn.execute("DELETE FROM agent_plugins WHERE plugin_id = ?", (plugin_id,))
         plugin_dir = self.plugins_dir() / plugin_id
         if plugin_dir.is_dir():
             import shutil
 
             shutil.rmtree(plugin_dir, ignore_errors=True)
         return deleted
-
-    def agent_bindings(self, agent_id: str) -> list[dict]:
-        with db.connect() as conn:
-            rows = conn.execute(
-                "SELECT * FROM agent_plugins WHERE agent_id = ? ORDER BY plugin_id",
-                (agent_id,),
-            ).fetchall()
-        out = []
-        for r in rows:
-            d = dict(r)
-            try:
-                d["tool_configs"] = json.loads(d.get("tool_configs") or "{}")
-            except json.JSONDecodeError:
-                d["tool_configs"] = {}
-            out.append(d)
-        return out
 
     # ---------- 工具装配（供对话端点） ----------
 
@@ -165,18 +119,15 @@ class PluginService:
 
         return {m["id"] for m in list_models() if m["motions"] or m["expressions"]}
 
-    def tools_for_agent(self, agent_id: str) -> list:
-        """按 agent 绑定 + 全局启停，装配插件工具（StructuredTool 列表）。
+    def tools(self) -> list:
+        """按全局启停装配插件工具（StructuredTool 列表）。
 
+        专家不再绑定插件（2026-10-04 解耦）：插件启用即对所有专家可用。
         工具名做 slug 防御：非 ASCII 名（如中文）改名为 tool_{n}，
         中文原名拼进 description，保证 OpenAI 兼容接口不 400。
         """
         global_enabled = {r["plugin_id"]: bool(r["enabled"]) for r in self.list_all()}
-        agent_cfg = {
-            b["plugin_id"]: {"enabled": bool(b["enabled"]), "tools": b["tool_configs"]}
-            for b in self.agent_bindings(agent_id)
-        }
-        tools = build_plugin_tools(agent_plugins=agent_cfg, global_plugins=global_enabled)
+        tools = build_plugin_tools(global_plugins=global_enabled)
         return [self._sanitize_tool(t, i) for i, t in enumerate(tools)]
 
     @staticmethod

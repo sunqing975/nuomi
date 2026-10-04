@@ -41,6 +41,8 @@ SSE 事件协议（桌宠前端消费）：`token` / `tool_call` / `tool_result`
 - R3 最小对话 API ✅：`POST /api/chat` SSE 流式验证通过（token 流 + done；糯米人设生效）
 - 工具调用：插件未接入（M5），模型无工具时诚实回答
 - **桌宠开关（2026-10-04）**：控制台「桌宠」页开关 → `GET|PUT /api/pet/status` → 壳 config.json `ui.pet_enabled` → 壳 watch 创建/销毁桌宠窗口（关闭=完全停止窗口释放资源，壳进程与后端对话不受影响；启动时按开关决定是否创建）
+- **专家-插件解耦（2026-10-04）**：专家不再绑定插件（`agent_plugins` 表/绑定 API/前端「绑插件」UI 全删）。插件=全局启停（`plugins.enabled`），启用即对所有专家可用；工具装配 `PluginService.tools()` 只按全局启停 `build_plugin_tools(global_plugins=...)`。桌宠模型插件互斥保留（切换模型只 `set_enabled` 互斥 + `manager.release`，不再 bind 到 agent）
+- **对话框大改动（2026-10-04）**：能力按 per-turn（每次请求）注入，对齐 octop 对话框语义。`POST /agents/{id}/chat` body 扩展 `{skills, connectors}`：skills=None 全量/[] 禁用全部/[name|slug] 只启用（校验存在性，400）；connectors=None 默认挂载/[] 不挂载/[name] 只挂载。底层走 harness 原生 `ChatRequest.skills`（SkillFilterMiddleware 白名单）+ `mcp_servers/mcp_use_default`，无需自研。前端对话框：技能/连接器选择器（Popover）+ 输入框上方能力 chips（可移除）+ 消息气泡内工具步骤折叠（tool_call→tool_result）+ 轨迹抽屉（当前会话工具时间线）。**踩坑：per-turn 能力校验必须在 StreamingResponse 的 generator 之外（端点函数体）执行，否则抛错不转 400**
 - 后续：M3 Agent 生命周期 → M4 会话 → M5 插件 → M6 技能/连接器/知识库 → M7 桌宠前端 → M8 产品体验
 
 ## 环境事实（重要）

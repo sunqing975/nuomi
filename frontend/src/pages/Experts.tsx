@@ -3,26 +3,22 @@ import {
   Button, Card, Col, Row, Modal, Form, Input, Space, Switch, Tag, message, Popconfirm,
 } from 'antd';
 import { PlusOutlined, RobotOutlined } from '@ant-design/icons';
-import { get, post, patch, put, del, type Agent, type Plugin } from '../api';
+import { get, post, patch, del, type Agent } from '../api';
 
 const { TextArea } = Input;
 
 export default function ExpertsPage({ onBackend }: { onBackend?: (ok: boolean) => void }) {
   const [agents, setAgents] = useState<Agent[]>([]);
-  const [plugins, setPlugins] = useState<Plugin[]>([]);
   const [loading, setLoading] = useState(false);
   const [form] = Form.useForm();
   const [editing, setEditing] = useState<Agent | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
-  const [pluginModal, setPluginModal] = useState<Agent | null>(null);
-  const [bound, setBound] = useState<string[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [a, p] = await Promise.all([get<Agent[]>('/agents'), get<Plugin[]>('/plugins')]);
+      const a = await get<Agent[]>('/agents');
       setAgents(a);
-      setPlugins(p);
       onBackend?.(true);
     } catch {
       onBackend?.(false);
@@ -55,19 +51,6 @@ export default function ExpertsPage({ onBackend }: { onBackend?: (ok: boolean) =
     }
     setCreateOpen(false);
     setEditing(null);
-    load();
-  };
-
-  const openPlugins = async (a: Agent) => {
-    const b = await get<{ plugin_id: string }[]>(`/agents/${a.agent_id}/plugins`);
-    setBound(b.map(x => x.plugin_id));
-    setPluginModal(a);
-  };
-
-  const savePlugins = async (a: Agent) => {
-    await put(`/agents/${a.agent_id}/plugins`, { plugin_ids: bound });
-    message.success('绑定已更新（重启实例生效）');
-    setPluginModal(null);
     load();
   };
 
@@ -105,9 +88,8 @@ export default function ExpertsPage({ onBackend }: { onBackend?: (ok: boolean) =
               <Space wrap>
                 <Switch checked={a.enabled} onChange={() => toggleEnabled(a)} checkedChildren="启用" unCheckedChildren="停用" />
                 <Button size="small" onClick={() => startAgent(a)}>{a.last_state === 'running' ? '重启实例' : '启动实例'}</Button>
-                <Button size="small" onClick={() => openPlugins(a)}>绑插件</Button>
                 <Button size="small" onClick={() => { setEditing(a); form.setFieldsValue(a); setCreateOpen(true); }}>编辑</Button>
-                <Popconfirm title={`删除「${a.name}」？`} onConfirm={async () => { await del(`/agents/${a.id ?? a.agent_id}`); message.success('已删除'); load(); }}>
+                <Popconfirm title={`删除「${a.name}」？`} onConfirm={async () => { await del(`/agents/${a.agent_id}`); message.success('已删除'); load(); }}>
                   <Button size="small" danger>删除</Button>
                 </Popconfirm>
               </Space>
@@ -138,39 +120,6 @@ export default function ExpertsPage({ onBackend }: { onBackend?: (ok: boolean) =
           <Form.Item name="icon_name" label="图标"><Input placeholder="cat / robot / …" /></Form.Item>
           <Form.Item name="color" label="主题色"><Input placeholder="#f59e0b" /></Form.Item>
         </Form>
-      </Modal>
-
-      {/* 绑插件 */}
-      <Modal
-        open={!!pluginModal}
-        title={`绑定插件 · ${pluginModal?.name ?? ''}`}
-        onCancel={() => setPluginModal(null)}
-        onOk={() => pluginModal && savePlugins(pluginModal)}
-        destroyOnClose
-      >
-        {plugins.length === 0 ? (
-          <div style={{ color: '#9ca3af', textAlign: 'center', padding: 24 }}>
-            还没有插件，先到「插件」页扫描
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {plugins.map(p => (
-              <label key={p.plugin_id} style={{
-                display: 'flex', alignItems: 'center', gap: 10,
-                padding: '8px 12px', border: '1px solid #e5e7eb', borderRadius: 8, cursor: 'pointer',
-              }}>
-                <input
-                  type="checkbox"
-                  style={{ accentColor: '#f59e0b' }}
-                  checked={bound.includes(p.plugin_id)}
-                  onChange={e => setBound(prev =>
-                    e.target.checked ? [...prev, p.plugin_id] : prev.filter(x => x !== p.plugin_id))}
-                />
-                <span>{p.name} <small style={{ color: '#9ca3af' }}>({p.plugin_id})</small></span>
-              </label>
-            ))}
-          </div>
-        )}
       </Modal>
     </>
   );

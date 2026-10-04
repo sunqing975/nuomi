@@ -52,16 +52,6 @@ CREATE TABLE IF NOT EXISTS plugins (
 );
 """
 
-AGENT_PLUGINS_DDL = """
-CREATE TABLE IF NOT EXISTS agent_plugins (
-  agent_id TEXT NOT NULL,
-  plugin_id TEXT NOT NULL,
-  enabled INTEGER DEFAULT 1,
-  tool_configs TEXT DEFAULT '{}',
-  PRIMARY KEY (agent_id, plugin_id)
-);
-"""
-
 SKILLS_DDL = """
 CREATE TABLE IF NOT EXISTS skills (
   skill_name TEXT PRIMARY KEY,
@@ -116,7 +106,6 @@ def init_db() -> None:
     with connect() as conn:
         conn.executescript(AGENTS_DDL)
         conn.executescript(PLUGINS_DDL)
-        conn.executescript(AGENT_PLUGINS_DDL)
         conn.executescript(SKILLS_DDL)
         conn.executescript(SKILL_PACKAGES_DDL)
         conn.executescript(SKILL_PACKAGE_SKILLS_DDL)

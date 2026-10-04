@@ -35,8 +35,16 @@ async def stream_chat(
     skills_disabled: frozenset[str] = frozenset(),
     mcp_server_configs: dict | None = None,
     mcp_default_servers: list[str] | None = None,
+    skills: list[str] | None = None,
+    connectors: list[str] | None = None,
 ) -> AsyncIterator[dict]:
-    """流式对话：把 harness 事件翻译成 nuomi 标准化事件。"""
+    """流式对话：把 harness 事件翻译成 nuomi 标准化事件。
+
+    skills / connectors 为 per-turn 能力选择（对齐 octop 对话框语义）：
+    - skills=None 全量技能；[] 禁用全部技能；[name/slug...] 只启用这些
+    - connectors=None 用默认连接器（agent 配置的 mcp_default_servers）；
+      [] 不挂载连接器；[name...] 只挂载这些连接器
+    """
     agent = manager.get_agent(
         agent_id,
         name=name,
@@ -47,10 +55,21 @@ async def stream_chat(
         mcp_server_configs=mcp_server_configs,
         mcp_default_servers=mcp_default_servers,
     )
+    if connectors is None:
+        mcp_use_default = bool(mcp_default_servers)
+        mcp_servers = None
+    elif not connectors:
+        mcp_use_default = False
+        mcp_servers = []
+    else:
+        mcp_use_default = False
+        mcp_servers = connectors
     request = ChatRequest(
         messages=messages,
         thread_id=thread_id,
-        mcp_use_default=bool(mcp_default_servers),
+        skills=skills,
+        mcp_servers=mcp_servers,
+        mcp_use_default=mcp_use_default,
     )
 
     text_parts: list[str] = []

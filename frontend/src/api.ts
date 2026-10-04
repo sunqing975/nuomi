@@ -136,12 +136,13 @@ export interface PetModelsResponse {
   active: string | null;
 }
 
-// ---------- 对话（OpenAI Chat Completions 流式格式） ----------
+// ---------- 对话（octop 原生事件帧 SSE） ----------
 
 export interface ChatEvent {
-  type: 'token' | 'tool_call' | 'done';
+  type: 'token' | 'tool_call' | 'tool_result' | 'done';
   content?: string;
   name?: string;
+  detail?: string;
 }
 
 export interface ToolEvent {
@@ -156,17 +157,25 @@ export interface ChatMessage {
   tool_events?: ToolEvent[];
 }
 
-/** 调用专家对话 SSE 流（OpenAI 格式），逐事件回调（token 累积由调用方处理）。 */
+export interface ChatStreamOptions {
+  /** per-turn 技能白名单（name/slug；不传=全量，传空数组=禁用全部） */
+  skills?: string[];
+  /** per-turn 连接器（不传=默认挂载，传空数组=不挂载） */
+  connectors?: string[];
+}
+
+/** 调用专家对话 SSE 流（octop 原生事件帧），逐事件回调（token 累积由调用方处理）。 */
 export async function chatStream(
   agentId: string,
   messages: string,
   threadId: string,
   onEvent: (e: ChatEvent) => void,
+  opts?: ChatStreamOptions,
 ): Promise<void> {
   const res = await fetch(`/api/agents/${agentId}/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messages, thread_id: threadId }),
+    body: JSON.stringify({ messages, thread_id: threadId, ...opts }),
   });
   if (!res.ok) {
     let detail = res.statusText;
@@ -188,17 +197,21 @@ export async function chatStream(
       const payload = t.slice(5).trim();
       if (!payload) continue;
       try {
-        // octop 原生事件帧：token / tool_call_chunk / done
+        // octop 原生事件帧：token / tool_call_chunk / tool_result / done
         const ev = JSON.parse(payload) as {
           type?: string;
           content?: string;
           name?: string;
           args?: string;
+          messages?: { name?: string; content?: string }[];
         };
         if (ev.type === 'token' && ev.content) {
           onEvent({ type: 'token', content: ev.content });
         } else if (ev.type === 'tool_call_chunk' && ev.name) {
           onEvent({ type: 'tool_call', name: ev.name, content: ev.args });
+        } else if (ev.type === 'tool_result') {
+          const m = ev.messages?.[0];
+          onEvent({ type: 'tool_result', name: m?.name, detail: m?.content });
         } else if (ev.type === 'done') {
           onEvent({ type: 'done' });
         }

@@ -47,12 +47,55 @@ def _all_skills_dirs() -> list:
     return [skill_service.skills_dir(), *skill_package_service.skills_dirs()]
 
 
+def _available_skill_keys() -> set[str]:
+    """per-turn 可用的技能名/slug 集合（已启用工作区技能 + 已启用技能包内技能）。"""
+    keys = {s["name"] for s in skill_service.list_all() if s.get("enabled")}
+    for pkg in skill_package_service.list_all():
+        if not pkg.get("enabled"):
+            continue
+        keys.update(s["slug"] for s in pkg.get("skills") or [] if s.get("enabled"))
+    return keys
+
+
+def _resolve_chat_abilities(skills, connectors) -> tuple[list[str] | None, list[str] | None]:
+    """校验并归一化 per-turn 能力选择（skills / connectors），返回 (skills, connectors)。
+
+    skills：None=全量技能；[]=禁用全部；列表=只启用这些（须存在于可用技能集合）。
+    connectors：None=默认连接器（agent 配置）；[]=不挂载；列表=只挂载这些（须已配置）。
+    """
+    if skills is not None:
+        for name in skills:
+            if not isinstance(name, str) or not name.strip():
+                raise HTTPException(status_code=400, detail="技能名不能为空")
+        unknown = [n for n in skills if n not in _available_skill_keys()]
+        if unknown:
+            raise HTTPException(status_code=400, detail=f"技能不存在或未启用: {', '.join(unknown)}")
+        skills = [s.strip() for s in skills]
+    if connectors is not None:
+        for name in connectors:
+            if not isinstance(name, str) or not name.strip():
+                raise HTTPException(status_code=400, detail="连接器名不能为空")
+        unknown = [n for n in connectors if n not in settings.mcp_servers]
+        if unknown:
+            raise HTTPException(status_code=400, detail=f"连接器不存在: {', '.join(unknown)}")
+        connectors = [c.strip() for c in connectors]
+    return skills, connectors
+
+
 # ---------- 对话 ----------
 
 
 class ChatBody(BaseModel):
     messages: str = Field(description="用户输入文本")
     thread_id: str = Field(default="default", description="会话线程 ID（按线程隔离记忆）")
+    skills: list[str] | None = Field(
+        default=None,
+        description="本次对话启用的技能（name/slug；None=全部，[]=禁用全部）",
+    )
+    connectors: list[str] | None = Field(
+        default=None,
+        description="本次对话挂载的连接器（None=默认，[]=不挂载）",
+    )
 
 
 @router.get("/health")
@@ -175,9 +218,11 @@ async def chat(agent_id: str, body: ChatBody, request: Request) -> StreamingResp
         raise HTTPException(status_code=404, detail="Agent 不存在")
     if not agent_row.get("enabled"):
         raise HTTPException(status_code=400, detail="Agent 已停用")
+    # per-turn 能力校验必须在流开始前完成（generator 内抛错不会转成 400）
+    skills, connectors = _resolve_chat_abilities(body.skills, body.connectors)
 
     async def gen():
-        tools = plugin_service.tools_for_agent(agent_id)
+        tools = plugin_service.tools()
         async for frame in stream_octop_sse(
             _publish_actions(
                 stream_chat(
@@ -191,6 +236,8 @@ async def chat(agent_id: str, body: ChatBody, request: Request) -> StreamingResp
                     skills_disabled=skill_service.disabled_set(),
                     mcp_server_configs=settings.mcp_servers,
                     mcp_default_servers=list(settings.mcp_servers.keys()) or None,
+                    skills=skills,
+                    connectors=connectors,
                 )
             ),
             thread_id=body.thread_id,
@@ -280,7 +327,7 @@ async def start_agent(agent_id: str) -> dict:
         agent_id,
         name=row["name"],
         system_prompt=row["system_prompt"],
-        plugin_tools=plugin_service.tools_for_agent(agent_id),
+        plugin_tools=plugin_service.tools(),
         skills_dir=_all_skills_dirs(),
         skills_disabled=skill_service.disabled_set(),
         mcp_server_configs=settings.mcp_servers,
@@ -381,7 +428,7 @@ async def patch_plugin(plugin_id: str, body: PluginPatchBody) -> dict:
 
 @router.delete("/plugins/{plugin_id}")
 async def delete_plugin(plugin_id: str) -> dict:
-    """删除插件（含绑定与插件目录）。模型插件由「桌宠」删除模型时级联删除。"""
+    """删除插件（含插件目录）。模型插件由「桌宠」删除模型时级联删除。"""
     if plugin_id in plugin_service.model_plugin_ids():
         raise HTTPException(
             status_code=400, detail="桌宠模型插件由「桌宠」页删除模型时级联删除，不能单独删除"
@@ -390,32 +437,6 @@ async def delete_plugin(plugin_id: str) -> dict:
         raise HTTPException(status_code=404, detail="插件不存在")
     manager.close()  # 释放全部实例：下次对话重建，不再携带被删插件工具
     return {"ok": True}
-
-
-class AgentPluginsBody(BaseModel):
-    plugin_ids: list[str] = Field(description="要绑定的插件 ID 列表（覆盖式）")
-
-
-@router.get("/agents/{agent_id}/plugins")
-async def list_agent_plugins(agent_id: str) -> list[dict]:
-    if agent_service.get(agent_id) is None:
-        raise HTTPException(status_code=404, detail="Agent 不存在")
-    return plugin_service.agent_bindings(agent_id)
-
-
-@router.put("/agents/{agent_id}/plugins")
-async def bind_agent_plugins(agent_id: str, body: AgentPluginsBody) -> list[dict]:
-    """覆盖式绑定：只保留列表中的插件（绑定即启用）。"""
-    if agent_service.get(agent_id) is None:
-        raise HTTPException(status_code=404, detail="Agent 不存在")
-    for existing in plugin_service.agent_bindings(agent_id) or []:
-        if existing["plugin_id"] not in body.plugin_ids:
-            plugin_service.unbind(agent_id, existing["plugin_id"])
-    for plugin_id in body.plugin_ids:
-        if plugin_service.get(plugin_id) is None:
-            raise HTTPException(status_code=404, detail=f"插件不存在: {plugin_id}")
-        plugin_service.bind(agent_id, plugin_id)
-    return plugin_service.agent_bindings(agent_id)
 
 
 # ---------- 技能（能力域：对齐 Octop 技能概念） ----------
@@ -795,6 +816,8 @@ async def switch_pet_model(body: PetModelSwitchBody) -> dict:
 
     模型插件互斥走插件启停（热生效）：同一时间只启用激活模型的插件，
     其他模型插件禁用 → 工具未挂载自然不进 LLM 工具集，无需装配层过滤。
+    专家不绑定插件（2026-10-04 解耦）：释放 shell agent 实例，下次对话重建
+    即携带新模型插件的动作/表情工具。
     """
     from app.domain.pet.service import get_shell_agent_id, switch_model
 
@@ -810,11 +833,7 @@ async def switch_pet_model(body: PetModelSwitchBody) -> dict:
             plugin_service.set_enabled(pid, pid == model["id"])
     agent_id = get_shell_agent_id()
     if agent_id:
-        for pid in model_plugin_ids:
-            plugin_service.unbind(agent_id, pid)
-        if has_plugin:
-            plugin_service.bind(agent_id, model["id"])
-        # 工具集随绑定变化：释放 agent 实例，下次对话重建（带新模型插件工具）
+        # 工具集随插件启停变化：释放 agent 实例，下次对话重建（带新模型插件工具）
         manager.release(agent_id)
 
     return {
