@@ -680,18 +680,18 @@ def _enrich_vrm(model_id: str, vrm_path: Path) -> dict:
     }
     # 预设动作（壳里用骨骼旋转实现）
     actions = {
-        "wave_hand":       {"label": "挥手打招呼", "emotions": ["greeting", "happy", "bye"]},
-        "nod":             {"label": "点头", "emotions": ["agree", "yes", "understanding"]},
-        "shake_head":      {"label": "摇头", "emotions": ["deny", "no", "disagree"]},
-        "tilt_head":       {"label": "歪头", "emotions": ["curious", "thinking", "question"]},
-        "raise_right_hand":{"label": "举起右手", "emotions": ["point", "show", "explain"]},
-        "raise_left_hand": {"label": "举起左手", "emotions": ["point", "show", "explain"]},
-        "look_left":       {"label": "看向左边", "emotions": ["thinking", "shy"]},
-        "look_right":      {"label": "看向右边", "emotions": ["thinking", "shy"]},
-        "look_up":         {"label": "抬头看", "emotions": ["thinking", "surprised"]},
-        "look_down":       {"label": "低头看", "emotions": ["shy", "sad", "thoughtful"]},
-        "hands_on_hips":   {"label": "叉腰", "emotions": ["confident", "angry", "explain"]},
-        "shrug":           {"label": "耸肩", "emotions": ["helpless", "don't_know", "casual"]},
+        "wave_hand":       {"label": "挥手打招呼", "motion": "wave_hand", "emotions": ["greeting", "happy", "bye"]},
+        "nod":             {"label": "点头", "motion": "nod", "emotions": ["agree", "yes", "understanding"]},
+        "shake_head":      {"label": "摇头", "motion": "shake_head", "emotions": ["deny", "no", "disagree"]},
+        "tilt_head":       {"label": "歪头", "motion": "tilt_head", "emotions": ["curious", "thinking", "question"]},
+        "raise_right_hand":{"label": "举起右手", "motion": "raise_right_hand", "emotions": ["point", "show", "explain"]},
+        "raise_left_hand": {"label": "举起左手", "motion": "raise_left_hand", "emotions": ["point", "show", "explain"]},
+        "look_left":       {"label": "看向左边", "motion": "look_left", "emotions": ["thinking", "shy"]},
+        "look_right":      {"label": "看向右边", "motion": "look_right", "emotions": ["thinking", "shy"]},
+        "look_up":         {"label": "抬头看", "motion": "look_up", "emotions": ["thinking", "surprised"]},
+        "look_down":       {"label": "低头看", "motion": "look_down", "emotions": ["shy", "sad", "thoughtful"]},
+        "hands_on_hips":   {"label": "叉腰", "motion": "hands_on_hips", "emotions": ["confident", "angry", "explain"]},
+        "shrug":           {"label": "耸肩", "motion": "shrug", "emotions": ["helpless", "don't_know", "casual"]},
     }
 
     actions_json = {
