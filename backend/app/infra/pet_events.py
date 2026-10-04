@@ -27,6 +27,16 @@ class PetEventBus:
             with suppress(asyncio.QueueFull):
                 q.put_nowait(envelope)
 
+    def publish_status(self, status: str) -> None:
+        """广播一个状态事件：thinking / working / idle。
+
+        壳据此自动切表情（LLM 思考中→思考脸，工具执行中→忙碌脸，回复完→恢复）。
+        """
+        envelope = {"type": "pet_status", "status": status}
+        for q in list(self._subscribers):
+            with suppress(asyncio.QueueFull):
+                q.put_nowait(envelope)
+
     async def stream(self):
         """SSE 生成器：注册订阅队列，持续产出事件（连接断开自动注销）。"""
         q: asyncio.Queue = asyncio.Queue(maxsize=128)

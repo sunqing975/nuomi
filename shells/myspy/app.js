@@ -941,6 +941,28 @@ const PET_ACTION_MAP = {
 let _expressionRecoveryTimer = null
 const EXPRESSION_RECOVERY_MS = 5000
 
+// 状态→表情映射（第 2 层：LLM 状态自动切脸）
+const STATUS_EXPRESSION = {
+    thinking: 'Sad',       // 思考中 → 皱眉
+    working: 'Surprised',  // 干活中 → 惊讶
+    idle: 'Normal',        // 空闲 → 恢复
+}
+
+function playStatusExpression(status) {
+    if (!model) return
+    const expr = STATUS_EXPRESSION[status]
+    if (!expr) return
+    log('桌宠状态: ' + status + ' → ' + expr, 'info')
+    try {
+        model.expression(expr)
+        // 状态表情不自动恢复（持续保持直到下一个状态）
+        if (_expressionRecoveryTimer) {
+            clearTimeout(_expressionRecoveryTimer)
+            _expressionRecoveryTimer = null
+        }
+    } catch (e) { log('状态表情失败: ' + e.message, 'warn') }
+}
+
 function playPetMotion(name) {
     if (!model) return
     log('桌宠动作: ' + name, 'info')
@@ -1001,6 +1023,8 @@ async function subscribePetEvents() {
                 try { ev = JSON.parse(p) } catch (e) { continue }
                 if (ev.type === 'pet_action') {
                     playPetActionPayload(ev)
+                } else if (ev.type === 'pet_status') {
+                    playStatusExpression(ev.status)
                 }
             }
         }

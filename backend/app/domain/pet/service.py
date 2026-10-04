@@ -607,7 +607,7 @@ def enrich_model(model_id: str) -> dict:
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
         )
-        raw = resp.choices[0].message.content.strip()
+        raw = (resp.choices[0].message.content or "").strip()
         if raw.startswith("```"):
             raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
         result = json.loads(raw)

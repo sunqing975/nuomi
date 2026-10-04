@@ -78,6 +78,31 @@ def _validate_knowledge_base_ids(ids: list[str] | None) -> None:
         raise HTTPException(status_code=400, detail=f"知识库已停用: {', '.join(disabled)}")
 
 
+def ensure_agent_runtime(agent_row: dict):
+    """统一构造/获取某专家的 HarnessAgent 运行时实例。
+
+    所有端点（控制台对话 / 历史加载 / 桌宠壳 OpenAI 兼容）必须经此入口，
+    禁止各自调 manager.get_agent 传残缺参数。原因：manager 按 agent_id 单例缓存，
+    构造参数（workspace_dir / 插件工具 / 技能目录 / MCP）只在首次构造时生效；
+    若历史端点先到（页面加载自动拉历史）而漏传 workspace_dir，会把「全局根
+    memory.sqlite + 无工具」的残缺实例缓存下来，导致专家工作区的对话历史读不到、
+    后续对话全部错写到全局根库。
+    """
+    return manager.get_agent(
+        agent_row["agent_id"],
+        name=agent_row["name"],
+        system_prompt=agent_row["system_prompt"] or "",
+        workspace_dir=ensure_agent_workspace(
+            agent_row["agent_id"], agent_row["name"]
+        ),
+        plugin_tools=plugin_service.tools(),
+        skills_dir=_all_skills_dirs(),
+        skills_disabled=skill_service.disabled_set(),
+        mcp_server_configs=settings.mcp_servers,
+        mcp_default_servers=list(settings.mcp_servers.keys()) or None,
+    )
+
+
 def _resolve_chat_abilities(skills, connectors) -> tuple[list[str] | None, list[str] | None]:
     """校验并归一化 per-turn 能力选择（skills / connectors），返回 (skills, connectors)。
 
@@ -235,6 +260,7 @@ async def _publish_actions(events):
             payload = _resolve_pet_action(ev["name"])
             if payload:
                 pet_events.publish(payload)
+                pet_events.publish_status("working")
         yield ev
 
 
@@ -257,15 +283,11 @@ async def pet_events_sse(request: Request) -> StreamingResponse:
 
 @router.get("/agents/{agent_id}/chat/history")
 async def chat_history(agent_id: str, thread_id: str, limit: int = 100) -> list[dict]:
-    """按线程取对话历史（octop checkpointer）。"""
+    """按线程取对话历史（octop checkpointer，专家工作区 memory.sqlite）。"""
     agent_row = agent_service.get(agent_id)
     if agent_row is None:
         raise HTTPException(status_code=404, detail="Agent 不存在")
-    agent = manager.get_agent(
-        agent_id,
-        name=agent_row["name"],
-        system_prompt=agent_row["system_prompt"] or "",
-    )
+    agent = ensure_agent_runtime(agent_row)
     msgs = await agent.aget_history(thread_id, limit=limit)
     out: list[dict] = []
     for m in msgs:
@@ -299,6 +321,9 @@ async def chat(agent_id: str, body: ChatBody, request: Request) -> StreamingResp
             raise HTTPException(status_code=400, detail=f"模型不存在或未配置: {model}")
         model = model.strip()
     _validate_knowledge_base_ids(body.knowledge_base_ids)
+    # 先以完整参数构造运行时实例（workspace/工具/技能/MCP 一次到位），
+    # 避免 gen() 内首次构造时参数缺失把实例建到全局根（历史端点同款根因）。
+    ensure_agent_runtime(agent_row)
 
     async def gen():
         tools = plugin_service.tools()
@@ -309,31 +334,39 @@ async def chat(agent_id: str, body: ChatBody, request: Request) -> StreamingResp
         pet_instructions = load_pet_instructions()
         if pet_instructions:
             system_prompt = system_prompt.rstrip() + "\n\n" + pet_instructions
-        async for frame in stream_octop_sse(
-            _publish_actions(
-                stream_chat(
-                    body.messages,
-                    body.thread_id,
-                    agent_id=agent_id,
-                    name=agent_row["name"],
-                    system_prompt=system_prompt,
-                    workspace_dir=ensure_agent_workspace(agent_id, agent_row["name"]),
-                    plugin_tools=tools,
-                    skills_dir=_all_skills_dirs(),
-                    skills_disabled=skill_service.disabled_set(),
-                    mcp_server_configs=settings.mcp_servers,
-                    mcp_default_servers=list(settings.mcp_servers.keys()) or None,
-                    skills=skills,
-                    connectors=connectors,
-                    model=model,
-                    knowledge_base_ids=body.knowledge_base_ids,
-                )
-            ),
-            thread_id=body.thread_id,
-        ):
-            if await request.is_disconnected():
-                break
-            yield frame
+
+        # 推状态：LLM 开始思考
+        pet_events.publish_status("thinking")
+
+        try:
+            async for frame in stream_octop_sse(
+                _publish_actions(
+                    stream_chat(
+                        body.messages,
+                        body.thread_id,
+                        agent_id=agent_id,
+                        name=agent_row["name"],
+                        system_prompt=system_prompt,
+                        workspace_dir=ensure_agent_workspace(agent_id, agent_row["name"]),
+                        plugin_tools=tools,
+                        skills_dir=_all_skills_dirs(),
+                        skills_disabled=skill_service.disabled_set(),
+                        mcp_server_configs=settings.mcp_servers,
+                        mcp_default_servers=list(settings.mcp_servers.keys()) or None,
+                        skills=skills,
+                        connectors=connectors,
+                        model=model,
+                        knowledge_base_ids=body.knowledge_base_ids,
+                    )
+                ),
+                thread_id=body.thread_id,
+            ):
+                if await request.is_disconnected():
+                    break
+                yield frame
+        finally:
+            # 推状态：回复结束，恢复 idle
+            pet_events.publish_status("idle")
 
     return StreamingResponse(
         gen(),
@@ -1053,10 +1086,15 @@ async def switch_pet_model(body: PetModelSwitchBody) -> dict:
     专家不绑定插件（2026-10-04 解耦）：释放 shell agent 实例，下次对话重建
     即携带新模型插件的动作/表情工具。
     """
-    from app.domain.pet.service import get_pet_enabled, get_shell_agent_id, switch_model
-
-    from app.domain.pet.service import MODEL_DIR, enrich_model
     import asyncio
+
+    from app.domain.pet.service import (
+        MODEL_DIR,
+        enrich_model,
+        get_pet_enabled,
+        get_shell_agent_id,
+        switch_model,
+    )
 
     # 新模型没有动作清单 → 同步等 AI 分析完成再切（前端显示 loading）
     enrich_status = "skipped"
@@ -1064,7 +1102,7 @@ async def switch_pet_model(body: PetModelSwitchBody) -> dict:
     if not actions_path.is_file():
         enrich_status = "analyzing"
         enrich_result = await asyncio.to_thread(enrich_model, body.model_id)
-        enrich_status = "done" if enrich_result.get("ok") else f"failed"
+        enrich_status = "done" if enrich_result.get("ok") else "failed"
 
     try:
         model = switch_model(body.model_id)
