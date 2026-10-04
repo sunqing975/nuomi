@@ -14,13 +14,13 @@
   },
   "ui": {
     "intro_text": "你好，我是糯米。",
-    "model_type": "live2d",
-    "model_path": "/Users/superman/Nuomi/models/2D/natori/Natori.model3.json",
+    "model_type": "vrm",
+    "model_path": "/Users/superman/Nuomi/models/3D/6309260419351179234.vrm",
     "show_chat_box": true,
     "show_model": true,
     "model_x": -56.62978124999995,
     "model_y": 256.36956250000003,
-    "model": "natori",
+    "model": "6309260419351179234",
     "pet_enabled": true
   },
   "subtitle_labels": {
