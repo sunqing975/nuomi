@@ -30,6 +30,9 @@ class Layer1Liveness {
 
     // idle 微抖相位
     this.idleTime = 0
+
+    // 嘴型状态（每帧持续写，防止 motion 曲线覆盖）
+    this.mouthOpenY = 0  // 0=闭嘴, 0.4=张嘴
   }
 
   init(model, app) {
@@ -86,6 +89,9 @@ class Layer1Liveness {
     this._trySet(cm, 'ParamAngleY', this.smoothAngleY)
     this._trySet(cm, 'ParamEyeBallX', this.smoothEyeX)
     this._trySet(cm, 'ParamEyeBallY', this.smoothEyeY)
+
+    // 嘴型：每帧持续写，防止 motion 曲线覆盖
+    this._trySet(cm, 'ParamMouthOpenY', this.mouthOpenY)
 
     // === 2. 眨眼（覆盖在视线之上）===
     if (this.isBlinking) {

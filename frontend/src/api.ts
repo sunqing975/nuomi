@@ -174,7 +174,7 @@ export interface ToolEvent {
 
 /** 有序片段：一次对话按真实时间顺序穿插（思考→调工具→看结果→正文） */
 export interface Segment {
-  type: 'text' | 'reasoning' | 'tool_call' | 'tool_result';
+  type: 'user' | 'text' | 'reasoning' | 'tool_call' | 'tool_result';
   content?: string;
   name?: string;
   args?: string;
@@ -324,6 +324,8 @@ export async function chatStream(
         };
         if (ev.type === 'token' && ev.content) {
           onEvent({ type: 'token', content: ev.content });
+        } else if (ev.type === 'reasoning' && ev.content) {
+          onEvent({ type: 'reasoning', content: ev.content });
         } else if (ev.type === 'tool_call_chunk' && ev.name) {
           onEvent({ type: 'tool_call', name: ev.name, content: ev.args });
         } else if (ev.type === 'tool_result') {

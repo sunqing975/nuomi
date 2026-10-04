@@ -12,7 +12,6 @@ import json
 import shutil
 from pathlib import Path
 
-from app.config import settings
 from app.domain.agents.service import (
     PERSONA_FILES,
     agent_service,

@@ -957,27 +957,19 @@ function playStatusExpression(status) {
             _expressionRecoveryTimer = null
         }
 
-        const inner = model.innerModel || model
-        const cm = inner.internalModel?.coreModel
-
         if (status === 'idle') {
-            // 空闲：重置所有表情参数到默认（嘴闭上、脸恢复）
+            // 空闲：重置所有表情参数到默认
             try { model.expression() } catch (e) {}
-            if (cm) {
-                try { cm.setParameterValueById('ParamMouthOpenY', 0) } catch (e) {}
-                try { cm.setParameterValueById('ParamMouthForm', 0) } catch (e) {}
-            }
+            if (global.layer1Liveness) global.layer1Liveness.mouthOpenY = 0
             return
         }
 
         const expr = STATUS_EXPRESSION[status]
         if (!expr) return
         model.expression(expr)
-        // thinking 时额外张嘴
-        if (cm && status === 'thinking') {
-            try { cm.setParameterValueById('ParamMouthOpenY', 0.4) } catch (e) {}
-        } else if (cm) {
-            try { cm.setParameterValueById('ParamMouthOpenY', 0) } catch (e) {}
+        // 嘴型由 Layer1 每帧持续写（防止 motion 覆盖）
+        if (global.layer1Liveness) {
+            global.layer1Liveness.mouthOpenY = (status === 'thinking') ? 0.4 : 0
         }
     } catch (e) { log('状态表情失败: ' + e.message, 'warn') }
 }

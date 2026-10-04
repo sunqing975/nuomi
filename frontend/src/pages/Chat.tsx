@@ -7,7 +7,7 @@ import {
 } from '@ant-design/icons';
 import {
   del, get, post, chatStream, knowledgeApi,
-  type Agent, type ChatEvent, type ChatMessage, type ConnectorServer, type KnowledgeBase, type Skill, type SkillPackage, type ToolEvent,
+  type Agent, type ChatEvent, type ChatMessage, type ConnectorServer, type KnowledgeBase, type Segment, type Skill, type SkillPackage,
 } from '../api';
 import { parseKnowledgeCitations } from '../utils/parseKnowledgeCitations';
 
@@ -62,37 +62,51 @@ function KnowledgeCitations({ raw }: { raw?: string }) {
   );
 }
 
-/** 工具步骤折叠（消息气泡内：tool_call → tool_result 时间线） */
-function ToolSteps({ events }: { events: ToolEvent[] }) {
+/** 单片段渲染：思考折叠块 / 工具调用卡片 / 工具结果卡片（按对话真实顺序穿插） */
+function SegmentView({ seg }: { seg: Segment }) {
   const [open, setOpen] = useState(false);
-  if (!events || events.length === 0) return null;
-  return (
-    <div style={{ marginBottom: 6, fontSize: 12 }}>
-      <a onClick={() => setOpen(v => !v)} style={{ color: '#6b7280' }}>
-        {open ? '▾' : '▸'} ⚙ 工具调用 {events.length} 次
-      </a>
-      {open && (
-        <div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 4, maxWidth: 520 }}>
-          {events.map((t, i) => (
-            <div key={i} style={{ background: '#fafafa', border: '1px solid #f0f0f0', borderRadius: 6, padding: '4px 8px' }}>
-              <span style={{ color: t.kind === 'tool_call' ? '#1677ff' : '#52c41a', fontWeight: 500 }}>
-                {t.kind === 'tool_call' ? '⚙' : '✓'} {t.name || '(工具)'}
-              </span>
-              {t.detail ? (
-                <div style={{ color: '#6b7280', marginTop: 2, whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 120, overflow: 'auto' }}>
-                  {t.name === 'search_knowledge' ? (
-                    <KnowledgeCitations raw={t.detail} />
-                  ) : (
-                    t.detail
-                  )}
-                </div>
-              ) : null}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
+  if (seg.type === 'reasoning') {
+    return (
+      <div style={{ marginBottom: 6, fontSize: 12, color: '#8c8c8c' }}>
+        <a onClick={() => setOpen(v => !v)} style={{ color: '#8c8c8c' }}>
+          {open ? '▾' : '▸'} 💭 深度思考
+        </a>
+        {open && (
+          <div style={{
+            marginTop: 4, padding: '6px 8px', background: '#fafafa', borderRadius: 6,
+            whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 200, overflow: 'auto',
+          }}>
+            {seg.content}
+          </div>
+        )}
+      </div>
+    );
+  }
+  if (seg.type === 'tool_call' || seg.type === 'tool_result') {
+    const isCall = seg.type === 'tool_call';
+    return (
+      <div style={{
+        marginBottom: 6, fontSize: 12, padding: '4px 8px', borderRadius: 6, maxWidth: 520,
+        background: isCall ? '#f0f7ff' : '#f6ffed',
+        border: `1px solid ${isCall ? '#d6e4ff' : '#d9f7be'}`,
+      }}>
+        <span style={{ color: isCall ? '#1677ff' : '#52c41a', fontWeight: 500 }}>
+          {isCall ? '⚙ 调用' : '✓ 结果'} {seg.name || '(工具)'}
+        </span>
+        {isCall && seg.args && seg.args !== '{}' && (
+          <div style={{ color: '#6b7280', marginTop: 2, whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 80, overflow: 'auto' }}>
+            {seg.args}
+          </div>
+        )}
+        {!isCall && seg.content && (
+          <div style={{ color: '#6b7280', marginTop: 2, whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 120, overflow: 'auto' }}>
+            {seg.name === 'search_knowledge' ? <KnowledgeCitations raw={seg.content} /> : seg.content}
+          </div>
+        )}
+      </div>
+    );
+  }
+  return null;
 }
 
 /** 技能选择器（Popover 三分组：已启用技能 / 内置技能 / 已启用技能包；技能包=整包勾选） */
@@ -237,7 +251,11 @@ function TrajectoryDrawer({ open, onClose, messages }: { open: boolean; onClose:
   const rows = useMemo(() => {
     const out: { seq: number; kind: 'tool_call' | 'tool_result'; name?: string; detail?: string }[] = [];
     messages.forEach(m => {
-      (m.tool_events || []).forEach(t => out.push({ seq: out.length + 1, kind: t.kind, name: t.name, detail: t.detail }));
+      m.segments.forEach(s => {
+        if (s.type === 'tool_call' || s.type === 'tool_result') {
+          out.push({ seq: out.length + 1, kind: s.type, name: s.name, detail: s.type === 'tool_result' ? s.content : s.args });
+        }
+      });
     });
     return out;
   }, [messages]);
@@ -272,8 +290,7 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
-  const [streamText, setStreamText] = useState('');
-  const [streamTools, setStreamTools] = useState<ToolEvent[]>([]);
+  const [streamSegments, setStreamSegments] = useState<Segment[]>([]);
   // 能力选择（per-turn 注入：技能白名单 / 连接器挂载 / 模型）
   const [skills, setSkills] = useState<Skill[]>([]);
   const [builtinSkills, setBuiltinSkills] = useState<Skill[]>([]);
@@ -326,12 +343,26 @@ export default function ChatPage() {
     knowledgeApi.listBases().then(rows => setKnowledgeBases(rows.filter(b => b.enabled))).catch(() => {});
   }, []);
 
-  // 历史加载（octop checkpointer，按线程）
+  // 历史加载（octop checkpointer，按线程；后端返回有序片段流，归组为消息块）
   const loadHistory = useCallback(async (agent: string, tid: string) => {
-    const rows = await get<{ role: string; content: string }[]>(
+    const rows = await get<Segment[]>(
       `/agents/${agent}/chat/history?thread_id=${encodeURIComponent(tid)}`,
     );
-    setMessages(rows.map(r => ({ role: r.role as ChatMessage['role'], content: r.content })));
+    const blocks: ChatMessage[] = [];
+    let asst: ChatMessage | null = null;
+    for (const s of rows) {
+      if (s.type === 'user') {
+        asst = null;
+        blocks.push({ role: 'user', segments: [{ type: 'text', content: s.content || '' }] });
+      } else {
+        if (!asst) {
+          asst = { role: 'assistant', segments: [] };
+          blocks.push(asst);
+        }
+        asst.segments.push(s);
+      }
+    }
+    setMessages(blocks);
   }, []);
 
   // 专家变化 → 读后端会话状态 + 清空能力选择（各专家能力不同）
@@ -348,8 +379,7 @@ export default function ChatPage() {
         setSessions(st.sessions);
         setActiveThread(st.current);
         setMessages([]);
-        setStreamText('');
-        setStreamTools([]);
+        setStreamSegments([]);
         if (st.current) loadHistory(agentId, st.current);
       } catch (e) {
         message.error(`加载会话失败：${(e as Error).message}`);
@@ -360,7 +390,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: 'smooth' });
-  }, [messages, streamText]);
+  }, [messages, streamSegments]);
 
   const refreshState = async () => {
     if (!agentId) return;
@@ -376,8 +406,7 @@ export default function ChatPage() {
       setSessions(st.sessions);
       setActiveThread(st.current);
       setMessages([]);
-      setStreamText('');
-      setStreamTools([]);
+      setStreamSegments([]);
     } catch (e) {
       message.error(`新建会话失败：${(e as Error).message}`);
     }
@@ -389,8 +418,7 @@ export default function ChatPage() {
       await post('/chat/switch', { agent_id: agentId, thread_id: tid });
       setActiveThread(tid);
       setMessages([]);
-      setStreamText('');
-      setStreamTools([]);
+      setStreamSegments([]);
       loadHistory(agentId!, tid);
     } catch (e) {
       message.error(`切换会话失败：${(e as Error).message}`);
@@ -405,8 +433,7 @@ export default function ChatPage() {
       setSessions(st.sessions);
       setActiveThread(st.current);
       setMessages([]);
-      setStreamText('');
-      setStreamTools([]);
+      setStreamSegments([]);
       if (st.current) loadHistory(agentId, st.current);
       message.success('会话已删除');
     } catch (e) {
@@ -441,15 +468,23 @@ export default function ChatPage() {
     if (!text || sending || !agentId) return;
     const tid = activeThread;
     if (!tid) return;
-    const userMsg: ChatMessage = { role: 'user', content: text };
+    const userMsg: ChatMessage = { role: 'user', segments: [{ type: 'text', content: text }] };
     const next = [...messages, userMsg];
     setMessages(next);
     setInput('');
     setSending(true);
-    setStreamText('');
-    setStreamTools([]);
-    const toolEvents: ToolEvent[] = [];
-    let accumulated = '';
+    setStreamSegments([]);
+    // 流式片段按真实到达顺序累积：相邻同类合并（思考累积思考、正文累积正文）
+    const segs: Segment[] = [];
+    const pushSeg = (s: Segment) => {
+      const last = segs[segs.length - 1];
+      if (last && s.type === last.type && (s.type === 'text' || s.type === 'reasoning')) {
+        last.content = (last.content || '') + (s.content || '');
+      } else {
+        segs.push(s);
+      }
+      setStreamSegments([...segs]);
+    };
     // per-turn 能力注入（对齐 Octop 对话框语义）：
     // - skills/connectors：未选 = [] = 不加载任何技能/连接器（无「默认全部」）
     // - model：默认「自动」（不传 = 后端 agent 默认模型），用户显式选择才覆盖
@@ -464,20 +499,21 @@ export default function ChatPage() {
     try {
       await chatStream(agentId, text, tid, (e: ChatEvent) => {
         if (e.type === 'token' && e.content) {
-          accumulated += e.content;
-          setStreamText(accumulated);
+          pushSeg({ type: 'text', content: e.content });
+        } else if (e.type === 'reasoning' && e.content) {
+          pushSeg({ type: 'reasoning', content: e.content });
         } else if (e.type === 'tool_call') {
-          toolEvents.push({ kind: 'tool_call', name: e.name, detail: e.content });
-          setStreamTools([...toolEvents]);
+          segs.push({ type: 'tool_call', name: e.name, args: e.content });
+          setStreamSegments([...segs]);
         } else if (e.type === 'tool_result') {
-          toolEvents.push({ kind: 'tool_result', name: e.name, detail: e.detail });
-          setStreamTools([...toolEvents]);
+          segs.push({ type: 'tool_result', name: e.name, content: e.detail });
+          setStreamSegments([...segs]);
         } else if (e.type === 'done') {
-          const answer = accumulated.trim();
-          const finalMsg: ChatMessage = { role: 'assistant', content: answer, tool_events: toolEvents };
+          // 去掉末尾空白段；至少保留一个 text 段（哪怕空，显示占位）
+          if (!segs.some(s => s.type === 'text')) segs.push({ type: 'text', content: '' });
+          const finalMsg: ChatMessage = { role: 'assistant', segments: segs };
           setMessages([...next, finalMsg]);
-          setStreamText('');
-          setStreamTools([]);
+          setStreamSegments([]);
           // 标题/时间更新（后端 touch，仅「新会话」会替换标题）
           post('/chat/touch', { agent_id: agentId, thread_id: tid, title: text.slice(0, 20) }).catch(() => {});
           refreshState().catch(() => {});
@@ -485,8 +521,7 @@ export default function ChatPage() {
       }, opts);
     } catch (err) {
       message.error(`对话失败：${(err as Error).message}`);
-      setStreamText('');
-      setStreamTools([]);
+      setStreamSegments([]);
     } finally {
       setSending(false);
     }
@@ -568,7 +603,7 @@ export default function ChatPage() {
         </div>
 
         <div ref={bodyRef} style={{ flex: 1, overflow: 'auto', paddingBottom: 12 }}>
-          {messages.length === 0 && !streamText && (
+          {messages.length === 0 && streamSegments.length === 0 && (
             <Empty style={{ marginTop: 80 }} description="和专家开始对话吧（记忆按会话隔离）" />
           )}
           {messages.map((m, i) => (
@@ -580,31 +615,53 @@ export default function ChatPage() {
                 }}>
                   {m.role === 'user' ? <UserOutlined /> : <RobotOutlined style={{ color: '#666' }} />}
                 </div>
-                <div>
-                  {m.role === 'assistant' && <ToolSteps events={m.tool_events || []} />}
-                  <div style={{
-                    padding: '8px 12px', borderRadius: 10, fontSize: 14, lineHeight: 1.6,
-                    background: m.role === 'user' ? '#f59e0b' : '#f5f5f5', color: m.role === 'user' ? '#fff' : '#333',
-                    whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-                  }}>
-                    {m.content || '（空回复）'}
-                  </div>
+                <div style={{ minWidth: 0 }}>
+                  {m.role === 'assistant'
+                    ? m.segments.map((s, j) =>
+                        s.type === 'text' ? (
+                          <div key={j} style={{
+                            marginBottom: 6, padding: '8px 12px', borderRadius: 10, fontSize: 14, lineHeight: 1.6,
+                            background: '#f5f5f5', color: '#333', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                          }}>
+                            {s.content || '（空回复）'}
+                          </div>
+                        ) : (
+                          <SegmentView key={j} seg={s} />
+                        ),
+                      )
+                    : m.segments.map((s, j) => (
+                        <div key={j} style={{
+                          padding: '8px 12px', borderRadius: 10, fontSize: 14, lineHeight: 1.6,
+                          background: '#f59e0b', color: '#fff', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                        }}>
+                          {s.content}
+                        </div>
+                      ))}
                 </div>
               </div>
             </div>
           ))}
-          {(streamTools.length > 0 || streamText || sending) && (
+          {(streamSegments.length > 0 || sending) && (
             <div style={{ display: 'flex', marginBottom: 12, gap: 8 }}>
               <div style={{ width: 30, height: 30, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#e8e8e8' }}>
                 <RobotOutlined style={{ color: '#666' }} />
               </div>
               <div style={{ minWidth: 0 }}>
-                {streamTools.length > 0 && <ToolSteps events={streamTools} />}
-                {(streamText || sending) && (
-                  <div style={{ padding: '8px 12px', borderRadius: 10, background: '#f5f5f5', fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                    {streamText}
-                    <span style={{ opacity: 0.5 }}>▍</span>
-                  </div>
+                {streamSegments.map((s, j) =>
+                  s.type === 'text' ? (
+                    <div key={j} style={{
+                      marginBottom: 6, padding: '8px 12px', borderRadius: 10, background: '#f5f5f5',
+                      fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                    }}>
+                      {s.content}
+                      <span style={{ opacity: 0.5 }}>▍</span>
+                    </div>
+                  ) : (
+                    <SegmentView key={j} seg={s} />
+                  ),
+                )}
+                {sending && streamSegments.every(s => s.type === 'tool_result' || s.type === 'tool_call') && (
+                  <div style={{ fontSize: 12, color: '#9ca3af' }}>思考中…</div>
                 )}
               </div>
             </div>
