@@ -40,13 +40,14 @@ SSE 事件协议（桌宠前端消费）：`token` / `tool_call` / `tool_result`
 - R2 新 backend 骨架 ✅：app/{main,config,transport/api,infra/harness/{config,manager,chat}}，ruff+mypy 全绿
 - R3 最小对话 API ✅：`POST /api/chat` SSE 流式验证通过（token 流 + done；糯米人设生效）
 - 工具调用：插件未接入（M5），模型无工具时诚实回答
+- **桌宠开关（2026-10-04）**：控制台「模型」页开关 → `GET|PUT /api/pet/status` → 壳 config.json `ui.pet_enabled` → 壳 watch 创建/销毁桌宠窗口（关闭=完全停止窗口释放资源，壳进程与后端对话不受影响；启动时按开关决定是否创建）
 - 后续：M3 Agent 生命周期 → M4 会话 → M5 插件 → M6 技能/连接器/知识库 → M7 桌宠前端 → M8 产品体验
 
 ## 环境事实（重要）
 
 - **数据根/工作区（单根设计）**：`/Users/superman/Nuomi`，.env 仅设 `NUOMI_HOME`（无 NUOMI_WORKSPACE，workspace=数据根；2026-10-04 迁移自 ~/Documents/Nuomi + ~/Library/Application Support/Nuomi 合一）
 - **桌宠模型资产**：工作区 `models/2D/<id>/`（aidang/cat/hiyori，版权受限不入库）；仓库 `assets/models/2D/hiyori` 为可分发种子，后端扫描时幂等播种；壳从后端拿绝对路径转 file:// 加载（app.js `toModelUrl`）
-- **会话状态**：`nuomi-state.json`（threads/thread_id/agent_id，顶层即 nuomi.*；2026-10-04 起从壳 config.json 迁出）；壳 config.json 仅存 ui.* 表现层偏好
+- **会话状态**：`nuomi-state.json`（threads/thread_id/agent_id，顶层即 nuomi.*；2026-10-04 起从壳 config.json 迁出）；壳 config.json 仅存 ui.* 表现层偏好（ui.model/ui.model_path/ui.pet_enabled 桌宠开关 2026-10-04 加入）
 - **会话模型（2026-10-04 简化）**：会话=真实对话线程；**无 default 桌宠线程、无模型专属会话**——桌宠是纯表现层（订阅 /api/pet/events 拦截对话 tool_call 播放动作），切模型只换形象+插件工具集、**不换会话**（旧"一个桌宠一个会话"已废）
 - **状态文件即用即清（2026-10-04 起强制）**：`nuomi-state.json` 等数据文件的字段一旦不再被代码读写，**当场删除**，不留兼容字段（例：threads[].model_id 已删）。禁止"先留着以后再说"——死数据会误导后续读写，直接成为屎山源头
 - **后端启动**：`cd backend && nohup .venv/bin/python -m uvicorn app.main:app --port 8000 > /tmp/nuomi-backend.log 2>&1 &`

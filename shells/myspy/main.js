@@ -47,12 +47,10 @@ function createWindow() {
     win.setIgnoreMouseEvents(true, { forward: true })
     win.loadFile('index.html')
 
-    // 桌宠窗口关闭时通知控制面板
+    // 桌宠窗口关闭时清引用（控制面板是远程 /console/ 页面，无 preload，
+    // 无需也收不到 IPC 通知，故不再发送 pet-stopped）
     win.on('closed', () => {
         petWindow = null
-        if (controlPanel && !controlPanel.isDestroyed()) {
-            controlPanel.webContents.send('pet-stopped')
-        }
     })
 
     // 禁用默认右键菜单
