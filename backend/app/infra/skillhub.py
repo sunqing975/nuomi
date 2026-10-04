@@ -74,14 +74,25 @@ def _get(
         raise SkillHubError(f"SkillHub 请求失败 {path}: {exc}") from exc
 
 
+# SkillHub /search 服务端固定每页 10 条（忽略 page_size），
+# 一次展示更多需客户端循环翻页：从服务端 page=1 起拉，按窗口截取 (page, page_size)。
+_MAX_SEARCH_PAGES = 10  # 最多循环 10 页（100 条），防止拉爆
+
+
 def search(query: str = "", page: int = 1, page_size: int = 20) -> list[dict]:
-    """市场搜索：返回条目列表（slug/displayName/summary/scene/icon_url/downloads…）。"""
-    data = _get(
-        SEARCH_ENDPOINT,
-        params={"q": query, "page": page, "page_size": page_size},
-    )
-    results = data.get("results") or []
-    return [_normalize_item(item) for item in results]
+    """市场搜索：返回条目列表（slug/displayName/summary/scene/icon_url/downloads…）。
+
+    服务端固定 10 条/页：内部循环翻页凑够 page_size（对齐 octop 一次展示更多）。
+    """
+    items: list[dict] = []
+    for sp in range(1, _MAX_SEARCH_PAGES + 1):
+        data = _get(SEARCH_ENDPOINT, params={"q": query, "page": sp})
+        results = data.get("results") or []
+        items.extend(_normalize_item(item) for item in results)
+        if len(results) < 10:  # 服务端尽头
+            break
+    start = (page - 1) * page_size
+    return items[start : start + page_size]
 
 
 def rankings(ranking_type: str = "hot", page: int = 1, page_size: int = 20) -> list[dict]:

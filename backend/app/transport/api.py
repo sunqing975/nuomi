@@ -343,6 +343,25 @@ async def import_plugin_zip(file: UploadFile = File(...)) -> dict:
     return {"ok": True, "plugin": plugin}
 
 
+class GitImportBody(BaseModel):
+    """git 仓库导入请求体。"""
+
+    url: str = Field(..., min_length=4, description="仓库地址（https/ssh/git@）")
+
+
+@router.post("/plugins/import-git")
+async def import_plugin_git(body: GitImportBody) -> dict:
+    """从 git 仓库导入插件到工作区 plugins/<id>/（浅克隆，50MB 上限）。"""
+    from app.domain.importer import import_plugin_git as _import
+
+    try:
+        plugin = _import(body.url.strip())
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    manager.close()
+    return {"ok": True, "plugin": plugin}
+
+
 @router.patch("/plugins/{plugin_id}")
 async def patch_plugin(plugin_id: str, body: PluginPatchBody) -> dict:
     if body.enabled is not None and plugin_id in plugin_service.model_plugin_ids():
@@ -424,6 +443,19 @@ async def import_skill_zip(file: UploadFile = File(...)) -> dict:
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     manager.close()  # 释放全部实例：下次对话重建，注入新技能
+    return {"ok": True, "skill": skill}
+
+
+@router.post("/skills/import-git")
+async def import_skill_git(body: GitImportBody) -> dict:
+    """从 git 仓库导入技能到工作区 skills/<name>/（浅克隆，50MB 上限）。"""
+    from app.domain.importer import import_skill_git as _import
+
+    try:
+        skill = _import(body.url.strip())
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    manager.close()
     return {"ok": True, "skill": skill}
 
 

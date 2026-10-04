@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Button, Popconfirm, Table, Switch, Tag, Upload, message, Typography } from 'antd';
-import { CloudUploadOutlined, DeleteOutlined, ReloadOutlined } from '@ant-design/icons';
+import { Button, Input, Modal, Popconfirm, Table, Switch, Tag, Upload, message, Typography } from 'antd';
+import { CloudUploadOutlined, DeleteOutlined, GithubOutlined, ReloadOutlined } from '@ant-design/icons';
 import { del, get, post, patch, upload, type Plugin } from '../api';
 
 export default function PluginsPage() {
   const [plugins, setPlugins] = useState<Plugin[]>([]);
   const [loading, setLoading] = useState(false);
+  const [gitOpen, setGitOpen] = useState(false);
+  const [gitUrl, setGitUrl] = useState('');
+  const [gitLoading, setGitLoading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -31,6 +34,23 @@ export default function PluginsPage() {
       load();
     } catch (e) {
       message.error(`导入失败：${(e as Error).message}`);
+    }
+  };
+
+  const importGit = async () => {
+    const url = gitUrl.trim();
+    if (!url) { message.warning('请输入 git 仓库地址'); return; }
+    setGitLoading(true);
+    try {
+      const r = await post<{ ok: boolean; plugin: Plugin }>('/plugins/import-git', { url });
+      message.success(`插件「${r.plugin.name}」导入成功`);
+      setGitOpen(false);
+      setGitUrl('');
+      load();
+    } catch (e) {
+      message.error(`导入失败：${(e as Error).message}`);
+    } finally {
+      setGitLoading(false);
     }
   };
 
@@ -85,6 +105,7 @@ export default function PluginsPage() {
   return (
     <>
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 16 }}>
+        <Button icon={<GithubOutlined />} onClick={() => setGitOpen(true)}>从 Git 导入</Button>
         <Upload
           accept=".zip"
           showUploadList={false}
@@ -97,6 +118,26 @@ export default function PluginsPage() {
         </Upload>
         <Button icon={<ReloadOutlined />} onClick={sync} loading={loading}>重新扫描</Button>
       </div>
+      <Modal
+        title="从 Git 仓库导入插件"
+        open={gitOpen}
+        onOk={importGit}
+        confirmLoading={gitLoading}
+        onCancel={() => { setGitOpen(false); setGitUrl(''); }}
+        okText="导入" cancelText="取消"
+      >
+        <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 4 }}>
+          浅克隆仓库并导入工作区 <Typography.Text code>plugins/</Typography.Text>（需根目录含 plugin.yaml）。
+          支持 https:// / ssh:// / git@ 地址，体积上限 50MB。
+        </Typography.Paragraph>
+        <Input
+          placeholder="https://github.com/user/plugin-repo.git"
+          value={gitUrl}
+          onChange={e => setGitUrl(e.target.value)}
+          onPressEnter={importGit}
+          autoFocus
+        />
+      </Modal>
       <Table<Plugin>
         rowKey="plugin_id"
         columns={columns}
