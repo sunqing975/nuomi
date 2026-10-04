@@ -24,6 +24,23 @@ export const put = <T>(p: string, b: unknown) => api<T>('PUT', p, b);
 export const patch = <T>(p: string, b: unknown) => api<T>('PATCH', p, b);
 export const del = <T>(p: string) => api<T>('DELETE', p);
 
+/** 文件上传（FormData，不手设 Content-Type，让浏览器带 boundary） */
+export async function upload<T = unknown>(path: string, file: File): Promise<T> {
+  const fd = new FormData();
+  fd.append('file', file);
+  const res = await fetch('/api' + path, { method: 'POST', body: fd });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      detail = (await res.json()).detail || detail;
+    } catch {
+      /* keep statusText */
+    }
+    throw new Error(detail);
+  }
+  return res.json() as Promise<T>;
+}
+
 export interface Agent {
   agent_id: string;
   name: string;

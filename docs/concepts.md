@@ -15,9 +15,9 @@
 
 ### 1.1 判定规则（写代码时按此判断放哪）
 
-- 这个目录**给 LLM 增加可调用能力**（工具）→ **插件**（`plugins/`）
+- 这个目录**给 LLM 增加可调用能力**（工具）→ **插件**（工作区 `plugins/`，harness 格式 plugin.yaml）
 - 这是**运行时基础设施 / 钩子 / 服务 / 模式**（内核行为，不是"用户可选能力"）→ **模块**（按领域归位：`domain/`、`transport/`、`engine/services/`）
-- 这是**一份教 LLM 怎么用能力的文档**（SKILL.md）→ **技能**（`skills/<name>/SKILL.md`）
+- 这是**一份教 LLM 怎么用能力的文档**（SKILL.md）→ **技能**（工作区 `skills/<name>/SKILL.md`）
 - 这是**用户面对的角色**（人格 + 能力模板资产）→ **专家**（`experts/<name>/`，manifest.json + IDENTITY/SOUL/USER.md）
 
 边界示例：

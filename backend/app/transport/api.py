@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import re
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -325,6 +325,22 @@ async def sync_plugins() -> list[dict]:
     return plugin_service.sync()
 
 
+@router.post("/plugins/import")
+async def import_plugin_zip(file: UploadFile = File(...)) -> dict:
+    """从 zip 导入插件到工作区 plugins/<id>/（格式：plugin.yaml + entry 文件）。
+
+    导入成功默认启用；释放全部 agent 实例，下次对话即可用新插件工具。
+    """
+    from app.domain.importer import import_plugin_zip as _import
+
+    try:
+        plugin = _import(await file.read())
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    manager.close()  # 释放全部实例：下次对话重建，挂载新插件工具
+    return {"ok": True, "plugin": plugin}
+
+
 @router.patch("/plugins/{plugin_id}")
 async def patch_plugin(plugin_id: str, body: PluginPatchBody) -> dict:
     if body.enabled is not None and plugin_id in plugin_service.model_plugin_ids():
@@ -385,6 +401,22 @@ class SkillPatchBody(BaseModel):
 @router.get("/skills")
 async def list_skills() -> list[dict]:
     return skill_service.list_all()
+
+
+@router.post("/skills/import")
+async def import_skill_zip(file: UploadFile = File(...)) -> dict:
+    """从 zip 导入技能到工作区 skills/<name>/（格式：SKILL.md，实时扫描自动可见）。
+
+    释放全部 agent 实例，下次对话注入新技能。
+    """
+    from app.domain.importer import import_skill_zip as _import
+
+    try:
+        skill = _import(await file.read())
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    manager.close()  # 释放全部实例：下次对话重建，注入新技能
+    return {"ok": True, "skill": skill}
 
 
 @router.patch("/skills/{skill_name}")

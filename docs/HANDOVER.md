@@ -69,9 +69,9 @@ cd shells/myspy && npm start
 
 **对话/会话**：`POST /agents/{id}/chat`（SSE，octop 帧，body `{messages: str, thread_id}`）· `GET /agents/{id}/chat/history` · `GET /chat/state` · `POST /chat/new|switch|touch` · `DELETE /chat/threads/{tid}`（删会话+检查点历史）
 
-**专家/插件**：`GET|POST /agents` · `GET|PATCH|DELETE /agents/{id}` · `POST /agents/{id}/start|stop|status` · `GET|PUT /agents/{id}/plugins` · `GET /plugins` · `POST /plugins/sync` · `PATCH /plugins/{id}`（启停）· `DELETE /plugins/{id}`（模型插件 400 拒绝，由桌宠删除级联）
+**专家/插件**：`GET|POST /agents` · `GET|PATCH|DELETE /agents/{id}` · `POST /agents/{id}/start|stop|status` · `GET|PUT /agents/{id}/plugins` · `GET /plugins` · `POST /plugins/sync` · `POST /plugins/import`（zip 导入）· `PATCH /plugins/{id}`（启停）· `DELETE /plugins/{id}`（模型插件 400 拒绝，由桌宠删除级联）
 
-**技能/技能包**：`GET|PATCH|DELETE /skills/{name}` · `POST /skills/install`（SkillHub 单技能）· `GET /skillhub/search|rankings|skillsets{?q,/{slug}}` · `GET|POST /skill-packages` · `POST /skill-packages/from-skillhub` · `PATCH|DELETE /skill-packages/{id}`
+**技能/技能包**：`GET|PATCH|DELETE /skills/{name}` · `POST /skills/import`（zip 导入）· `POST /skills/install`（SkillHub 单技能）· `GET /skillhub/search|rankings|skillsets{?q,/{slug}}` · `GET|POST /skill-packages` · `POST /skill-packages/from-skillhub` · `PATCH|DELETE /skill-packages/{id}`
 
 **其他**：`GET /mcp` · `DELETE /mcp/{name}`（持久化 mcp_servers.json）· `GET /workspace` · `GET /pet/models` · `POST /pet/models/switch` · `DELETE /pet/models/{id}`（级联删插件+资产，**不换会话**）
 

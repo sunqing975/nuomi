@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Button, Popconfirm, Table, Switch, Tag, message, Typography } from 'antd';
-import { DeleteOutlined, ReloadOutlined } from '@ant-design/icons';
-import { del, get, post, patch, type Plugin } from '../api';
+import { Button, Popconfirm, Table, Switch, Tag, Upload, message, Typography } from 'antd';
+import { CloudUploadOutlined, DeleteOutlined, ReloadOutlined } from '@ant-design/icons';
+import { del, get, post, patch, upload, type Plugin } from '../api';
 
 export default function PluginsPage() {
   const [plugins, setPlugins] = useState<Plugin[]>([]);
@@ -22,6 +22,16 @@ export default function PluginsPage() {
     const rows = await post<Plugin[]>('/plugins/sync');
     message.success(`扫描完成：${rows.length} 个插件`);
     load();
+  };
+
+  const importZip = async (file: File) => {
+    try {
+      const r = await upload<{ ok: boolean; plugin: Plugin }>('/plugins/import', file);
+      message.success(`插件「${r.plugin.name}」导入成功`);
+      load();
+    } catch (e) {
+      message.error(`导入失败：${(e as Error).message}`);
+    }
   };
 
   const toggle = async (p: Plugin, enabled: boolean) => {
@@ -74,7 +84,17 @@ export default function PluginsPage() {
 
   return (
     <>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 16 }}>
+        <Upload
+          accept=".zip"
+          showUploadList={false}
+          beforeUpload={(file) => {
+            importZip(file);
+            return false; // 手动上传，阻止 antd 自动提交
+          }}
+        >
+          <Button icon={<CloudUploadOutlined />}>导入 zip</Button>
+        </Upload>
         <Button icon={<ReloadOutlined />} onClick={sync} loading={loading}>重新扫描</Button>
       </div>
       <Table<Plugin>

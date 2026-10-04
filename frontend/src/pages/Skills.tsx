@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   Button, Card, Empty, Input, List, Popconfirm, Space, Switch, Table, Tabs,
-  Tag, Typography, message,
+  Tag, Typography, Upload, message,
 } from 'antd';
-import { DeleteOutlined, DownloadOutlined, ReloadOutlined } from '@ant-design/icons';
+import { CloudUploadOutlined, DeleteOutlined, DownloadOutlined, ReloadOutlined } from '@ant-design/icons';
 import {
-  del, get, patch, post, type Skill, type SkillHubItem, type SkillPackage,
+  del, get, patch, post, upload, type Skill, type SkillHubItem, type SkillPackage,
 } from '../api';
 
 export default function SkillsPage() {
@@ -35,6 +35,16 @@ export default function SkillsPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const importSkillZip = async (file: File) => {
+    try {
+      const r = await upload<{ ok: boolean; skill: Skill }>('/skills/import', file);
+      message.success(`技能「${r.skill.name}」导入成功`);
+      load();
+    } catch (e) {
+      message.error(`导入失败：${(e as Error).message}`);
+    }
+  };
 
   const searchHub = useCallback(async (q: string, tab: 'skills' | 'skillsets') => {
     setHubLoading(true);
@@ -204,6 +214,18 @@ export default function SkillsPage() {
             key: 'installed', label: '已安装',
             children: (
               <>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+                  <Upload
+                    accept=".zip"
+                    showUploadList={false}
+                    beforeUpload={(file) => {
+                      importSkillZip(file);
+                      return false; // 手动上传，阻止 antd 自动提交
+                    }}
+                  >
+                    <Button size="small" icon={<CloudUploadOutlined />}>导入技能 zip</Button>
+                  </Upload>
+                </div>
                 <Table<Skill>
                   rowKey="name" columns={skillColumns} dataSource={skills}
                   loading={loading} pagination={false} size="small"

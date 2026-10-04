@@ -18,7 +18,7 @@
 - **不背历史数据**：新库起步，不写迁移脚本，旧会话/旧结构数据直接放弃。
 - **页面不抄 Octop**：保留 nuomi 自己的设计，桌宠主界面 = 角色（卡通人物），不是聊天列表。
 - **分层依赖**：`transport → domain → infra/harness → octop-harness`；infra 禁 import domain/transport。
-- **仓库结构**：`backend/`（Python+FastAPI+harness）、`desktop/`（未来 myspy 二次开发）、`docs/`、`experts/`、`skills/`、`plugins/`（资产保留，后续迁移 harness 格式）。
+- **仓库结构**：`backend/`（Python+FastAPI+harness）、`shells/myspy/`（桌宠壳）、`frontend/`（控制台）、`assets/models/`（模型种子）、`docs/`、`experts/`。旧 myspy 时代 `plugins/`、`skills/` 资产已于 2026-10-04 删除（harness 插件/技能由工作区 `plugins/`、`skills/` 承载，支持前端 zip 导入）。
 - **LLM**：默认 DeepSeek（`LLM_API_KEY` > `DEEPSEEK_API_KEY` > `ARK_API_KEY`，base_url https://api.deepseek.com，model deepseek-chat）。本机真实 key 在环境变量 `DEEPSEEK_API_KEY`（.env 中 LLM_API_KEY 为空）。
 
 ## 架构（v0.13）
@@ -60,7 +60,7 @@ SSE 事件协议（桌宠前端消费）：`token` / `tool_call` / `tool_result`
 
 - M3 Agent 生命周期：agents 表（对齐 Octop schema：agent_id/name/default_model/system_prompt/enabled/config_json/last_state...）+ 多专家实例管理
 - M4 会话通道：threads/messages 表 + checkpointer 持久化 + 历史会话
-- M5 插件接入：harness 插件目录（plugin.yaml）+ 现有 plugins/ 资产迁移；旧 service-* 概念废弃（harness 原生替代）
+- M5 插件接入：harness 插件目录（plugin.yaml）+ 前端 zip 导入（工作区 plugins/）；旧 myspy plugins//skills/ 资产已删（2026-10-04）；旧 service-* 概念废弃（harness 原生替代）
 - M6 技能/MCP/知识库：skills_dir 接入 + MCP server 配置 + 知识库工具
 - M7 桌宠前端：myspy 二次开发（形象/情绪/字幕/TTS）+ 控制面板
 - M8 产品体验：人格/情绪协议、工具执行可视化（"干活中"动画）
