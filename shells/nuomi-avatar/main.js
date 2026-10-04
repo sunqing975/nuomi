@@ -14,7 +14,7 @@ function createWindow() {
 
     const primaryDisplay = screen.getPrimaryDisplay()
 
-    // 桌宠窗口固定在主显示器内，避免跨屏导致窗口偏移到屏幕外
+    // AI 数字人窗口固定在主显示器内，避免跨屏导致窗口偏移到屏幕外
     const winW = primaryDisplay.bounds.width
     const winH = primaryDisplay.bounds.height
     const winX = primaryDisplay.bounds.x
@@ -47,10 +47,10 @@ function createWindow() {
     win.setIgnoreMouseEvents(true, { forward: true })
     win.loadFile('index.html')
 
-    // 桌宠窗口关闭时清引用（控制面板是远程 /console/ 页面，无 preload，
+    // AI 数字人窗口关闭时清引用（控制面板是远程 /console/ 页面，无 preload，
     // 无需也收不到 IPC 通知，故不再发送 pet-stopped）
     win.on('closed', () => {
-        petWindow = null
+        avatarWindow = null
     })
 
     // 禁用默认右键菜单
@@ -111,7 +111,7 @@ function createControlPanel() {
     return panel
 }
 
-let petWindow = null
+let avatarWindow = null
 let controlPanel = null
 
 // PTT 全局快捷键管理
@@ -120,8 +120,8 @@ function registerPTTShortcut() {
     globalShortcut.unregisterAll()
     try {
         globalShortcut.register(pttKey, () => {
-            if (petWindow && !petWindow.isDestroyed()) {
-                petWindow.webContents.send('ptt-key-down')
+            if (avatarWindow && !avatarWindow.isDestroyed()) {
+                avatarWindow.webContents.send('ptt-key-down')
             }
         })
     } catch (e) {
@@ -135,24 +135,24 @@ function unregisterPTTShortcut() {
 app.whenReady().then(() => {
     let initialConfig = {}
     try { initialConfig = JSON.parse(fs.readFileSync(configPath, 'utf8')) } catch (e) {}
-    const petEnabled = (initialConfig.ui || {}).pet_enabled !== false // 缺省开
+    const petEnabled = (initialConfig.ui || {}).avatar_enabled !== false // 缺省开
 
     if (petEnabled) {
-        petWindow = createWindow()
+        avatarWindow = createWindow()
     } else {
-        console.log('桌宠开关为关，跳过创建桌宠窗口')
+        console.log('AI 数字人开关为关，跳过创建AI 数字人窗口')
     }
     controlPanel = createControlPanel()
 
     // 转发渲染进程日志到主进程 stdout（便于排查切换/加载问题）
-    if (petWindow && petWindow.webContents) {
-        petWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    if (avatarWindow && avatarWindow.webContents) {
+        avatarWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
             console.log('[renderer:' + level + '] ' + message + ' (' + line + ')')
         })
     }
 
-    // 监听 config.json 的 ui.model 变化 → 自动切换模型（后端 /api/pet/models/switch 写入 config）；
-    // ui.pet_enabled 变化 → 创建/销毁桌宠窗口（控制台「模型」页开关）
+    // 监听 config.json 的 ui.model 变化 → 自动切换模型（后端 /api/avatar/models/switch 写入 config）；
+    // ui.avatar_enabled 变化 → 创建/销毁AI 数字人窗口（控制台「模型」页开关）
     let lastModelId = null
     let lastPetEnabled = petEnabled
     try {
@@ -163,30 +163,30 @@ app.whenReady().then(() => {
             try {
                 const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'))
                 const ui = (cfg?.ui) || {}
-                // 桌宠开关
-                const petEnabledNow = ui.pet_enabled !== false
+                // AI 数字人开关
+                const petEnabledNow = ui.avatar_enabled !== false
                 if (petEnabledNow !== lastPetEnabled) {
                     lastPetEnabled = petEnabledNow
                     if (petEnabledNow) {
-                        if (!petWindow || petWindow.isDestroyed()) {
-                            petWindow = createWindow()
-                            console.log('桌宠开关打开，创建桌宠窗口')
+                        if (!avatarWindow || avatarWindow.isDestroyed()) {
+                            avatarWindow = createWindow()
+                            console.log('AI 数字人开关打开，创建AI 数字人窗口')
                         }
                     } else {
-                        if (petWindow && !petWindow.isDestroyed()) {
-                            petWindow.destroy()
-                            petWindow = null
-                            console.log('桌宠开关关闭，销毁桌宠窗口')
+                        if (avatarWindow && !avatarWindow.isDestroyed()) {
+                            avatarWindow.destroy()
+                            avatarWindow = null
+                            console.log('AI 数字人开关关闭，销毁AI 数字人窗口')
                         }
                     }
                 }
                 // 模型切换
                 const modelId = ui.model || null
                 const modelPath = ui.model_path || null
-                if (modelId && modelId !== lastModelId && petWindow && !petWindow.isDestroyed()) {
+                if (modelId && modelId !== lastModelId && avatarWindow && !avatarWindow.isDestroyed()) {
                     lastModelId = modelId
                     if (modelPath) {
-                        petWindow.webContents.send('switch-model', modelPath)
+                        avatarWindow.webContents.send('switch-model', modelPath)
                         console.log('检测到模型切换: ' + modelId + ' -> ' + modelPath)
                     }
                 }
@@ -199,7 +199,7 @@ app.whenReady().then(() => {
         app.quit()
     })
 
-    // 读取初始 PTT 配置（桌宠关闭时不注册 PTT）
+    // 读取初始 PTT 配置（AI 数字人关闭时不注册 PTT）
     try {
         let pttConfig = {}
         try { pttConfig = JSON.parse(fs.readFileSync(configPath, 'utf8')) } catch (e) {}
@@ -251,12 +251,12 @@ ipcMain.on('open-devtools', (event) => {
     }
 })
 
-// 启动桌宠
-ipcMain.on('start-pet', () => {
-    if (petWindow && !petWindow.isDestroyed()) {
-        petWindow.destroy()
+// 启动AI 数字人
+ipcMain.on('start-avatar', () => {
+    if (avatarWindow && !avatarWindow.isDestroyed()) {
+        avatarWindow.destroy()
     }
-    petWindow = createWindow()
+    avatarWindow = createWindow()
     // 如果 PTT 启用，重新注册全局快捷键
     try {
         let pttConfig = {}
@@ -268,53 +268,53 @@ ipcMain.on('start-pet', () => {
     } catch (e) {}
 })
 
-// 停止桌宠
-ipcMain.on('stop-pet', () => {
-    if (petWindow && !petWindow.isDestroyed()) {
-        petWindow.destroy()
-        petWindow = null
+// 停止AI 数字人
+ipcMain.on('stop-avatar', () => {
+    if (avatarWindow && !avatarWindow.isDestroyed()) {
+        avatarWindow.destroy()
+        avatarWindow = null
     }
     // 注销 PTT 全局快捷键
     unregisterPTTShortcut()
 })
 
-// 获取桌宠状态
-ipcMain.handle('get-pet-status', () => {
-    return petWindow && !petWindow.isDestroyed()
+// 获取AI 数字人状态
+ipcMain.handle('get-avatar-status', () => {
+    return avatarWindow && !avatarWindow.isDestroyed()
 })
 
 // 切换模型
 ipcMain.on('switch-model', (event, modelPath) => {
-    if (petWindow && !petWindow.isDestroyed()) {
-        petWindow.webContents.send('switch-model', modelPath)
+    if (avatarWindow && !avatarWindow.isDestroyed()) {
+        avatarWindow.webContents.send('switch-model', modelPath)
     }
 })
 
 // 预览表情
 ipcMain.on('preview-expression', (event, exprName) => {
-    if (petWindow && !petWindow.isDestroyed()) {
-        petWindow.webContents.send('preview-expression', exprName)
+    if (avatarWindow && !avatarWindow.isDestroyed()) {
+        avatarWindow.webContents.send('preview-expression', exprName)
     }
 })
 
 // 切换表情（开/关）
 ipcMain.on('toggle-expression', (event, data) => {
-    if (petWindow && !petWindow.isDestroyed()) {
-        petWindow.webContents.send('toggle-expression', data)
+    if (avatarWindow && !avatarWindow.isDestroyed()) {
+        avatarWindow.webContents.send('toggle-expression', data)
     }
 })
 
 // 复位皮套位置
-ipcMain.on('reset-pet-position', () => {
-    if (petWindow && !petWindow.isDestroyed()) {
-        petWindow.webContents.send('reset-pet-position')
+ipcMain.on('reset-avatar-position', () => {
+    if (avatarWindow && !avatarWindow.isDestroyed()) {
+        avatarWindow.webContents.send('reset-avatar-position')
     }
 })
 
-// 通知桌宠重新加载配置
+// 通知AI 数字人重新加载配置
 ipcMain.on('reload-config', (event, data) => {
-    if (petWindow && !petWindow.isDestroyed()) {
-        petWindow.webContents.send('reload-config')
+    if (avatarWindow && !avatarWindow.isDestroyed()) {
+        avatarWindow.webContents.send('reload-config')
     }
     // 更新 PTT 全局快捷键
     if (data && data.ptt_enabled !== undefined) {
@@ -327,10 +327,10 @@ ipcMain.on('reload-config', (event, data) => {
     }
 })
 
-// MCP 配置热重载（通知桌宠进程重新读取 MCP 配置）
+// MCP 配置热重载（通知AI 数字人进程重新读取 MCP 配置）
 ipcMain.handle('mcp-reload-config', () => {
-    if (petWindow && !petWindow.isDestroyed()) {
-        petWindow.webContents.send('mcp-reload-config')
+    if (avatarWindow && !avatarWindow.isDestroyed()) {
+        avatarWindow.webContents.send('mcp-reload-config')
     }
 })
 
@@ -378,8 +378,8 @@ ipcMain.handle('save-emotion-config', (event, data) => {
         const configPath = path.join(__dirname, 'emotion_expressions.json')
         fs.writeFileSync(configPath, JSON.stringify(data, null, 2), 'utf8')
         // 通知宠物窗口热重载
-        if (petWindow && !petWindow.isDestroyed()) {
-            petWindow.webContents.send('reload-emotion-config')
+        if (avatarWindow && !avatarWindow.isDestroyed()) {
+            avatarWindow.webContents.send('reload-emotion-config')
         }
         return true
     } catch (e) {

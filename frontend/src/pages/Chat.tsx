@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
 import {
   Button, Drawer, Empty, Input, Popconfirm, Popover, Select, Space, Switch, Tag, Typography, message,
 } from 'antd';
@@ -9,7 +10,7 @@ import {
   del, get, post, chatStream, knowledgeApi,
   type Agent, type ChatEvent, type ChatMessage, type ConnectorServer, type KnowledgeBase, type Segment, type Skill, type SkillPackage,
 } from '../api';
-import { parseKnowledgeCitations } from '../utils/parseKnowledgeCitations';
+import { parseKnowledgeCitations, type KnowledgeCitation } from '../utils/parseKnowledgeCitations';
 
 /** 模型「自动」哨兵值：发送时不传 model（null），由后端按 agent 默认模型解析（对齐 Octop AUTO 语义） */
 const MODEL_AUTO = 'auto';
@@ -39,9 +40,8 @@ function AbilityChip({ label, color, onRemove }: { label: string; color: string;
   );
 }
 
-/** 知识库引用条（search_knowledge 工具输出含 citations 标记时展示来源） */
-function KnowledgeCitations({ raw }: { raw?: string }) {
-  const { text, citations } = parseKnowledgeCitations(raw);
+/** 知识库引用标签条（citations 列表 → Tag 行） */
+function CitationsTags({ citations }: { citations: KnowledgeCitation[] }) {
   if (!citations.length) return null;
   return (
     <div style={{ marginTop: 6 }}>
@@ -53,11 +53,38 @@ function KnowledgeCitations({ raw }: { raw?: string }) {
           </Tag>
         ))}
       </div>
+    </div>
+  );
+}
+
+/** 知识库引用条（search_knowledge 工具输出含 citations 标记时展示来源） */
+function KnowledgeCitations({ raw }: { raw?: string }) {
+  const { text, citations } = parseKnowledgeCitations(raw);
+  if (!citations.length) return null;
+  return (
+    <div>
+      <CitationsTags citations={citations} />
       {text ? (
         <div style={{ color: '#6b7280', marginTop: 2, whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 120, overflow: 'auto' }}>
           {text}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/** 正文 Markdown 渲染：剥离知识库引用标记 → md 渲染正文 → 引用标签条（历史/流式正文共用） */
+function MarkdownText({ raw, placeholder }: { raw?: string; placeholder?: string }) {
+  const { text, citations } = parseKnowledgeCitations(raw);
+  if (!text.trim() && !citations.length) return <>{placeholder ?? ''}</>;
+  return (
+    <div>
+      {text.trim() ? (
+        <div className="md-body" style={{ fontSize: 14, lineHeight: 1.6, wordBreak: 'break-word' }}>
+          <ReactMarkdown>{text}</ReactMarkdown>
+        </div>
+      ) : null}
+      <CitationsTags citations={citations} />
     </div>
   );
 }
@@ -84,23 +111,19 @@ function SegmentView({ seg }: { seg: Segment }) {
   }
   if (seg.type === 'tool_call' || seg.type === 'tool_result') {
     const isCall = seg.type === 'tool_call';
+    const hasDetail = isCall ? !!(seg.args && seg.args !== '{}') : !!seg.content;
     return (
       <div style={{
         marginBottom: 6, fontSize: 12, padding: '4px 8px', borderRadius: 6, maxWidth: 520,
         background: isCall ? '#f0f7ff' : '#f6ffed',
         border: `1px solid ${isCall ? '#d6e4ff' : '#d9f7be'}`,
       }}>
-        <span style={{ color: isCall ? '#1677ff' : '#52c41a', fontWeight: 500 }}>
-          {isCall ? '⚙ 调用' : '✓ 结果'} {seg.name || '(工具)'}
-        </span>
-        {isCall && seg.args && seg.args !== '{}' && (
-          <div style={{ color: '#6b7280', marginTop: 2, whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 80, overflow: 'auto' }}>
-            {seg.args}
-          </div>
-        )}
-        {!isCall && seg.content && (
-          <div style={{ color: '#6b7280', marginTop: 2, whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 120, overflow: 'auto' }}>
-            {seg.name === 'search_knowledge' ? <KnowledgeCitations raw={seg.content} /> : seg.content}
+        <a onClick={() => setOpen(v => !v)} style={{ color: isCall ? '#1677ff' : '#52c41a', fontWeight: 500, cursor: 'pointer' }}>
+          {open ? '▾' : '▸'} {isCall ? '⚙ 调用' : '✓ 结果'} {seg.name || '(工具)'}
+        </a>
+        {open && hasDetail && (
+          <div style={{ color: '#6b7280', marginTop: 2, whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: isCall ? 80 : 120, overflow: 'auto' }}>
+            {isCall ? seg.args : (seg.name === 'search_knowledge' ? <KnowledgeCitations raw={seg.content} /> : seg.content)}
           </div>
         )}
       </div>
@@ -620,10 +643,10 @@ export default function ChatPage() {
                     ? m.segments.map((s, j) =>
                         s.type === 'text' ? (
                           <div key={j} style={{
-                            marginBottom: 6, padding: '8px 12px', borderRadius: 10, fontSize: 14, lineHeight: 1.6,
-                            background: '#f5f5f5', color: '#333', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                            marginBottom: 6, padding: '8px 12px', borderRadius: 10,
+                            background: '#f5f5f5', color: '#333',
                           }}>
-                            {s.content || '（空回复）'}
+                            <MarkdownText raw={s.content} placeholder="（空回复）" />
                           </div>
                         ) : (
                           <SegmentView key={j} seg={s} />
@@ -650,10 +673,9 @@ export default function ChatPage() {
                 {streamSegments.map((s, j) =>
                   s.type === 'text' ? (
                     <div key={j} style={{
-                      marginBottom: 6, padding: '8px 12px', borderRadius: 10, background: '#f5f5f5',
-                      fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                      marginBottom: 6, padding: '8px 12px', borderRadius: 10, background: '#f5f5f5', color: '#333',
                     }}>
-                      {s.content}
+                      <MarkdownText raw={s.content} />
                       <span style={{ opacity: 0.5 }}>▍</span>
                     </div>
                   ) : (

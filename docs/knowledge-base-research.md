@@ -180,11 +180,11 @@ nuomi 已用 octop-harness，知识库可以按同一模式做，且比 Octop �
 
 ## 8. 本地模型目录设计（2026-10-04）
 
-工作区 `models/` 现有 `2D/`（桌宠 Live2D 表现层资产）。本地 AI 模型（嵌入/OCR）**不宜混入 `2D/`**，按"表现层资产 vs 智能模型"分层：
+工作区 `models/` 现有 `3D/`（AI 数字人 VRM 表现层资产）。本地 AI 模型（嵌入/OCR）**不宜混入 `3D/`**，按"表现层资产 vs 智能模型"分层：
 
 ```
 /Users/superman/Nuomi/models/
-├── 2D/                          # 桌宠 Live2D（表现层资产，现状不动）
+├── 3D/                          # AI 数字人 VRM（表现层资产）
 │   └── <model_id>/              # cat / aidang / hiyori（仓库种子 assets/models/2D 幂等播种）
 └── ai/                          # 智能模型（AI 能力资产，M6 知识库起）
     ├── embedding/               # 嵌入模型（ONNX，本地优先路线）
@@ -194,7 +194,7 @@ nuomi 已用 octop-harness，知识库可以按同一模式做，且比 Octop �
 ```
 
 **设计原则**：
-1. **语义分层**：`2D/` = 表现层资产（壳消费），`ai/` = 智能模型（后端消费）；`ai/<type>/` 按用途扩展（未来 TTS/ASR 直接加 `models/ai/tts/`、`models/ai/asr/`），不互相污染。
+1. **语义分层**：`3D/` = 表现层资产（壳消费），`ai/` = 智能模型（后端消费）；`ai/<type>/` 按用途扩展（未来 TTS/ASR 直接加 `models/ai/tts/`、`models/ai/asr/`），不互相污染。
 2. **对齐 Octop 机制**：`embedding/.downloaded/<id>` 下载完成标记 + gate 就绪检查（`is_model_downloaded`）；模型 id 用 HF 风格 `owner/name`（如 `BAAI/bge-small-zh-v1.5`），目录名 `models--<owner>--<name>`（对齐 Octop `model_cache_dir`，`/`→`--` 防路径穿越）。
 3. **单根一致**：仍在 `NUOMI_HOME` 下，不加新环境变量；后端 `settings.workspace_path / "models" / "ai" / ...` 与现有 `pet/service.py` 的 `MODEL_DIR` 同级但不同语义。
 4. **实现路径（已拍板 2026-10-04：完全仿 Octop）**：**下载 = Octop 自研多源竞速**（`onnx_download.py`：httpx 探测 HF 官方 `https://huggingface.co` + 镜像 `https://hf-mirror.com`（可选 COS），超时选胜者；按 allow patterns 拉文件清单：`config.json` / `tokenizer*.json` / `vocab*.txt` / `merges.txt` / `*.onnx` / `onnx/*.onnx` 等，写临时目录→原子移动到 `models/ai/embedding/models--<owner>--<name>/`，完成写 `.downloaded` 标记）；**推理加载 = fastembed**（与 Octop 一致：`TextEmbedding(model_name=model, cache_dir=models/ai/embedding)`，内部 onnxruntime + tokenizer + pooling 全由 fastembed 处理，不手写推理管线）。模型目录/元数据同样对齐 fastembed（`get_onnx_model_meta` → hf_source 确定 HF 仓库 id）。**候选模型**：`BAAI/bge-small-zh-v1.5`（Octop 默认推荐，中文小模型，优先）、`jinaai/jina-embeddings-v2-base-zh`、`intfloat/multilingual-e5-large`。

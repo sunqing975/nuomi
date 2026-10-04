@@ -229,7 +229,7 @@ class VRMModelAdapter extends EventEmitter {
     async loadVRMA(name, filePath) {
         const fs = require('fs');
         const path = require('path');
-        // 相对路径基于壳根目录（js/model/ → ../../ = shells/myspy）
+        // 相对路径基于壳根目录（js/model/ → ../../ = shells/nuomi-avatar）
         const absPath = path.resolve(path.join(__dirname, '..', '..'), filePath);
         if (!fs.existsSync(absPath)) {
             console.warn(`[VRM动画] ${name} 文件不存在: ${absPath}`);
@@ -812,6 +812,19 @@ class VRMModelAdapter extends EventEmitter {
             expressions.push(realName);
         }
         return expressions;
+    }
+
+    // 拖拽旋转轨道（theta: 水平角，phi: 垂直角；限制范围避免穿模/翻转）
+    rotateOrbit(dxNorm, dyNorm) {
+        this._orbitTheta -= dxNorm * 2.2;
+        this._orbitPhi += dyNorm * 1.6;
+        this._orbitPhi = Math.max(-0.35, Math.min(0.5, this._orbitPhi)); // 垂直 ±~20°/28°
+    }
+
+    // 滚轮缩放（distance clamp，防止穿模）
+    zoomOrbit(deltaY) {
+        const zoom = deltaY > 0 ? 1.08 : 1 / 1.08;
+        this._orbitDistance = Math.max(1.6, Math.min(5.0, this._orbitDistance * zoom));
     }
 
     // 更新摄像头轨道位置（每帧调用，跟随Hips骨骼）

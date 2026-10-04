@@ -50,7 +50,7 @@ hash 路由 `#knowledge` 直达（复用现有 `NAV` 机制，无需改 App 其�
 
 ### 3.2 ② 知识库卡片区
 
-- `GET /knowledge-bases` 返回数组；卡片网格（antd `Card` + `Row/Col`，复用 PetModels/Skills 的卡片观感）。
+- `GET /knowledge-bases` 返回数组；卡片网格（antd `Card` + `Row/Col`，复用 AvatarModels/Skills 的卡片观感）。
 - 卡片字段：名称、描述（截断）、`doc_count`、`embedding_dim`、`default_open`。
 - **默认打开** = 拍板的"全局默认注入"：Switch 直改 `PATCH /knowledge-bases/{id}`（`default_open`），文案"默认打开：对话时自动注入"。
 - 操作菜单（Dropdown）：进入详情 / 重命名 / 删除（Popconfirm）。

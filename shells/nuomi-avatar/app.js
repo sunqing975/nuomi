@@ -49,7 +49,7 @@ let ttsStreamProcessor = null
 
 // 对话历史（发送给后端 LLM 的消息队列）
 const messages = [
-    { role: 'system', content: config?.llm?.system_prompt || '你是一个可爱的AI桌宠助手。' }
+    { role: 'system', content: config?.llm?.system_prompt || '你是一个可爱的AIAI 数字人助手。' }
 ]
 
 
@@ -106,14 +106,14 @@ function _applyEmotionExpression(emotion) {
 
 // ===== 持久化对话历史（已废除：记忆由后端 octop-harness 管理）=====
 
-// 设置全局对话环境（供桌宠表现层使用；对话已收归控制台，sendToLLM 不再可用）
+// 设置全局对话环境（供AI 数字人表现层使用；对话已收归控制台，sendToLLM 不再可用）
 const voiceChat = {
     messages: messages,
     API_URL: config?.llm?.api_url || '',
     API_KEY: config?.llm?.api_key || '',
     MODEL: config?.llm?.model || '',
     ttsProcessor: tts,
-    sendToLLM: async () => { /* 对话仅控制台，桌宠不再发消息 */ },
+    sendToLLM: async () => { /* 对话仅控制台，AI 数字人不再发消息 */ },
     setModel: (m) => { global.currentModel = m },
     setEmotionMapper: null
 }
@@ -144,7 +144,7 @@ let model = null
 let modelCtrl = null
 
 // ===== 会话管理（一个 thread_id 逻辑）：config.json 的 nuomi.thread_id 为权威 =====
-// 桌宠与控制台共用同一「当前会话」：控制台切会话（后端写 config.json）后，
+// AI 数字人与控制台共用同一「当前会话」：控制台切会话（后端写 config.json）后，
 // 壳在每次对话前重读 config 自动跟随。
 const configPath = path.join(__dirname, 'config.json')
 
@@ -268,15 +268,15 @@ async function main() {
                     log('不支持的模型类型 ' + newType + '（2D Live2D/图片已下线，仅支持 VRM 3D）')
                     return
                 }
-                // VRM 模型切换：壳侧场景重建不可行，由后端切模型 + 重启桌宠生效
-                log('VRM 模型切换需要重启桌宠生效')
+                // VRM 模型切换：壳侧场景重建不可行，由后端切模型 + 重启AI 数字人生效
+                log('VRM 模型切换需要重启AI 数字人生效')
             } catch (e) {
                 console.error('切换模型失败:', e)
             }
         })
 
         // 监听复位位置
-        ipcRenderer.on('reset-pet-position', () => {
+        ipcRenderer.on('reset-avatar-position', () => {
             if (model) {
                 // 通过统一交互控制器复位
                 if (modelCtrl && modelCtrl.setupInitialModelProperties) {
@@ -402,7 +402,7 @@ async function main() {
 
         log('糯米启动完成')
 
-        // 订阅后端动作广播：控制台等来源的对话也会驱动桌宠动作
+        // 订阅后端动作广播：控制台等来源的对话也会驱动AI 数字人动作
         subscribePetEvents()
 
 
@@ -476,7 +476,7 @@ const STATUS_EXPRESSION = {
 
 function playStatusExpression(status) {
     if (!model) return
-    log('桌宠状态: ' + status, 'info')
+    log('AI 数字人状态: ' + status, 'info')
     try {
         // 显式表情在播时（用户主动要求 set_expression_*），状态表情让位，不覆盖
         if (_expressionRecoveryTimer) return
@@ -497,13 +497,13 @@ function playStatusExpression(status) {
 
 function playPetMotion(name) {
     if (!model) return
-    log('桌宠动作: ' + name, 'info')
+    log('AI 数字人动作: ' + name, 'info')
     try { model.motion(name) } catch (e) { log('动作播放失败: ' + e.message, 'warn') }
 }
 
 function playPetExpression(name) {
     if (!model) return
-    log('桌宠表情: ' + name, 'info')
+    log('AI 数字人表情: ' + name, 'info')
     try {
         model.expression(name)
         // 重置旧定时器（连续表情调用时刷新恢复时间）
@@ -521,22 +521,22 @@ function playPetExpression(name) {
 
 // 按动作 payload 播放（后端已解析好 motion+expressions 组合，壳不再反查）
 let lastPlayedAction = null // 去重：1s 内同 label 跳过
-function playPetActionPayload(payload) {
+function playAvatarActionPayload(payload) {
     if (!payload) return
     const label = payload.label || payload.motion || payload.expressions?.[0] || 'action'
     const now = Date.now()
     if (lastPlayedAction && lastPlayedAction.label === label && now - lastPlayedAction.ts < 1000) return
     lastPlayedAction = { label, ts: now }
-    log('桌宠动作: ' + label, 'info')
+    log('AI 数字人动作: ' + label, 'info')
     if (payload.motion) playPetMotion(payload.motion)
     for (const expr of (payload.expressions || [])) playPetExpression(expr)
 }
 
-// 订阅后端动作广播：控制台等任何来源的对话触发工具调用时，桌宠同步播放
+// 订阅后端动作广播：控制台等任何来源的对话触发工具调用时，AI 数字人同步播放
 async function subscribePetEvents() {
     try {
         const base = String(config.llm.api_url || '').replace(/\/api\/v1\/?$/, '') || 'http://127.0.0.1:8000'
-        const res = await fetch(base + '/api/pet/events')
+        const res = await fetch(base + '/api/avatar/events')
         const reader = res.body.getReader()
         const decoder = new TextDecoder('utf-8')
         let buffer = ''
@@ -553,9 +553,9 @@ async function subscribePetEvents() {
                 if (!p) continue
                 let ev
                 try { ev = JSON.parse(p) } catch (e) { continue }
-                if (ev.type === 'pet_action') {
-                    playPetActionPayload(ev)
-                } else if (ev.type === 'pet_status') {
+                if (ev.type === 'avatar_action') {
+                    playAvatarActionPayload(ev)
+                } else if (ev.type === 'avatar_status') {
                     playStatusExpression(ev.status)
                 }
             }

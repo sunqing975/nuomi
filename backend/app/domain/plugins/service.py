@@ -5,8 +5,8 @@
 - 插件目录是 source of truth（plugin.yaml）；DB 只存启停状态
 - 全局启用（plugins.enabled）：插件启用即对所有专家可用（2026-10-04 起
   不再有专家-插件绑定，专家不绑定插件；能力随对话请求注入见后续设计）
-- 桌宠（方案B，2026-10-04）：只有一个共享 VRM 插件（vrm-pet），
-  其启用/停用绑定桌宠开关；动作/表情工具在 tools() 装配时按当前模型动态构造
+- AI 数字人（方案B，2026-10-04）：只有一个共享 VRM 插件（vrm-avatar），
+  其启用/停用绑定AI 数字人开关；动作/表情工具在 tools() 装配时按当前模型动态构造
 """
 
 from __future__ import annotations
@@ -95,7 +95,7 @@ class PluginService:
     def delete(self, plugin_id: str) -> bool:
         """删除插件：DB 记录 + 插件目录（source of truth）。
 
-        模型插件不在此删除（由「桌宠」删除模型时级联）——调用方先检查。
+        模型插件不在此删除（由「AI 数字人」删除模型时级联）——调用方先检查。
         删除后调用方应释放 agent 实例，避免缓存实例仍带旧插件工具。
         """
         with db.connect() as conn:
@@ -111,10 +111,10 @@ class PluginService:
     # ---------- 工具装配（供对话端点） ----------
 
     def tools(self) -> list:
-        """按全局启停装配插件工具 + 桌宠动态工具（StructuredTool 列表）。
+        """按全局启停装配插件工具 + AI 数字人动态工具（StructuredTool 列表）。
 
         专家不再绑定插件（2026-10-04 解耦）：插件启用即对所有专家可用。
-        桌宠（方案B）：vrm-pet 插件启用时，动态构造 do_action / set_expression——
+        AI 数字人（方案B）：vrm-avatar 插件启用时，动态构造 do_action / set_expression——
         enum 清单按当前激活 VRM 模型（GLB blend shape）与 animations/*.vrma 实时生成，
         切模型 / 新增动画零重启（工具在每次对话装配时重算）。
         工具名做 slug 防御：非 ASCII 名（如中文）改名为 tool_{n}，
@@ -122,21 +122,21 @@ class PluginService:
         """
         global_enabled = {r["plugin_id"]: bool(r["enabled"]) for r in self.list_all()}
         tools = build_plugin_tools(global_plugins=global_enabled)
-        tools = tools + self._pet_dynamic_tools(global_enabled)
+        tools = tools + self._avatar_dynamic_tools(global_enabled)
         return [self._sanitize_tool(t, i) for i, t in enumerate(tools)]
 
-    def _pet_dynamic_tools(self, global_enabled: dict) -> list:
-        """桌宠共享插件启用时，动态构造动作/表情工具（enum 随当前模型/动画实时变化）。"""
-        from app.domain.pet.service import (
-            VRM_PET_PLUGIN_ID,
-            list_pet_actions,
-            list_pet_expressions,
+    def _avatar_dynamic_tools(self, global_enabled: dict) -> list:
+        """AI 数字人共享插件启用时，动态构造动作/表情工具（enum 随当前模型/动画实时变化）。"""
+        from app.domain.avatar.service import (
+            VRM_AVATAR_PLUGIN_ID,
+            list_avatar_actions,
+            list_avatar_expressions,
         )
 
-        if not global_enabled.get(VRM_PET_PLUGIN_ID):
+        if not global_enabled.get(VRM_AVATAR_PLUGIN_ID):
             return []
-        actions = list_pet_actions()
-        expressions = list_pet_expressions()
+        actions = list_avatar_actions()
+        expressions = list_avatar_expressions()
         out: list = []
         if actions:
             out.append(
@@ -144,7 +144,7 @@ class PluginService:
                     func=_make_do_action(actions),
                     name="do_action",
                     description=(
-                        "让桌宠做出一个动作（身体动画）。根据对话场景选最合适的动作，"
+                        "让AI 数字人做出一个动作（身体动画）。根据对话场景选最合适的动作，"
                         "可用动作：\n" + "\n".join(f"- {a['name']}：{a['label_zh']}" for a in actions)
                     ),
                 )
@@ -155,7 +155,7 @@ class PluginService:
                     func=_make_set_expression(expressions),
                     name="set_expression",
                     description=(
-                        "切换桌宠的面部表情（blend shape）。根据对话情绪选最合适的表情，"
+                        "切换AI 数字人的面部表情（blend shape）。根据对话情绪选最合适的表情，"
                         "可用表情：\n"
                         + "\n".join(f"- {e['name']}：{e['label_zh']}" for e in expressions)
                     ),
@@ -185,7 +185,7 @@ class PluginService:
 
 
 def _make_do_action(actions: list):
-    """闭包工厂：do_action 工具函数（参数 action 返回桌宠播放 payload）。"""
+    """闭包工厂：do_action 工具函数（参数 action 返回AI 数字人播放 payload）。"""
     labels = {a["name"]: a["label_zh"] for a in actions}
 
     def _do(action: str) -> str:
@@ -194,7 +194,7 @@ def _make_do_action(actions: list):
             ensure_ascii=False,
         )
 
-    _do.__doc__ = "让桌宠做出一个动作。"
+    _do.__doc__ = "让AI 数字人做出一个动作。"
     return _do
 
 
@@ -208,7 +208,7 @@ def _make_set_expression(expressions: list):
             ensure_ascii=False,
         )
 
-    _set.__doc__ = "切换桌宠的面部表情。"
+    _set.__doc__ = "切换AI 数字人的面部表情。"
     return _set
 
 

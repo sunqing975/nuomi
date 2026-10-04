@@ -1,13 +1,13 @@
 # =============================================================================
 # 糯米 Nuomi · 启动 / 关闭脚本（Makefile）
 #
-# 默认形态（v0.13 起）：桌面 = 桌宠壳（shells/myspy，Electron）。
-#   make start        启动桌宠壳（默认形态；依赖后端 :8000）
+# 默认形态（v0.13 起）：桌面 = AI 数字人壳（shells/nuomi-avatar，Electron）。
+#   make start        启动AI 数字人壳（默认形态；依赖后端 :8000）
 #   make web          调试形态：后端:8000 + 控制台前端:5173（浏览器调试用）
 #
 # 常用：
-#   make start       启动桌宠壳（默认形态，日常用这个）
-#   make stop        停止桌宠壳 / web 模式
+#   make start       启动AI 数字人壳（默认形态，日常用这个）
+#   make stop        停止AI 数字人壳 / web 模式
 #   make status      查看运行状态
 #   make logs        查看最近日志
 #   make check       质量门禁：lint + 格式检查 + typecheck + pytest（提交前跑这个）
@@ -38,8 +38,8 @@ FRONTEND_PORT := 5173
 help:
 	@echo "糯米 Nuomi 启动/关闭脚本"
 	@echo ""
-	@echo "  make start          启动桌宠壳（默认形态；依赖后端 :$(BACKEND_PORT)）"
-	@echo "  make stop           停止桌宠壳 / web 模式"
+	@echo "  make start          启动AI 数字人壳（默认形态；依赖后端 :$(BACKEND_PORT)）"
+	@echo "  make stop           停止AI 数字人壳 / web 模式"
 	@echo "  make restart        重启"
 	@echo "  make status         查看运行状态"
 	@echo "  make logs           查看最近日志"
@@ -53,20 +53,20 @@ help:
 	@echo "  make build          前端构建（tsc + vite build）"
 	@echo "  make clean          清理 PID 文件与日志"
 
-# ---- 桌宠壳（默认形态） ----
+# ---- AI 数字人壳（默认形态） ----
 start: desktop
 
 desktop:
 	@mkdir -p $(LOGDIR)
 	@if [ -f $(SHELL_PID) ] && kill -0 $$(cat $(SHELL_PID)) 2>/dev/null; then \
-		echo "⚠ 桌宠壳已在运行 (PID $$(cat $(SHELL_PID)))，先 make stop 再启动"; \
-	elif pgrep -f "shells/myspy/node_modules/electron" >/dev/null 2>&1; then \
-		echo "⚠ 检测到残留桌宠壳进程，先 make stop 清理"; \
+		echo "⚠ AI 数字人壳已在运行 (PID $$(cat $(SHELL_PID)))，先 make stop 再启动"; \
+	elif pgrep -f "shells/nuomi-avatar/node_modules/electron" >/dev/null 2>&1; then \
+		echo "⚠ 检测到残留AI 数字人壳进程，先 make stop 清理"; \
 	else \
-		cd $(ROOT)/shells/myspy && nohup npm start >$(SHELL_LOG) 2>&1 </dev/null & \
+		cd $(ROOT)/shells/nuomi-avatar && nohup npm start >$(SHELL_LOG) 2>&1 </dev/null & \
 		echo $$! > $(SHELL_PID); \
-		echo "✔ 桌宠壳已启动 (PID $$(cat $(SHELL_PID)))，日志 $(SHELL_LOG)"; \
-		echo "  窗口就绪后即显示桌宠；依赖后端 :$(BACKEND_PORT)（未启动请先 make backend）"; \
+		echo "✔ AI 数字人壳已启动 (PID $$(cat $(SHELL_PID)))，日志 $(SHELL_LOG)"; \
+		echo "  窗口就绪后即显示AI 数字人；依赖后端 :$(BACKEND_PORT)（未启动请先 make backend）"; \
 	fi
 
 # ---- web 模式（调试形态，浏览器调试用） ----
@@ -99,15 +99,15 @@ frontend:
 	fi
 
 stop:
-	@echo "== 停止桌宠壳 =="
+	@echo "== 停止AI 数字人壳 =="
 	@if [ -f $(SHELL_PID) ]; then \
 		SPID=$$(cat $(SHELL_PID)); \
-		if kill -0 $$SPID 2>/dev/null; then kill $$SPID 2>/dev/null || true; echo "  已终止桌宠启动进程 (PID $$SPID)"; fi; \
+		if kill -0 $$SPID 2>/dev/null; then kill $$SPID 2>/dev/null || true; echo "  已终止AI 数字人启动进程 (PID $$SPID)"; fi; \
 		rm -f $(SHELL_PID); \
 	fi
-	@if pgrep -f "shells/myspy/node_modules/electron" >/dev/null 2>&1; then \
-		pkill -f "shells/myspy/node_modules/electron" 2>/dev/null || true; \
-		echo "  已终止桌宠壳 (Electron)"; \
+	@if pgrep -f "shells/nuomi-avatar/node_modules/electron" >/dev/null 2>&1; then \
+		pkill -f "shells/nuomi-avatar/node_modules/electron" 2>/dev/null || true; \
+		echo "  已终止AI 数字人壳 (Electron)"; \
 	fi
 	@echo "== 停止 web 模式 =="
 	@if [ -f $(BACKEND_PID) ]; then \
@@ -135,7 +135,7 @@ restart: stop start
 
 status:
 	@echo "== 糯米 Nuomi 运行状态 =="
-	@if pgrep -f "shells/myspy/node_modules/electron" >/dev/null 2>&1; then echo "  桌宠壳     运行中 (Electron)"; else echo "  桌宠壳     未运行"; fi
+	@if pgrep -f "shells/nuomi-avatar/node_modules/electron" >/dev/null 2>&1; then echo "  AI 数字人壳     运行中 (Electron)"; else echo "  AI 数字人壳     未运行"; fi
 	@if [ -f $(BACKEND_PID) ] && kill -0 $$(cat $(BACKEND_PID)) 2>/dev/null; then echo "  web 后端   运行中 (PID $$(cat $(BACKEND_PID)))"; else echo "  web 后端   未运行"; fi
 	@if [ -f $(FRONTEND_PID) ] && kill -0 $$(cat $(FRONTEND_PID)) 2>/dev/null; then echo "  web 前端   运行中 (PID $$(cat $(FRONTEND_PID)))"; else echo "  web 前端   未运行"; fi
 	@echo "  端口监听:"
@@ -143,7 +143,7 @@ status:
 	@lsof -nP -iTCP:$(FRONTEND_PORT) -sTCP:LISTEN 2>/dev/null | tail -n +1 || true
 
 logs:
-	@echo "===== 桌宠壳日志 ($(SHELL_LOG)) ====="
+	@echo "===== AI 数字人壳日志 ($(SHELL_LOG)) ====="
 	@tail -n 30 $(SHELL_LOG) 2>/dev/null || echo "(暂无日志)"
 	@echo ""
 	@echo "===== 后端日志 ($(BACKEND_LOG)) ====="

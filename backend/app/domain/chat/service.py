@@ -2,8 +2,8 @@
 
 核心语义（一个 thread_id 逻辑）：
 - 控制台读写状态文件（`thread_id` = 当前会话，`threads` = 会话列表）
-- 会话即真实对话线程；无「default 桌宠会话」、无「模型专属会话」（2026-10-04 起，
-  桌宠=纯表现层，拦截对话工具调用播放动作，与会话解耦）
+- 会话即真实对话线程；无「default AI 数字人会话」、无「模型专属会话」（2026-10-04 起，
+  AI 数字人=纯表现层，拦截对话工具调用播放动作，与会话解耦）
 - 切模型不换会话；删空会话后 current 为 None
 
 2026-10-04：会话状态从壳 config.json（nuomi.*）迁出到工作区 nuomi-state.json；
@@ -43,7 +43,7 @@ class ChatSessionService:
     def state(self, agent_id: str) -> dict:
         """返回某专家的当前会话与会话列表（threads 按 agent 过滤）。
 
-        会话列表即真实会话；无「default 桌宠会话」合成（2026-10-04 起）。
+        会话列表即真实会话；无「default AI 数字人会话」合成（2026-10-04 起）。
         current 若不在该 agent 列表中（切换过 agent）→ 归位最近会话；无会话为 None。
         """
         cfg = self._read()

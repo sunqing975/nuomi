@@ -1,8 +1,7 @@
-"""桌宠模型资产管理（表现层资产，由后端统一管理）。
+"""AI 数字人模型资产管理（表现层资产，由后端统一管理）。
 
-- 模型目录：工作区 models/2D/<model_id>/<xxx>.model3.json（2026-10-04 起，资产迁出壳仓库）
-- 内置种子：仓库 assets/models/2D/<id>/（可分发内置模型；扫描时幂等播种到工作区）
-- 元数据：读 model3.json 的 FileReferences.Motions/Expressions 提取动作与表情名
+- 模型目录：工作区 models/3D/<id>.vrm（VRM 单文件模型，2026-10-04 起只支持 3D）
+- 动作动画：壳 assets/animations/*.vrma（Mixamo FBX 转换产物，自动扫描）
 - 切换：更新壳 config.json 的 ui.model / ui.model_path（壳 watch 后自动重载）
 - 会话状态：nuomi.* 已迁出壳 config → 工作区 nuomi-state.json（见 chat.service）
 """
@@ -12,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import shutil
+import subprocess
 from pathlib import Path
 
 from app.config import REPO_ROOT, settings
@@ -19,8 +19,10 @@ from app.config import REPO_ROOT, settings
 logger = logging.getLogger(__name__)
 
 MODEL_DIR_3D = settings.workspace_path / "models" / "3D"
-SHELL_CONFIG = REPO_ROOT / "shells" / "myspy" / "config.json"
+SHELL_CONFIG = REPO_ROOT / "shells" / "nuomi-avatar" / "config.json"
 STATE_FILE = settings.workspace_path / "nuomi-state.json"
+SHELL_ANIM_DIR = REPO_ROOT / "shells" / "nuomi-avatar" / "assets" / "animations"
+FBX2VRMA_DIR = REPO_ROOT / "shells" / "nuomi-avatar" / "tools" / "fbx2vrma"
 
 
 def _load_json(path: Path) -> dict:
@@ -57,35 +59,35 @@ def get_active_model() -> str | None:
     return (cfg.get("ui") or {}).get("model")
 
 
-def get_pet_enabled() -> bool:
-    """读取桌宠开关（壳 config.json ui.pet_enabled，缺省开）。
+def get_avatar_enabled() -> bool:
+    """读取AI 数字人开关（壳 config.json ui.avatar_enabled，缺省开）。
 
-    壳 main.js 启动时据此决定是否创建桌宠窗口；watch config 变化时
+    壳 main.js 启动时据此决定是否创建AI 数字人窗口；watch config 变化时
     据其创建/销毁窗口。控制台「模型」页的开关读写此字段。
     """
     cfg = _load_json(SHELL_CONFIG)
-    return (cfg.get("ui") or {}).get("pet_enabled", True)
+    return (cfg.get("ui") or {}).get("avatar_enabled", True)
 
 
-def set_pet_enabled(enabled: bool) -> bool:
-    """写桌宠开关到壳 config.json（壳 watch 后创建/销毁桌宠窗口）。"""
+def set_avatar_enabled(enabled: bool) -> bool:
+    """写AI 数字人开关到壳 config.json（壳 watch 后创建/销毁AI 数字人窗口）。"""
     cfg = _load_json(SHELL_CONFIG)
     ui = cfg.setdefault("ui", {})
-    ui["pet_enabled"] = bool(enabled)
+    ui["avatar_enabled"] = bool(enabled)
     SHELL_CONFIG.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
-    return ui["pet_enabled"]
+    return ui["avatar_enabled"]
 
 
 def get_shell_agent_id() -> str | None:
-    """桌宠对话绑定的 agent（工作区 nuomi-state.json 的 agent_id），用于联动插件激活。"""
+    """AI 数字人对话绑定的 agent（工作区 nuomi-state.json 的 agent_id），用于联动插件激活。"""
     cfg = _load_json(STATE_FILE)
     return cfg.get("agent_id")
 
 
 def switch_model(model_id: str) -> dict:
-    """切换桌宠模型：更新壳 config.json 的 ui.model / ui.model_path。
+    """切换AI 数字人模型：更新壳 config.json 的 ui.model / ui.model_path。
 
-    2026-10-04 起**不换会话**：桌宠=纯表现层，切换仅影响形象与插件工具集，
+    2026-10-04 起**不换会话**：AI 数字人=纯表现层，切换仅影响形象与插件工具集，
     当前对话线程保持不变。
     """
     target = next((m for m in list_models() if m["id"] == model_id), None)
@@ -103,8 +105,7 @@ def switch_model(model_id: str) -> dict:
 
 # ==================== 方案B：共享 VRM 动态工具元数据 ====================
 
-VRM_PET_PLUGIN_ID = "vrm-pet"
-SHELL_ANIM_DIR = REPO_ROOT / "shells" / "myspy" / "assets" / "animations"
+VRM_AVATAR_PLUGIN_ID = "vrm-avatar"
 
 # VRM 标准表情 preset 中文标签（动态 enum 的 label 来源；模型实际拥有的由 GLB 枚举）
 EXPRESSION_LABELS: dict[str, str] = {
@@ -248,7 +249,7 @@ def _vrm_expr_name(g: dict) -> str:
     return _EXPRESSION_ALIASES.get(name, name)
 
 
-def list_pet_actions() -> list[dict]:
+def list_avatar_actions() -> list[dict]:
     """动作清单：内置预设（手写兜底）+ assets/animations/*.vrma（VRMA 覆盖）。
 
     返回 [{"name", "label_zh", "has_vrma"}]，按 name 排序。
@@ -264,7 +265,7 @@ def list_pet_actions() -> list[dict]:
     return list(out.values())
 
 
-def list_pet_expressions() -> list[dict]:
+def list_avatar_expressions() -> list[dict]:
     """当前激活 VRM 模型的 blend shape 清单 + 中文标签。"""
     active = get_active_model()
     if not active:
@@ -276,25 +277,25 @@ def list_pet_expressions() -> list[dict]:
     return [{"name": n, "label_zh": _expression_zh(n)} for n in names]
 
 
-def ensure_vrm_pet_plugin() -> None:
+def ensure_vrm_avatar_plugin() -> None:
     """确保共享 VRM 插件目录存在（plugin.yaml + 空 main.py + instructions.md）。
 
     工具不在插件静态注册——由 PluginService.tools() 装配时按当前模型/动画动态构造。
     """
-    plugin_dir = settings.workspace_path / "plugins" / VRM_PET_PLUGIN_ID
+    plugin_dir = settings.workspace_path / "plugins" / VRM_AVATAR_PLUGIN_ID
     plugin_dir.mkdir(parents=True, exist_ok=True)
     yaml = (
-        f"id: {VRM_PET_PLUGIN_ID}\n"
+        f"id: {VRM_AVATAR_PLUGIN_ID}\n"
         "version: 1.0.0\n"
-        "name: 桌宠动作\n"
+        "name: AI 数字人动作\n"
         "kind: tool\n"
-        "description: 所有 VRM 桌宠共用的动作与表情工具（装配时按当前模型动态生成工具清单）。"
-        "启用/停用跟随桌宠开关。\n"
+        "description: 所有 VRM AI 数字人共用的动作与表情工具（装配时按当前模型动态生成工具清单）。"
+        "启用/停用跟随AI 数字人开关。\n"
         "entry: main.py\n"
     )
     (plugin_dir / "plugin.yaml").write_text(yaml, encoding="utf-8")
     main_py = (
-        '"""共享 VRM 桌宠插件（自动生成）：工具由 PluginService.tools() 装配时动态构造。"""\n'
+        '"""共享 VRM AI 数字人插件（自动生成）：工具由 PluginService.tools() 装配时动态构造。"""\n'
         "from __future__ import annotations\n\n"
         "def setup(ctx) -> None:\n"
         '    """动态工具不走插件静态注册；保留空入口以便 PluginRegistry 加载。"""\n'
@@ -302,7 +303,7 @@ def ensure_vrm_pet_plugin() -> None:
     )
     (plugin_dir / "main.py").write_text(main_py, encoding="utf-8")
     instructions = (
-        "你有一个桌宠身体（VRM 3D 形象），对话时要主动调用工具让自己动起来，不要只靠文字和 emoji。\n\n"
+        "你有一个AI 数字人身体（VRM 3D 形象），对话时要主动调用工具让自己动起来，不要只靠文字和 emoji。\n\n"
         "可用工具：\n"
         "- do_action：让身体做出一个动作（挥手/点头/跳舞等，参数 action 从可用列表选）\n"
         "- set_expression：切换面部表情（开心/生气/难过等，参数 expression 从可用列表选）\n\n"
@@ -316,21 +317,21 @@ def ensure_vrm_pet_plugin() -> None:
 
 
 def _action_label(name: str) -> str:
-    for a in list_pet_actions():
+    for a in list_avatar_actions():
         if a["name"] == name:
             return a["label_zh"]
     return name
 
 
 def _expression_label(name: str) -> str:
-    for e in list_pet_expressions():
+    for e in list_avatar_expressions():
         if e["name"] == name:
             return e["label_zh"]
     return name
 
 
 def delete_model(model_id: str) -> dict:
-    """删除桌宠模型：资产目录 → config 联动（方案B：无每模型插件可级联）。
+    """删除AI 数字人模型：资产目录 → config 联动（方案B：无每模型插件可级联）。
 
     级联顺序：
     1. 删模型资产目录（工作区 models/3D/<id>.vrm 或 models/2D/<id>/，2D 已下线）
@@ -371,32 +372,32 @@ def delete_model(model_id: str) -> dict:
     return {"id": model_id, "was_active": was_active}
 
 
-def ensure_pet_plugins() -> dict:
-    """方案B：桌宠只有一个共享 VRM 插件（vrm-pet），工具装配时动态构造。
+def ensure_avatar_plugins() -> dict:
+    """方案B：AI 数字人只有一个共享 VRM 插件（vrm-avatar），工具装配时动态构造。
 
     不再按模型生成插件（旧 generate_model_plugin/_generate_semantic_plugin 已删）。
     """
-    ensure_vrm_pet_plugin()
-    return {"ok": True, "plugin": VRM_PET_PLUGIN_ID}
+    ensure_vrm_avatar_plugin()
+    return {"ok": True, "plugin": VRM_AVATAR_PLUGIN_ID}
 
 
-def load_pet_instructions() -> str:
-    """读共享 VRM 插件（vrm-pet）的 instructions.md（身体使用说明）。
+def load_avatar_instructions() -> str:
+    """读共享 VRM 插件（vrm-avatar）的 instructions.md（身体使用说明）。
 
     拼到 system_prompt 后面，让 LLM 知道"你有身体要主动做动作"。
     插件未启用 / 无 instructions.md 时返回空字符串。
     """
-    ensure_vrm_pet_plugin()
+    ensure_vrm_avatar_plugin()
     # 检查插件是否启用
     from app.storage import db
 
     with db.connect() as conn:
         row = conn.execute(
-            "SELECT enabled FROM plugins WHERE plugin_id=?", (VRM_PET_PLUGIN_ID,)
+            "SELECT enabled FROM plugins WHERE plugin_id=?", (VRM_AVATAR_PLUGIN_ID,)
         ).fetchone()
     if not row or not row["enabled"]:
         return ""
-    instructions_path = settings.workspace_path / "plugins" / VRM_PET_PLUGIN_ID / "instructions.md"
+    instructions_path = settings.workspace_path / "plugins" / VRM_AVATAR_PLUGIN_ID / "instructions.md"
     if not instructions_path.is_file():
         return ""
     try:
@@ -422,14 +423,14 @@ def enrich_model(model_id: str) -> dict:
         return _enrich_vrm(model_id, model_path)
     return {"ok": False, "error": f"模型不存在或不是 VRM 3D 模型: {model_id}"}
 def _enrich_vrm(model_id: str, vrm_path: Path) -> dict:
-    """VRM 模型：确保共享桌宠插件就绪，返回模型实际可用清单。
+    """VRM 模型：确保共享AI 数字人插件就绪，返回模型实际可用清单。
 
     方案B：动作/表情工具由 PluginService.tools() 装配时按当前模型动态构造，
     这里只保证共享插件存在并返回清单（供接口/前端展示）。
     """
-    ensure_vrm_pet_plugin()
+    ensure_vrm_avatar_plugin()
     expressions = list_vrm_expressions(vrm_path)
-    actions = [a["name"] for a in list_pet_actions()]
+    actions = [a["name"] for a in list_avatar_actions()]
     logger.info(
         "enrich_vrm %s done: %d expressions, %d actions",
         model_id, len(expressions), len(actions),
@@ -442,3 +443,75 @@ def _enrich_vrm(model_id: str, vrm_path: Path) -> dict:
         "expressions_list": expressions,
         "actions_list": actions,
     }
+
+
+# ==================== 导入与预览（2026-10-04 新增） ====================
+
+
+def import_vrm(file_bytes: bytes, filename: str) -> dict:
+    """导入 VRM 模型：写入工作区 models/3D/，返回最新模型清单。"""
+    if not filename.lower().endswith(".vrm"):
+        raise ValueError("仅支持 .vrm 文件")
+    safe_name = Path(filename).stem
+    MODEL_DIR_3D.mkdir(parents=True, exist_ok=True)
+    target = MODEL_DIR_3D / f"{safe_name}.vrm"
+    target.write_bytes(file_bytes)
+    logger.info("import_vrm -> %s (%d bytes)", target, len(file_bytes))
+    return {"ok": True, "model_id": safe_name, "path": str(target), "models": list_models()}
+
+
+def import_animation_fbx(file_bytes: bytes, filename: str) -> dict:
+    """导入 Mixamo FBX 动作：调 fbx2vrma 工具链转 .vrma，产出到壳 assets/animations/。
+
+    - 校验：.fbx 扩展名；转换产物文件名 = FBX 名去扩展名（与壳扫描一致）
+    - 转换：node fbx2vrma-converter.js -i <fbx> -o <vrma>（cwd = tools/fbx2vrma）
+    - 壳已 watch assets/animations 目录，新 .vrma 自动注册（无需重启）
+    """
+    if not filename.lower().endswith(".fbx"):
+        raise ValueError("仅支持 .fbx 文件")
+    anim_name = Path(filename).stem
+    if not anim_name:
+        raise ValueError("文件名不能为空")
+    if not FBX2VRMA_DIR.is_dir():
+        raise FileNotFoundError(f"FBX→VRMA 工具链不存在: {FBX2VRMA_DIR}")
+
+    # 临时 fbx（工具链目录内，避免跨盘/权限问题）
+    tmp_fbx = FBX2VRMA_DIR / f"__import_{anim_name}.fbx"
+    tmp_fbx.write_bytes(file_bytes)
+
+    SHELL_ANIM_DIR.mkdir(parents=True, exist_ok=True)
+    out_vrma = SHELL_ANIM_DIR / f"{anim_name}.vrma"
+
+    converter = FBX2VRMA_DIR / "node_modules" / "fbx2vrma-converter" / "fbx2vrma-converter.js"
+    if not converter.is_file():
+        tmp_fbx.unlink(missing_ok=True)
+        raise FileNotFoundError(f"转换脚本缺失: {converter}")
+    try:
+        result = subprocess.run(
+            ["node", str(converter), "-i", str(tmp_fbx), "-o", str(out_vrma)],
+            cwd=str(FBX2VRMA_DIR),
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+    except subprocess.TimeoutExpired:
+        tmp_fbx.unlink(missing_ok=True)
+        raise TimeoutError("FBX 转换超时（180s）") from None
+    finally:
+        tmp_fbx.unlink(missing_ok=True)
+
+    if result.returncode != 0 or not out_vrma.is_file():
+        logger.error("fbx2vrma 失败: %s", result.stderr[-800:])
+        raise RuntimeError(f"FBX 转换失败: {result.stderr[-300:] or '未知错误'}") from None
+    logger.info("import_animation_fbx -> %s (%d bytes)", out_vrma, out_vrma.stat().st_size)
+    return {"ok": True, "action": anim_name, "path": str(out_vrma), "actions": list_avatar_actions()}
+
+
+def preview_payload(kind: str, name: str) -> dict:
+    """构造预览播放 payload（与动态工具 do_action/set_expression 同构，SSE 广播给壳）。"""
+    kind = (kind or "").lower()
+    if kind == "action":
+        return {"motion": name, "expressions": [], "label": _action_label(name)}
+    if kind == "expression":
+        return {"motion": None, "expressions": [name], "label": _expression_label(name)}
+    raise ValueError(f"未知预览类型: {kind}（仅 action / expression）")

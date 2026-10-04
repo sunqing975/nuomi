@@ -1,4 +1,4 @@
-"""OpenAI 兼容端点：/api/v1/chat/completions（桌宠 myspy 零改动接入）。
+"""OpenAI 兼容端点：/api/v1/chat/completions（AI 数字人壳（nuomi-avatar）零改动接入）。
 
 协议：标准 OpenAI Chat Completions（stream: true 输出 SSE delta，data: [DONE] 结束）。
 - model：默认专家；传 "agent:<agent_id>" 指定专家

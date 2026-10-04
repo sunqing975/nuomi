@@ -123,7 +123,7 @@ export interface WorkspaceOverview {
   counts: Record<string, number>;
 }
 
-export interface PetModel {
+export interface AvatarModel {
   id: string;
   path: string;
   motions: string[];
@@ -131,8 +131,8 @@ export interface PetModel {
   builtin: boolean;
 }
 
-export interface PetModelsResponse {
-  models: PetModel[];
+export interface AvatarModelsResponse {
+  models: AvatarModel[];
   active: string | null;
 }
 

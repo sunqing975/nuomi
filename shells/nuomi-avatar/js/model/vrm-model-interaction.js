@@ -215,13 +215,14 @@ class VRMInteractionController {
                 return;
             }
 
-            // 右键拖拽：旋转摄像头
+            // 右键拖拽：旋转摄像头（提高灵敏度，3D 观感；拖拽后暂停自转 8s）
             if (isRightDragging) {
                 const dx = e.clientX - rightDragStart.x;
                 const dy = e.clientY - rightDragStart.y;
-                model._orbitTheta -= dx * 0.005;
-                model._orbitPhi += dy * 0.005;
+                model._orbitTheta -= dx * 0.012;
+                model._orbitPhi += dy * 0.012;
                 model._orbitPhi = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, model._orbitPhi));
+                model._autoRotatePausedUntil = Date.now() + 8000;
                 rightDragStart.x = e.clientX;
                 rightDragStart.y = e.clientY;
                 return;

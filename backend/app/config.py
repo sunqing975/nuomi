@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     # --- 单一数据根（NUOMI_HOME；不设置则用默认用户应用数据目录） ---
     nuomi_home: str | None = None
 
-    # --- CORS（桌宠前端 dev） ---
+    # --- CORS（AI 数字人前端 dev） ---
     cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
     # --- 连接器（MCP 协议，langchain-mcp-adapters 连接格式；JSON env NUOMI_CONNECTORS） ---

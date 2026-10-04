@@ -26,6 +26,9 @@ class VRMModelSetup {
         renderer.setPixelRatio(window.devicePixelRatio);
         renderer.setClearColor(0x000000, 0); // 完全透明背景
         renderer.outputColorSpace = THREE.SRGBColorSpace;
+        // 阴影：增强 3D 立体感（消除"2D 立绘"观感）
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
         // 创建场景
         const scene = new THREE.Scene();
@@ -41,12 +44,27 @@ class VRMModelSetup {
         camera.lookAt(0, 1.0, 0);
 
         // 添加灯光
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.75);
         scene.add(ambientLight);
 
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-        directionalLight.position.set(1.0, 1.5, 1.0);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.1);
+        directionalLight.position.set(1.2, 1.8, 1.4);
+        // 主光投阴影
+        directionalLight.castShadow = true;
+        directionalLight.shadow.mapSize.set(1024, 1024);
+        directionalLight.shadow.camera.near = 0.1;
+        directionalLight.shadow.camera.far = 10;
+        directionalLight.shadow.camera.left = -2;
+        directionalLight.shadow.camera.right = 2;
+        directionalLight.shadow.camera.top = 2;
+        directionalLight.shadow.camera.bottom = -2;
+        directionalLight.shadow.bias = -0.001;
         scene.add(directionalLight);
+
+        // 补光（侧面暖色，强化体积感）
+        const fillLight = new THREE.DirectionalLight(0xffd9b3, 0.35);
+        fillLight.position.set(-1.5, 0.6, -1.0);
+        scene.add(fillLight);
 
         // 加载VRM模型
         const modelPath = config.ui?.model_path || '3D/Sample_A.vrm';
@@ -69,6 +87,14 @@ class VRMModelSetup {
         vrmGroup.add(vrm.scene);
         scene.add(vrmGroup);
 
+        // 模型投射/接收阴影（增强立体感）
+        vrmGroup.traverse((obj) => {
+            if (obj.isMesh) {
+                obj.castShadow = true;
+                obj.receiveShadow = true;
+            }
+        });
+
 
         // 创建VRM适配器（提供与Live2D模型兼容的接口）
         const model = new VRMModelAdapter(vrm, scene, camera, renderer, canvas);
@@ -90,6 +116,27 @@ class VRMModelSetup {
             }
         } catch (e) {
             console.warn('[VRM动画] 扫描 assets/animations 失败:', e.message);
+        }
+
+        // watch assets/animations 目录：新增 .vrma（后端导入 FBX 转换产物）→ 动态注册，无需重启
+        try {
+            const animDir = path.join(__dirname, '..', '..', 'assets', 'animations');
+            if (fs.existsSync(animDir)) {
+                fs.watch(animDir, (eventType, filename) => {
+                    if (!filename || !filename.endsWith('.vrma')) return;
+                    if (model.animations && model.animations[path.basename(filename, '.vrma')]) return; // 已注册
+                    const animName = path.basename(filename, '.vrma');
+                    const relPath = path.join('assets', 'animations', filename);
+                    model.loadVRMA(animName, relPath).then(() => {
+                        console.log(`[VRM动画] watch 新动作注册成功: ${animName}`);
+                    }).catch((err) => {
+                        console.warn(`[VRM动画] watch 注册失败: ${filename}`, err.message);
+                    });
+                });
+                console.log('[VRM动画] 已监听 assets/animations 目录（导入 FBX 自动注册）');
+            }
+        } catch (e) {
+            console.warn('[VRM动画] watch assets/animations 失败:', e.message);
         }
 
         // 根据配置控制模型显示/隐藏
@@ -153,6 +200,7 @@ class VRMModelSetup {
         renderer.autoClear = false;
         const clock = new THREE.Clock();
         let _frameCount = 0;
+        let _hoveringCanvas = false; // 鼠标悬停时暂停自转（便于观察/操作）
         function animate() {
             requestAnimationFrame(animate);
             const delta = clock.getDelta();
@@ -169,12 +217,20 @@ class VRMModelSetup {
             renderer.setViewport(vr.x, vpY, vr.width, vr.height);
             renderer.setScissor(vr.x, vpY, vr.width, vr.height);
             renderer.setScissorTest(true);
+            // 缓慢自转（3D 观感；右键拖拽后暂停 8s，鼠标悬停时暂停）
+            if (Date.now() > (model._autoRotatePausedUntil || 0) && !_hoveringCanvas) {
+                model._orbitTheta += delta * 0.1;
+            }
             model.updateCameraOrbit();
             camera.aspect = vr.width / vr.height;
             camera.updateProjectionMatrix();
             renderer.render(scene, camera);
         }
         animate();
+
+        // 鼠标悬停暂停自转标志由 _hoveringCanvas 控制（事件绑定）
+        canvas.addEventListener('mouseenter', () => { _hoveringCanvas = true; });
+        canvas.addEventListener('mouseleave', () => { _hoveringCanvas = false; });
 
         // 注意：窗口大小变化由model-interaction.js中的_setupWindowResize处理
 

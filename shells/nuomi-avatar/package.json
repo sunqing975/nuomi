@@ -1,7 +1,7 @@
 {
-  "name": "nuomi-pet",
+  "name": "nuomi-avatar",
   "version": "1.0.0",
-  "description": "糯米 AI 桌宠表现层（基于 myspy, MIT）",
+  "description": "糯米 AI 数字人表现层（nuomi-avatar，Electron + three.js VRM）",
   "main": "main.js",
   "scripts": {
     "start": "electron ."

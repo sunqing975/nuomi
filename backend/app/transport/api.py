@@ -1,11 +1,11 @@
 """API 路由：健康检查 + Agent 生命周期 + SSE 流式对话 + 会话管理。
 
-对话协议（桌宠前端/控制台消费）：
+对话协议（AI 数字人前端/控制台消费）：
     POST /api/agents/{agent_id}/chat   body={"messages": "...", "thread_id": "..."}
     → OpenAI Chat Completions 流式格式（delta.content / delta.tool_calls / [DONE]）
 
 会话：以工作区 nuomi-state.json 为权威（thread_id / threads，2026-10-04 起，
-无 default 桌宠线程、无模型专属会话；桌宠=纯表现层，拦截工具调用播放动作）。
+无 default AI 数字人线程、无模型专属会话；AI 数字人=纯表现层，拦截工具调用播放动作）。
 """
 
 from __future__ import annotations
@@ -30,9 +30,9 @@ from app.domain.plugins.service import plugin_service
 from app.domain.skillpackages.service import skill_package_service
 from app.domain.skills.service import skill_service
 from app.infra import env_store, skillhub
+from app.infra.avatar_events import avatar_events
 from app.infra.harness.chat import stream_chat, stream_octop_sse
 from app.infra.harness.manager import manager
-from app.infra.pet_events import pet_events
 from app.storage import db
 
 router = APIRouter(prefix="/api", tags=["chat"])
@@ -81,7 +81,7 @@ def _validate_knowledge_base_ids(ids: list[str] | None) -> None:
 def ensure_agent_runtime(agent_row: dict):
     """统一构造/获取某专家的 HarnessAgent 运行时实例。
 
-    所有端点（控制台对话 / 历史加载 / 桌宠壳 OpenAI 兼容）必须经此入口，
+    所有端点（控制台对话 / 历史加载 / AI 数字人壳 OpenAI 兼容）必须经此入口，
     禁止各自调 manager.get_agent 传残缺参数。原因：manager 按 agent_id 单例缓存，
     构造参数（workspace_dir / 插件工具 / 技能目录 / MCP）只在首次构造时生效；
     若历史端点先到（页面加载自动拉历史）而漏传 workspace_dir，会把「全局根
@@ -220,16 +220,16 @@ async def delete_chat_thread(agent_id: str, thread_id: str) -> dict:
     return {"ok": True}
 
 
-def _resolve_pet_action(tool_name: str, args: str = "") -> dict | None:
-    """根据工具名 + 参数解析桌宠播放 payload（方案B 动态工具）。
+def _resolve_avatar_action(tool_name: str, args: str = "") -> dict | None:
+    """根据工具名 + 参数解析AI 数字人播放 payload（方案B 动态工具）。
 
     - do_action：args.action → {"motion": action, "expressions": [], "label"}
     - set_expression：args.expression → {"motion": None, "expressions": [expression], "label"}
-    返回 None 表示该工具不是桌宠动作工具（不广播给壳）。
+    返回 None 表示该工具不是AI 数字人动作工具（不广播给壳）。
     """
     import json as _json
 
-    from app.domain.pet.service import _action_label, _expression_label
+    from app.domain.avatar.service import _action_label, _expression_label
 
     if tool_name not in ("do_action", "set_expression"):
         return None
@@ -249,22 +249,22 @@ def _resolve_pet_action(tool_name: str, args: str = "") -> dict | None:
 
 
 async def _publish_actions(events):
-    """转发内部事件流，并把工具调用（动作/表情）广播给桌宠壳。"""
+    """转发内部事件流，并把工具调用（动作/表情）广播给AI 数字人壳。"""
     async for ev in events:
         if ev.get("type") == "tool_call" and ev.get("name"):
-            payload = _resolve_pet_action(ev["name"], ev.get("args") or "")
+            payload = _resolve_avatar_action(ev["name"], ev.get("args") or "")
             if payload:
-                pet_events.publish(payload)
-                pet_events.publish_status("working")
+                avatar_events.publish(payload)
+                avatar_events.publish_status("working")
         yield ev
 
 
-@router.get("/pet/events")
-async def pet_events_sse(request: Request) -> StreamingResponse:
-    """桌宠动作事件流（SSE 长连接）：任意对话产生的工具调用实时广播。"""
+@router.get("/avatar/events")
+async def avatar_events_sse(request: Request) -> StreamingResponse:
+    """AI 数字人动作事件流（SSE 长连接）：任意对话产生的工具调用实时广播。"""
 
     async def gen():
-        async for ev in pet_events.stream():
+        async for ev in avatar_events.stream():
             if await request.is_disconnected():
                 break
             yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
@@ -364,16 +364,16 @@ async def chat(agent_id: str, body: ChatBody, request: Request) -> StreamingResp
 
     async def gen():
         tools = plugin_service.tools()
-        # 桌宠插件启用时，自动拼入身体使用说明（不污染专家人设）
-        from app.domain.pet.service import load_pet_instructions
+        # AI 数字人插件启用时，自动拼入身体使用说明（不污染专家人设）
+        from app.domain.avatar.service import load_avatar_instructions
 
         system_prompt = agent_row["system_prompt"] or ""
-        pet_instructions = load_pet_instructions()
-        if pet_instructions:
-            system_prompt = system_prompt.rstrip() + "\n\n" + pet_instructions
+        avatar_instructions = load_avatar_instructions()
+        if avatar_instructions:
+            system_prompt = system_prompt.rstrip() + "\n\n" + avatar_instructions
 
         # 推状态：LLM 开始思考
-        pet_events.publish_status("thinking")
+        avatar_events.publish_status("thinking")
 
         try:
             async for frame in stream_octop_sse(
@@ -403,7 +403,7 @@ async def chat(agent_id: str, body: ChatBody, request: Request) -> StreamingResp
                 yield frame
         finally:
             # 推状态：回复结束，恢复 idle
-            pet_events.publish_status("idle")
+            avatar_events.publish_status("idle")
 
     return StreamingResponse(
         gen(),
@@ -1057,49 +1057,54 @@ async def workspace_overview() -> dict:
     }
 
 
-# ---------- 桌宠模型（表现层资产） ----------
+# ---------- AI 数字人模型（表现层资产） ----------
 
 
-class PetModelSwitchBody(BaseModel):
+class AvatarModelSwitchBody(BaseModel):
     model_id: str = Field(description="模型 id（工作区 models/2D/ 下的目录名）")
 
 
-@router.get("/pet/models")
-async def list_pet_models() -> dict:
+@router.get("/avatar/models")
+async def list_avatar_models() -> dict:
     """模型资产列表：每个模型的动作/表情清单 + 当前激活模型。"""
-    from app.domain.pet.service import get_active_model, list_models
+    from app.domain.avatar.service import get_active_model, list_models
 
     return {"models": list_models(), "active": get_active_model()}
 
 
-@router.get("/pet/status")
-async def get_pet_status() -> dict:
-    """桌宠开关状态（壳 config.json ui.pet_enabled）。"""
-    from app.domain.pet.service import get_pet_enabled
+@router.get("/avatar/status")
+async def get_avatar_status() -> dict:
+    """AI 数字人开关状态（壳 config.json ui.avatar_enabled）。"""
+    from app.domain.avatar.service import get_avatar_enabled
 
-    return {"enabled": get_pet_enabled()}
-
-
-class PetStatusBody(BaseModel):
-    enabled: bool = Field(description="桌宠开关：true=开（创建桌宠窗口），false=关（销毁窗口）")
+    return {"enabled": get_avatar_enabled()}
 
 
-@router.put("/pet/status")
-async def set_pet_status(body: PetStatusBody) -> dict:
-    """设置桌宠开关：写壳 config.json ui.pet_enabled + 共享 VRM 插件联动。
+class AvatarStatusBody(BaseModel):
+    enabled: bool = Field(description="AI 数字人开关：true=开（创建AI 数字人窗口），false=关（销毁窗口）")
 
-    方案B（2026-10-04）：只有一个共享桌宠插件 vrm-pet——
+
+class AvatarPreviewBody(BaseModel):
+    kind: str = Field(description="预览类型：action=动作，expression=表情")
+    name: str = Field(description="动作名 / 表情名（当前激活模型的清单内）")
+
+
+@router.put("/avatar/status")
+async def set_avatar_status(body: AvatarStatusBody) -> dict:
+    """设置AI 数字人开关：写壳 config.json ui.avatar_enabled + 共享 VRM 插件联动。
+
+    方案B（2026-10-04）：只有一个共享AI 数字人插件 vrm-avatar——
     关闭 → 停用（动作/表情工具不再进 LLM 工具集）；开启 → 启用。
     工具随插件启停装配；释放 shell agent 实例，下次对话重建。
     """
-    from app.domain.pet.service import (
-        VRM_PET_PLUGIN_ID,
+    from app.domain.avatar.service import (
+        VRM_AVATAR_PLUGIN_ID,
         get_shell_agent_id,
-        set_pet_enabled,
+        set_avatar_enabled,
     )
 
-    enabled = set_pet_enabled(body.enabled)
-    plugin_service.set_enabled(VRM_PET_PLUGIN_ID, enabled)
+    enabled = set_avatar_enabled(body.enabled)
+    plugin_service.set_enabled(VRM_AVATAR_PLUGIN_ID, enabled)
     agent_id = get_shell_agent_id()
     if agent_id:
         # 工具集随插件启停变化：释放 agent 实例，下次对话重建
@@ -1107,19 +1112,19 @@ async def set_pet_status(body: PetStatusBody) -> dict:
     return {
         "enabled": enabled,
         "agent_id": agent_id,
-        "activated_plugin": VRM_PET_PLUGIN_ID if enabled else None,
+        "activated_plugin": VRM_AVATAR_PLUGIN_ID if enabled else None,
     }
 
 
-@router.post("/pet/models/switch")
-async def switch_pet_model(body: PetModelSwitchBody) -> dict:
-    """切换桌宠模型：更新壳 config.json（方案B：不碰插件启停）。
+@router.post("/avatar/models/switch")
+async def switch_avatar_model(body: AvatarModelSwitchBody) -> dict:
+    """切换AI 数字人模型：更新壳 config.json（方案B：不碰插件启停）。
 
     工具动态化：do_action/set_expression 的 enum 按当前激活模型 GLB 与
     animations/*.vrma 实时装配（PluginService.tools()），切模型后释放
     shell agent 实例，下次对话重建即携带新模型的动态工具。
     """
-    from app.domain.pet.service import (
+    from app.domain.avatar.service import (
         get_shell_agent_id,
         switch_model,
     )
@@ -1142,13 +1147,13 @@ async def switch_pet_model(body: PetModelSwitchBody) -> dict:
     }
 
 
-@router.delete("/pet/models/{model_id}")
-async def delete_pet_model(model_id: str) -> dict:
-    """删除桌宠模型：删资产目录；删除激活模型自动切到剩余模型（方案B：无插件级联）。
+@router.delete("/avatar/models/{model_id}")
+async def delete_avatar_model(model_id: str) -> dict:
+    """删除AI 数字人模型：删资产目录；删除激活模型自动切到剩余模型（方案B：无插件级联）。
 
     内置模型（种子分发）页面不提供删除入口。
     """
-    from app.domain.pet.service import delete_model
+    from app.domain.avatar.service import delete_model
 
     try:
         result = delete_model(model_id)
@@ -1156,9 +1161,51 @@ async def delete_pet_model(model_id: str) -> dict:
         raise HTTPException(status_code=404, detail=str(e)) from e
     agent_id = None
     if result["was_active"]:
-        from app.domain.pet.service import get_shell_agent_id
+        from app.domain.avatar.service import get_shell_agent_id
 
         agent_id = get_shell_agent_id()
         if agent_id:
             manager.release(agent_id)  # 激活模型已变，释放实例下次对话重建
     return {"ok": True, **result, "agent_id": agent_id}
+
+
+# ==================== AI 数字人导入与预览（2026-10-04 新增） ====================
+
+
+@router.post("/avatar/models/import")
+async def import_avatar_model(file: UploadFile = File(...)) -> dict:
+    """导入 VRM 模型：写入工作区 models/3D/，自动出现在模型清单（切模型零重启）。"""
+    from app.domain.avatar.service import import_vrm
+
+    data = await file.read()
+    try:
+        return import_vrm(data, file.filename or "")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.post("/avatar/animations/import")
+async def import_avatar_animation(file: UploadFile = File(...)) -> dict:
+    """导入 Mixamo FBX 动作：转 .vrma 进壳 assets/animations/（壳 watch 自动注册，动作工具零重启生效）。"""
+    from app.domain.avatar.service import import_animation_fbx
+
+    data = await file.read()
+    try:
+        return import_animation_fbx(data, file.filename or "")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except (FileNotFoundError, TimeoutError, RuntimeError) as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.post("/avatar/preview")
+async def avatar_preview(body: AvatarPreviewBody) -> dict:
+    """预览动作/表情：构造 payload 经 SSE 广播，数字人窗口立即播放（无需对话）。"""
+    from app.domain.avatar.service import preview_payload
+
+    try:
+        payload = preview_payload(body.kind, body.name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    avatar_events.publish(payload)
+    return {"ok": True, "payload": payload}

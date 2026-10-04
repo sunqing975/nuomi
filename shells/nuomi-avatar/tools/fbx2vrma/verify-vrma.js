@@ -1,6 +1,6 @@
 // verify-vrma.js — 验证 .vrma 能被壳同款加载链解析并在目标 VRM 模型上生成 AnimationClip
 // 用法: node verify-vrma.js [path/to/file.vrma]
-// 依赖解析: 向上找到 shells/myspy/node_modules (three/@pixiv/three-vrm/@pixiv/three-vrm-animation)
+// 依赖解析: 向上找到 shells/nuomi-avatar/node_modules (three/@pixiv/three-vrm/@pixiv/three-vrm-animation)
 const fs = require('fs');
 
 // ---- Node 环境最小 polyfill（仅用于离线验证，无需真实解码纹理）----
@@ -27,7 +27,7 @@ const { VRMLoaderPlugin } = require('@pixiv/three-vrm');
 const { VRMAnimationLoaderPlugin, createVRMAnimationClip } = require('@pixiv/three-vrm-animation');
 
 const VRM_MODEL = '/Users/superman/Nuomi/models/3D/6309260419351179234.vrm';
-const VRMA_FILE = process.argv[2] || '/Users/superman/projects/code/nuomi/shells/myspy/assets/animations/elbow_punch.vrma';
+const VRMA_FILE = process.argv[2] || '/Users/superman/projects/code/nuomi/shells/nuomi-avatar/assets/animations/elbow_punch.vrma';
 
 function toArrayBuffer(buf) {
   return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
@@ -70,7 +70,7 @@ async function main() {
     const q1 = Array.from(headTrack.values.slice(mid, mid + 4)).map((v) => v.toFixed(3)).join(',');
     console.log(`[OK] Head 采样: t=0 [${q0}] t=mid [${q1}]`);
   }
-  console.log('\n=== 验证通过：该 .vrma 可直接被桌宠壳 loadVRMA/playAnimation 播放 ===');
+  console.log('\n=== 验证通过：该 .vrma 可直接被AI 数字人壳 loadVRMA/playAnimation 播放 ===');
 }
 
 main().catch((e) => {

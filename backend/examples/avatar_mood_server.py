@@ -1,4 +1,4 @@
-"""示例 MCP 服务器：桌宠状态查询（官方 mcp 包低层 API，stdio transport）。
+"""示例 MCP 服务器：AI 数字人状态查询（官方 mcp 包低层 API，stdio transport）。
 
 验证 MCP 接入用：nuomi 通过 langchain-mcp-adapters 连接此服务器，
 工具名带 pet_mood_ 前缀，对话时经 mcp_use_default 暴露给模型。
@@ -15,7 +15,7 @@ server = Server("pet-mood-server")
 _TOOLS = [
     types.Tool(
         name="get_pet_status",
-        description="查询桌宠（糯米）当前状态：心情、电量、今日陪伴时长",
+        description="查询 AI 数字人（糯米）当前状态：心情、电量、今日陪伴时长",
         inputSchema={"type": "object", "properties": {}},
     ),
     types.Tool(

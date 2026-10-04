@@ -10,7 +10,7 @@ import PluginsPage from './pages/Plugins';
 import SkillsPage from './pages/Skills';
 import ConnectorsPage from './pages/Connectors';
 import StoragePage from './pages/Storage';
-import PetModelsPage from './pages/PetModels';
+import AvatarModelsPage from './pages/AvatarModels';
 import SettingsPage from './pages/Settings';
 import KnowledgePage from './pages/Knowledge';
 import KnowledgeDetailPage from './pages/KnowledgeDetail';
@@ -24,7 +24,7 @@ const NAV = [
   { key: 'skills', icon: <ReadOutlined />, label: '技能', title: '技能' },
   { key: 'connectors', icon: <GlobalOutlined />, label: '连接器', title: '连接器（MCP 协议）' },
   { key: 'knowledge', icon: <BookOutlined />, label: '知识库', title: '知识库 / 文档检索' },
-  { key: 'petModels', icon: <SmileOutlined />, label: '桌宠', title: '桌宠模型资产' },
+  { key: 'avatarModels', icon: <SmileOutlined />, label: 'AI 数字人', title: 'AI 数字人模型资产' },
   { key: 'settings', icon: <SettingOutlined />, label: '设置', title: '设置 / 环境变量' },
   { key: 'storage', icon: <DatabaseOutlined />, label: '存储', title: '存储 / 总览' },
 ];
@@ -95,7 +95,7 @@ export default function App() {
           {page === 'skills' && <SkillsPage />}
           {page === 'connectors' && <ConnectorsPage />}
           {page === 'knowledge' && (kbDetailId ? <KnowledgeDetailPage kbId={kbDetailId} /> : <KnowledgePage />)}
-          {page === 'petModels' && <PetModelsPage />}
+          {page === 'avatarModels' && <AvatarModelsPage />}
           {page === 'settings' && <SettingsPage />}
           {page === 'storage' && <StoragePage />}
         </Content>

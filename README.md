@@ -8,10 +8,10 @@
 |---|---|---|
 | 大脑（机制层） | [octop-harness](https://pypi.org/project/octop-harness/) | Agent 运行时（LangChain Deep Agents）：循环/工具/记忆/checkpointer/技能/MCP |
 | 业务层 | Python + FastAPI | 专家/会话/能力领域服务（自研） |
-| 形象层（桌宠壳） | shells/myspy/（基于 myspy，MIT） | 纯表现层：Live2D 渲染、情绪表情、流式字幕、输入；大脑全在 backend（详见 [shells/myspy/README.md](shells/myspy/README.md)） |
+| 形象层（AI 数字人壳） | shells/nuomi-avatar/（基于 nuomi-avatar，MIT） | 纯表现层：Live2D 渲染、情绪表情、流式字幕、输入；大脑全在 backend（详见 [shells/nuomi-avatar/README.md](shells/nuomi-avatar/README.md)） |
 | 存储 | SQLite | agents/threads/messages（对齐 Octop schema，规划中） |
 
-> **桌宠模型版权说明**：模型资产在工作区 `models/2D/<id>/`（本机 `/Users/superman/Nuomi/models/2D/`），
+> **AI 数字人模型版权说明**：模型资产在工作区 `models/2D/<id>/`（本机 `/Users/superman/Nuomi/models/2D/`），
 > 不入库。仓库仅保留可分发种子 `assets/models/2D/hiyori/`（首启/扫描时幂等播种到工作区）。
 > aidang 来自游戏《碧蓝航线》提取的 Live2D 资产（来源 [Eikanya/Live2d-model](https://github.com/Eikanya/Live2d-model)，
 > Cubism 3，14 个动作），**仅限个人自用，不可商用、不可再分发**；
@@ -54,8 +54,8 @@ transport（FastAPI 路由） → domain（领域服务） → infra/harness（�
 
 - [x] R1-R3：推倒重来 + harness 适配层 + SSE 对话 API
 - [ ] M3-M6：Agent 生命周期 / 会话存储 / 插件 / 技能+连接器+知识库
-- [ ] M7-M8：桌宠形象层（myspy）+ 人格/情绪体验
+- [ ] M7-M8：AI 数字人形象层（nuomi-avatar）+ 人格/情绪体验
 
 ## 许可证
 
-MIT（octop-harness 与 myspy 均为开源依赖）
+MIT（octop-harness 与 nuomi-avatar 均为开源依赖）

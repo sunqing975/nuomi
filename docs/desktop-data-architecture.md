@@ -3,7 +3,7 @@
 > ⚠️ **状态（2026-10-04 更新）**：v0.13 已删除 Tauri 壳（`desktop/` 目录与 `cargo tauri dev` 桌面形态），
 > 本文中「Rust 层 / sidecar / tauri 打包 / 动态端口」等桌面化实现章节**已失效**，仅供历史参考。
 > 仍有效的决策（NUOMI_HOME 工作区、SQLite 合一、单用户、目录结构收敛）已由 AGENT.md「环境事实」
-> 章节接管为准。桌面形态现为桌宠壳 `shells/myspy/`（Electron），启动见 Makefile `make start`。
+> 章节接管为准。桌面形态现为AI 数字人壳 `shells/nuomi-avatar/`（Electron），启动见 Makefile `make start`。
 
 > 决策人：用户（三点确认）+ 本方案。本文是桌面化与后端结构重构的权威设计文档，
 > 与 `DESIGN.md`（前端设计权威）同级；改动落地前先读本文。
@@ -93,7 +93,7 @@ nuomi/
 ├── skills/           # 技能
 ├── skill_packages/   # 技能包（SkillHub 安装）
 ├── sessions/         # 会话 jsonl
-├── models/2D/<id>/   # 桌宠模型资产（2026-10-04 迁出壳仓库；内置种子 assets/models/2D 幂等播种）
+├── models/2D/<id>/   # AI 数字人模型资产（2026-10-04 迁出壳仓库；内置种子 assets/models/2D 幂等播种）
 └── _builtin_skills/  # harness 内置技能
 ```
 

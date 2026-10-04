@@ -96,23 +96,23 @@ def _sync_connectors_file() -> None:
 
 
 def _ensure_model_plugins() -> None:
-    """确保共享桌宠插件（vrm-pet）存在，且启停对齐桌宠开关（方案B）。
+    """确保共享AI 数字人插件（vrm-avatar）存在，且启停对齐AI 数字人开关（方案B）。
 
     工具由 PluginService.tools() 装配时按当前激活模型/动画动态构造。
     """
     from contextlib import suppress
 
-    from app.domain.pet.service import (
-        VRM_PET_PLUGIN_ID,
-        ensure_pet_plugins,
-        get_pet_enabled,
+    from app.domain.avatar.service import (
+        VRM_AVATAR_PLUGIN_ID,
+        ensure_avatar_plugins,
+        get_avatar_enabled,
     )
     from app.domain.plugins.service import plugin_service
 
     with suppress(Exception):
-        ensure_pet_plugins()
+        ensure_avatar_plugins()
         plugin_service.sync()  # 保底：DB 无记录时 INSERT（幂等）
-        plugin_service.set_enabled(VRM_PET_PLUGIN_ID, get_pet_enabled())
+        plugin_service.set_enabled(VRM_AVATAR_PLUGIN_ID, get_avatar_enabled())
 
 
 def _sync_plugins() -> None:

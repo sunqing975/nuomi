@@ -1,6 +1,6 @@
-# 桌宠对话协议 v3（octop 原生事件帧）
+# AI 数字人对话协议 v3（octop 原生事件帧）
 
-桌宠（表现层）与 nuomi 后端（octop 大脑）之间的对话协议。
+AI 数字人（表现层）与 nuomi 后端（octop 大脑）之间的对话协议。
 **`/chat` 端点输出 octop 原生事件帧**（对齐 octop dashboard WS 协议，SSE 承载），
 消费者解析逻辑与未来切换 WebSocket 通道时完全一致（v3，2026-10-04）。
 
@@ -33,13 +33,13 @@ data: {"type":"done","conversation_mode":"craft","thread_id":"default"}
 
 ## 表情/动作驱动
 
-表情/动作**统一由模型插件工具驱动**：专家绑定桌宠模型插件（aidang/cat/hiyori）后，
-LLM 通过工具调用（工具名 = 动作/表情名）驱动桌宠。壳从 `tool_call_chunk.name`
+表情/动作**统一由模型插件工具驱动**：专家绑定AI 数字人模型插件（aidang/cat/hiyori）后，
+LLM 通过工具调用（工具名 = 动作/表情名）驱动AI 数字人。壳从 `tool_call_chunk.name`
 直接播放动作/表情，无需等工具执行结果。不再有独立的 `emotion` 事件。
 
 ## 消费者
 
-- 壳 `callNuomiSSE`（shells/myspy/app.js）：`token`→字幕、`tool_call_chunk`→`playPetToolByName`、`done`→结束
+- 壳 `callNuomiSSE`（shells/nuomi-avatar/app.js）：`token`→字幕、`tool_call_chunk`→`playPetToolByName`、`done`→结束
 - 控制台 `chatStream`（frontend/src/api.ts）：`token`/`tool_call_chunk`/`done` → ChatEvent
 
 ## 历史

@@ -1,6 +1,6 @@
 """本地 ONNX 嵌入服务：目录、下载生命周期与 fastembed 推理（抄 Octop ``onnx_service``）。
 
-- 模型目录：``{workspace}/models/ai/embedding/``（单根工作区；`2D/` 桌宠资产不动）。
+- 模型目录：``{workspace}/models/ai/embedding/``（单根工作区；`2D/` AI 数字人资产不动）。
 - 缓存形态：fastembed 兼容 ``models--<owner>--<name>/``（snapshot/blobs）。
 - 完成标记：``.downloaded/<name.replace('/','--')>``，能力门控就绪检查用。
 - 推理：fastembed ``TextEmbedding(model_name, cache_dir=...)``（与 Octop 一致，不手写 onnxruntime 管线）。
