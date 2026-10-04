@@ -72,7 +72,7 @@ cd shells/myspy && npm start
 
 **专家/插件**：`GET|POST /agents` · `GET|PATCH|DELETE /agents/{id}` · `POST /agents/{id}/start|stop|status` · `GET /plugins` · `POST /plugins/sync` · `POST /plugins/import`（zip）· `POST /plugins/import-git`（git 仓库）· `PATCH /plugins/{id}`（启停）· `DELETE /plugins/{id}`（模型插件 400 拒绝，由桌宠删除级联）。**已废除**：`GET|PUT /agents/{id}/plugins`（专家-插件绑定，2026-10-04 解耦删除）
 
-**技能/技能包**：`GET /skills` · `GET /skills/builtin`（内置只读）· `GET|PATCH|DELETE /skills/{name}` · `POST /skills/import`（zip）· `POST /skills/import-git`（git 仓库）· `POST /skills/install`（SkillHub 单技能，requires_api_key 标注）· `GET /skillhub/search|rankings|skillsets{?q,/{slug}}`（search 循环翻页一次 50） · `GET /settings/env` · `PUT /settings/env`（应用设置环境变量，{workspace}/env.json → os.environ，技能/连接器 API key 在此配置）· `GET|PUT /settings/providers` · `POST /settings/providers/probe`（PUT：api_key 含 *** 视为未修改保持原值——防脱敏串回写覆盖真实 key；build_providers 对无 key Provider 用占位 `sk-local` 满足 harness 非空校验）（大模型 Provider，存 {workspace}/providers.json；PUT 整体保存：api_key 空串=保持原值、释放实例；GET 脱敏；校验 id 唯一/base_url/模型非空 → 400；模型不绑专家，不校验专家字段）· `GET|POST /skill-packages` · `POST /skill-packages/from-skillhub` · `PATCH|DELETE /skill-packages/{id}`
+**技能/技能包**：`GET /skills` · `GET /skills/builtin`（内置只读）· `GET|PATCH|DELETE /skills/{name}` · `POST /skills/import`（zip）· `POST /skills/import-git`（git 仓库）· `POST /skills/install`（SkillHub 单技能，requires_api_key 标注）· `GET /skillhub/search|rankings|skillsets{?q,/{slug}}`（search 循环翻页一次 50） · `GET /settings/env` · `PUT /settings/env`（应用设置环境变量，{workspace}/env.json → os.environ，技能/连接器 API key 在此配置）· `GET|PUT /settings/providers` · `POST /settings/providers/probe`（PUT：api_key 含 *** 视为未修改保持原值——防脱敏串回写覆盖真实 key；**Provider 必须有 key**：新增必填（前端）+ 保持原值后仍空 → 400（后端）；build_providers 原样传 key，无占位逻辑）（大模型 Provider，存 {workspace}/providers.json；PUT 整体保存：api_key 空串=保持原值、释放实例；GET 脱敏；校验 id 唯一/base_url/模型非空 → 400；模型不绑专家，不校验专家字段）· `GET|POST /skill-packages` · `POST /skill-packages/from-skillhub` · `PATCH|DELETE /skill-packages/{id}`
 
 **其他**：`GET|POST /connectors` · `PUT|DELETE /connectors/{name}`（控制台增删改，connectors.json 持久化，变更下次对话生效）· `GET /workspace` · `GET /pet/models` · `POST /pet/models/switch` · `DELETE /pet/models/{id}`（级联删插件+资产，**不换会话**）· `GET|PUT /pet/status`（桌宠开关：读写壳 config.json `ui.pet_enabled`，壳 watch 后创建/销毁桌宠窗口；关闭=完全停止窗口，壳进程与后端对话不受影响）
 
@@ -177,3 +177,4 @@ dc242b1  卡片等高修复：antd5 grid 列为裸 div，.ant-row > div（amend 
 35d86d9  feat: Provider 模型探测（probe API + 勾选默认）· 对话框输入区布局优化（选择器独立行/输入框整行）
 05dbdee  docs: HANDOVER 回填（Provider 探测 + 输入框优化）
 363a952  fix: 对话失败根因（脱敏串回写覆盖 key + 无 key Provider 占位）
+bd0401f  refactor: Provider 必须有 key（删占位，前后端校验兜底）
