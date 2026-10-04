@@ -3,11 +3,16 @@ import {
   Button, Drawer, Empty, Input, Popconfirm, Popover, Select, Space, Switch, Tag, Typography, message,
 } from 'antd';
 import {
-  ApiOutlined, CloseOutlined, DeleteOutlined, HistoryOutlined, PlusOutlined, SendOutlined, RobotOutlined, ThunderboltOutlined, UserOutlined,
+  ApiOutlined, BookOutlined, CloseOutlined, DeleteOutlined, HistoryOutlined, PlusOutlined, SendOutlined, RobotOutlined, ThunderboltOutlined, UserOutlined,
 } from '@ant-design/icons';
 import {
-  del, get, post, chatStream, type Agent, type ChatEvent, type ChatMessage, type ConnectorServer, type Skill, type ToolEvent,
+  del, get, post, chatStream, knowledgeApi,
+  type Agent, type ChatEvent, type ChatMessage, type ConnectorServer, type KnowledgeBase, type Skill, type SkillPackage, type ToolEvent,
 } from '../api';
+import { parseKnowledgeCitations } from '../utils/parseKnowledgeCitations';
+
+/** 模型「自动」哨兵值：发送时不传 model（null），由后端按 agent 默认模型解析（对齐 Octop AUTO 语义） */
+const MODEL_AUTO = 'auto';
 
 interface SessionMeta {
   thread_id: string;
@@ -34,6 +39,29 @@ function AbilityChip({ label, color, onRemove }: { label: string; color: string;
   );
 }
 
+/** 知识库引用条（search_knowledge 工具输出含 citations 标记时展示来源） */
+function KnowledgeCitations({ raw }: { raw?: string }) {
+  const { text, citations } = parseKnowledgeCitations(raw);
+  if (!citations.length) return null;
+  return (
+    <div style={{ marginTop: 6 }}>
+      <div style={{ fontSize: 12, color: '#9ca3af', marginBottom: 4 }}>📚 知识库引用</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+        {citations.map(c => (
+          <Tag key={c.docId} style={{ fontSize: 12, margin: 0 }}>
+            {c.kbName || '知识库'} · {c.filename}
+          </Tag>
+        ))}
+      </div>
+      {text ? (
+        <div style={{ color: '#6b7280', marginTop: 2, whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 120, overflow: 'auto' }}>
+          {text}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 /** 工具步骤折叠（消息气泡内：tool_call → tool_result 时间线） */
 function ToolSteps({ events }: { events: ToolEvent[] }) {
   const [open, setOpen] = useState(false);
@@ -52,7 +80,11 @@ function ToolSteps({ events }: { events: ToolEvent[] }) {
               </span>
               {t.detail ? (
                 <div style={{ color: '#6b7280', marginTop: 2, whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 120, overflow: 'auto' }}>
-                  {t.detail}
+                  {t.name === 'search_knowledge' ? (
+                    <KnowledgeCitations raw={t.detail} />
+                  ) : (
+                    t.detail
+                  )}
                 </div>
               ) : null}
             </div>
@@ -63,34 +95,72 @@ function ToolSteps({ events }: { events: ToolEvent[] }) {
   );
 }
 
-/** 技能选择器（Popover 列表，点击切换选中） */
-function SkillPicker({ skills, selected, onToggle }: { skills: Skill[]; selected: string[]; onToggle: (name: string) => void }) {
+/** 技能选择器（Popover 三分组：已启用技能 / 内置技能 / 已启用技能包；技能包=整包勾选） */
+function SkillPicker({
+  skills, builtin, packages, selected, onToggleSkill, onTogglePackage,
+}: {
+  skills: Skill[]; builtin: Skill[]; packages: SkillPackage[];
+  selected: string[]; onToggleSkill: (name: string) => void; onTogglePackage: (pkg: SkillPackage) => void;
+}) {
+  const GroupLabel = ({ children }: { children: React.ReactNode }) => (
+    <div style={{ fontSize: 11, color: '#8c8c8c', padding: '6px 10px 2px', fontWeight: 600 }}>{children}</div>
+  );
+  const Row = ({ active, onClick, title, desc }: { active: boolean; onClick: () => void; title: string; desc?: string }) => (
+    <div
+      onClick={onClick}
+      style={{
+        display: 'flex', gap: 8, alignItems: 'flex-start', padding: '7px 10px', borderRadius: 8,
+        cursor: 'pointer', background: active ? '#e6f4ff' : 'transparent', marginBottom: 2,
+      }}
+    >
+      <span style={{ color: '#1677ff', fontSize: 13, marginTop: 1 }}>{active ? '☑' : '☐'}</span>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 500 }}>{title}</div>
+        {desc ? (
+          <div style={{ fontSize: 12, color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{desc}</div>
+        ) : null}
+      </div>
+    </div>
+  );
+  const empty = skills.length === 0 && builtin.length === 0 && packages.length === 0;
   const content = (
-    <div style={{ width: 280, maxHeight: 320, overflow: 'auto' }}>
-      {skills.length === 0 ? (
-        <div style={{ color: '#9ca3af', textAlign: 'center', padding: 16 }}>暂无已启用技能，先到「技能」页启用</div>
+    <div style={{ width: 300, maxHeight: 340, overflow: 'auto' }}>
+      {empty ? (
+        <div style={{ color: '#9ca3af', textAlign: 'center', padding: 16 }}>暂无可用技能，先到「技能」页安装/启用</div>
       ) : (
-        skills.map(s => {
-          const active = selected.includes(s.name);
-          return (
-            <div
-              key={s.name}
-              onClick={() => onToggle(s.name)}
-              style={{
-                display: 'flex', gap: 8, alignItems: 'flex-start', padding: '8px 10px', borderRadius: 8,
-                cursor: 'pointer', background: active ? '#e6f4ff' : 'transparent', marginBottom: 2,
-              }}
-            >
-              <span style={{ color: '#1677ff', fontSize: 13, marginTop: 1 }}>{active ? '☑' : '☐'}</span>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 500 }}>{s.name}</div>
-                {s.description ? (
-                  <div style={{ fontSize: 12, color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.description}</div>
-                ) : null}
-              </div>
-            </div>
-          );
-        })
+        <>
+          {skills.length > 0 && (
+            <>
+              <GroupLabel>已启用的技能</GroupLabel>
+              {skills.map(s => (
+                <Row key={s.name} active={selected.includes(s.name)} onClick={() => onToggleSkill(s.name)}
+                  title={s.name} desc={s.description || undefined} />
+              ))}
+            </>
+          )}
+          {builtin.length > 0 && (
+            <>
+              <GroupLabel>内置技能</GroupLabel>
+              {builtin.map(b => (
+                <Row key={`builtin-${b.name}`} active={selected.includes(b.name)} onClick={() => onToggleSkill(b.name)}
+                  title={b.name} desc={b.description || '随 harness 内置分发，只读'} />
+              ))}
+            </>
+          )}
+          {packages.length > 0 && (
+            <>
+              <GroupLabel>已启用的技能包</GroupLabel>
+              {packages.map(p => {
+                const slugs = (p.skills || []).filter(s => s.enabled).map(s => s.slug);
+                const active = slugs.length > 0 && slugs.some(x => selected.includes(x));
+                return (
+                  <Row key={`pkg-${p.id}`} active={active} onClick={() => onTogglePackage(p)}
+                    title={`${p.name}（${p.skill_count ?? slugs.length} 技能）`} desc={p.description || undefined} />
+                );
+              })}
+            </>
+          )}
+        </>
       )}
     </div>
   );
@@ -120,6 +190,44 @@ function ConnectorPicker({ connectors, selected, onToggle }: { connectors: Conne
   return (
     <Popover trigger="click" placement="topLeft" content={content}>
       <Button size="small" icon={<ApiOutlined />}>连接器{selected.length ? ` (${selected.length})` : ''}</Button>
+    </Popover>
+  );
+}
+
+/** 知识库选择器（Popover 多选；不选 = 不注入，与技能/连接器同维度） */
+function KnowledgePicker({ bases, selected, onToggle, disabled }: { bases: KnowledgeBase[]; selected: string[]; onToggle: (id: string) => void; disabled?: boolean }) {
+  const content = (
+    <div style={{ width: 300, maxHeight: 320, overflow: 'auto' }}>
+      {bases.length === 0 ? (
+        <div style={{ color: '#9ca3af', textAlign: 'center', padding: 16 }}>暂无知识库，先到「知识库」页创建</div>
+      ) : (
+        bases.map(b => {
+          const active = selected.includes(b.id);
+          return (
+            <div
+              key={b.id}
+              onClick={() => onToggle(b.id)}
+              style={{
+                display: 'flex', gap: 8, alignItems: 'flex-start', padding: '8px 10px', borderRadius: 8,
+                cursor: 'pointer', background: active ? '#fff0f6' : 'transparent', marginBottom: 2,
+              }}
+            >
+              <span style={{ color: '#eb2f96', fontSize: 13, marginTop: 1 }}>{active ? '☑' : '☐'}</span>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 500 }}>{b.name}</div>
+                {b.description ? (
+                  <div style={{ fontSize: 12, color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.description}</div>
+                ) : null}
+              </div>
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
+  return (
+    <Popover trigger="click" placement="topLeft" content={content}>
+      <Button size="small" icon={<BookOutlined />} disabled={disabled}>知识库{selected.length ? ` (${selected.length})` : ''}</Button>
     </Popover>
   );
 }
@@ -168,11 +276,17 @@ export default function ChatPage() {
   const [streamTools, setStreamTools] = useState<ToolEvent[]>([]);
   // 能力选择（per-turn 注入：技能白名单 / 连接器挂载 / 模型）
   const [skills, setSkills] = useState<Skill[]>([]);
+  const [builtinSkills, setBuiltinSkills] = useState<Skill[]>([]);
+  const [skillPackages, setSkillPackages] = useState<SkillPackage[]>([]);
   const [connectors, setConnectors] = useState<ConnectorServer[]>([]);
+  const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
+  const [kbEnabled, setKbEnabled] = useState(false);
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [selectedConnectors, setSelectedConnectors] = useState<string[]>([]);
+  const [selectedKnowledgeBaseIds, setSelectedKnowledgeBaseIds] = useState<string[]>([]);
   const [modelOptions, setModelOptions] = useState<{ value: string; label: string }[]>([]);
-  const [selectedModel, setSelectedModel] = useState<string | null>(null);
+  // 模型默认选中「自动」，用户显式选择后才覆盖；移除选择回到「自动」
+  const [selectedModel, setSelectedModel] = useState<string | null>(MODEL_AUTO);
   const [trajectoryOpen, setTrajectoryOpen] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
 
@@ -184,23 +298,32 @@ export default function ChatPage() {
 
   useEffect(() => { loadAgents(); }, [loadAgents]);
 
-  // 能力清单（已启用技能 + 连接器 + 模型），对话框里按 per-turn 选择
+  // 能力清单（已启用技能 + 内置技能 + 技能包 + 连接器 + 模型 + 知识库），对话框里按 per-turn 选择
   useEffect(() => {
     Promise.all([
       get<Skill[]>('/skills'),
+      get<Skill[]>('/skills/builtin'),
+      get<SkillPackage[]>('/skill-packages'),
       get<ConnectorServer[]>('/connectors'),
       get<{ providers: { id: string; name: string; models: { id: string }[] }[] }>('/settings/providers'),
     ])
-      .then(([sk, conn, provs]) => {
+      .then(([sk, builtin, pkgs, conn, provs]) => {
         setSkills(sk.filter(s => s.enabled));
+        setBuiltinSkills(builtin);
+        setSkillPackages(pkgs.filter(p => p.enabled));
         setConnectors(conn);
-        setModelOptions(
-          provs.providers.flatMap(p =>
+        setModelOptions([
+          // 「自动」永远在首位且默认选中：不传 model，后端按 agent 默认模型解析
+          { value: MODEL_AUTO, label: '自动（默认）' },
+          ...provs.providers.flatMap(p =>
             (p.models || []).map(m => ({ value: `${p.id}/${m.id}`, label: `${p.name} · ${m.id}` })),
           ),
-        );
+        ]);
       })
       .catch(() => { /* 能力加载失败不阻塞对话 */ });
+    // 知识库：能力开关 + 库列表（仅启用库可选；停用库不出现在选择器）
+    knowledgeApi.capability().then(c => setKbEnabled(Boolean(c.enabled))).catch(() => {});
+    knowledgeApi.listBases().then(rows => setKnowledgeBases(rows.filter(b => b.enabled))).catch(() => {});
   }, []);
 
   // 历史加载（octop checkpointer，按线程）
@@ -217,6 +340,7 @@ export default function ChatPage() {
     let alive = true;
     setSelectedSkills([]);
     setSelectedConnectors([]);
+    setSelectedKnowledgeBaseIds([]);
     (async () => {
       try {
         const st = await get<ChatState>(`/chat/state?agent_id=${agentId}`);
@@ -294,8 +418,22 @@ export default function ChatPage() {
     setSelectedSkills(prev => prev.includes(name) ? prev.filter(x => x !== name) : [...prev, name]);
   };
 
+  /** 技能包整体勾选：选中 = 其内已启用技能全部进白名单；再点 = 全部移出。 */
+  const toggleSkillPackage = (pkg: SkillPackage) => {
+    const slugs = (pkg.skills || []).filter(s => s.enabled).map(s => s.slug);
+    if (!slugs.length) return;
+    setSelectedSkills(prev => {
+      const anyOn = slugs.some(x => prev.includes(x));
+      return anyOn ? prev.filter(x => !slugs.includes(x)) : [...prev, ...slugs.filter(x => !prev.includes(x))];
+    });
+  };
+
   const toggleConnector = (name: string) => {
     setSelectedConnectors(prev => prev.includes(name) ? prev.filter(x => x !== name) : [...prev, name]);
+  };
+
+  const toggleKnowledgeBase = (id: string) => {
+    setSelectedKnowledgeBaseIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   };
 
   const send = async () => {
@@ -312,11 +450,15 @@ export default function ChatPage() {
     setStreamTools([]);
     const toolEvents: ToolEvent[] = [];
     let accumulated = '';
-    // per-turn 能力注入：显式选择的技能/连接器/模型才传（不传=全量技能/默认连接器/默认模型）
+    // per-turn 能力注入（对齐 Octop 对话框语义）：
+    // - skills/connectors：未选 = [] = 不加载任何技能/连接器（无「默认全部」）
+    // - model：默认「自动」（不传 = 后端 agent 默认模型），用户显式选择才覆盖
+    // - knowledge_base_ids：未选 = [] = 不注入（与技能/连接器同维度，无默认打开一说）
     const opts = {
-      skills: selectedSkills.length ? selectedSkills : undefined,
-      connectors: selectedConnectors.length ? selectedConnectors : undefined,
-      model: selectedModel ?? undefined,
+      skills: selectedSkills,
+      connectors: selectedConnectors,
+      model: selectedModel === MODEL_AUTO ? null : selectedModel,
+      knowledge_base_ids: selectedKnowledgeBaseIds,
     };
 
     try {
@@ -477,17 +619,22 @@ export default function ChatPage() {
             {selectedConnectors.map(c => (
               <AbilityChip key={c} label={`连接器 · ${c}`} color="#52c41a" onRemove={() => toggleConnector(c)} />
             ))}
-            {selectedModel && <AbilityChip key={selectedModel} label={`模型 · ${selectedModel}`} color="#722ed1" onRemove={() => setSelectedModel(null)} />}
+            {selectedKnowledgeBaseIds.map(id => (
+              <AbilityChip key={id} label={`知识库 · ${knowledgeBases.find(b => b.id === id)?.name ?? id}`} color="#eb2f96" onRemove={() => toggleKnowledgeBase(id)} />
+            ))}
+            {selectedModel && selectedModel !== MODEL_AUTO && (
+              <AbilityChip key={selectedModel} label={`模型 · ${selectedModel}`} color="#722ed1" onRemove={() => setSelectedModel(MODEL_AUTO)} />
+            )}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
             <Space size={4}>
-              <SkillPicker skills={skills} selected={selectedSkills} onToggle={toggleSkill} />
+              <SkillPicker skills={skills} builtin={builtinSkills} packages={skillPackages} selected={selectedSkills} onToggleSkill={toggleSkill} onTogglePackage={toggleSkillPackage} />
               <ConnectorPicker connectors={connectors} selected={selectedConnectors} onToggle={toggleConnector} />
+              <KnowledgePicker bases={knowledgeBases} selected={selectedKnowledgeBaseIds} onToggle={toggleKnowledgeBase} disabled={!kbEnabled} />
               <Select
                 size="small"
-                allowClear
-                placeholder="模型"
-                style={{ width: 150 }}
+                placeholder="选择模型（默认自动）"
+                style={{ width: 170 }}
                 value={selectedModel ?? undefined}
                 onChange={setSelectedModel}
                 options={modelOptions}
@@ -495,9 +642,6 @@ export default function ChatPage() {
                 popupMatchSelectWidth={false}
               />
             </Space>
-            <Typography.Text type="secondary" style={{ fontSize: 12, flex: 1, textAlign: 'right' }}>
-              不选 = 全部技能 / 默认连接器 / 默认模型
-            </Typography.Text>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
             <Input.TextArea

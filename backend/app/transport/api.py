@@ -22,6 +22,8 @@ from app.domain.agents.service import (
     STATE_RUNNING,
     STATE_STOPPED,
     agent_service,
+    enrich_agent,
+    ensure_agent_workspace,
 )
 from app.domain.chat.service import chat_sessions
 from app.domain.plugins.service import plugin_service
@@ -59,7 +61,10 @@ def _available_skill_keys() -> set[str]:
 
 
 def _validate_knowledge_base_ids(ids: list[str] | None) -> None:
-    """per-turn 知识库校验：非 None 时全部须存在（空列表=明确不注入，跳过）。"""
+    """per-turn 知识库校验：非 None 时全部须存在且启用（对齐技能白名单语义）。
+
+    空列表=明确不注入，跳过；显式指定已停用库 → 400（禁用库不出现在对话选择器）。
+    """
     if not ids:
         return
     from app.infra.knowledge.repo import KnowledgeRepo
@@ -68,6 +73,9 @@ def _validate_knowledge_base_ids(ids: list[str] | None) -> None:
     unknown = [kb_id for kb_id in ids if repo.get_base(kb_id) is None]
     if unknown:
         raise HTTPException(status_code=400, detail=f"知识库不存在: {', '.join(unknown)}")
+    disabled = [kb_id for kb_id in ids if (b := repo.get_base(kb_id)) is not None and not b.enabled]
+    if disabled:
+        raise HTTPException(status_code=400, detail=f"知识库已停用: {', '.join(disabled)}")
 
 
 def _resolve_chat_abilities(skills, connectors) -> tuple[list[str] | None, list[str] | None]:
@@ -187,11 +195,46 @@ async def delete_chat_thread(agent_id: str, thread_id: str) -> dict:
     return {"ok": True}
 
 
+def _resolve_pet_action(tool_name: str) -> dict | None:
+    """根据工具名查当前激活模型，返回桌宠该播放的完整 payload。
+
+    返回 None 表示该工具不是桌宠动作工具（不广播给壳）。
+    payload: {"motion": "...", "expressions": [...], "label": "..."}
+    """
+    from app.domain.pet.service import get_active_model, list_models
+
+    active = get_active_model()
+    if not active:
+        return None
+    for m in list_models():
+        if m["id"] != active:
+            continue
+        # 1. 语义动作（actions.json）：工具名 = wave/dance/nod...
+        actions = m.get("actions") or {}
+        if tool_name in actions:
+            spec = actions[tool_name]
+            return {
+                "motion": spec.get("motion") or None,
+                "expressions": spec.get("expressions") or [],
+                "label": spec.get("label_zh") or tool_name,
+            }
+        # 2. fallback：裸 motion group 名
+        if tool_name in m.get("motions", []):
+            return {"motion": tool_name, "expressions": [], "label": tool_name}
+        # 3. fallback：裸 expression 名
+        if tool_name in m.get("expressions", []):
+            return {"motion": None, "expressions": [tool_name], "label": tool_name}
+        break
+    return None
+
+
 async def _publish_actions(events):
     """转发内部事件流，并把工具调用（动作/表情）广播给桌宠壳。"""
     async for ev in events:
         if ev.get("type") == "tool_call" and ev.get("name"):
-            pet_events.publish(ev["name"])
+            payload = _resolve_pet_action(ev["name"])
+            if payload:
+                pet_events.publish(payload)
         yield ev
 
 
@@ -259,6 +302,13 @@ async def chat(agent_id: str, body: ChatBody, request: Request) -> StreamingResp
 
     async def gen():
         tools = plugin_service.tools()
+        # 桌宠插件启用时，自动拼入身体使用说明（不污染专家人设）
+        from app.domain.pet.service import load_pet_instructions
+
+        system_prompt = agent_row["system_prompt"] or ""
+        pet_instructions = load_pet_instructions()
+        if pet_instructions:
+            system_prompt = system_prompt.rstrip() + "\n\n" + pet_instructions
         async for frame in stream_octop_sse(
             _publish_actions(
                 stream_chat(
@@ -266,7 +316,8 @@ async def chat(agent_id: str, body: ChatBody, request: Request) -> StreamingResp
                     body.thread_id,
                     agent_id=agent_id,
                     name=agent_row["name"],
-                    system_prompt=agent_row["system_prompt"] or "",
+                    system_prompt=system_prompt,
+                    workspace_dir=ensure_agent_workspace(agent_id, agent_row["name"]),
                     plugin_tools=tools,
                     skills_dir=_all_skills_dirs(),
                     skills_disabled=skill_service.disabled_set(),
@@ -318,14 +369,34 @@ class AgentPatchBody(BaseModel):
     welcome_message: str | None = None
 
 
+class AgentImportBody(BaseModel):
+    source_dir: str
+    name: str | None = None
+
+
 @router.get("/agents")
 async def list_agents() -> list[dict]:
-    return agent_service.list_all()
+    return [enrich_agent(r) for r in agent_service.list_all()]
+
+
+@router.post("/agents/import")
+async def import_agent(body: AgentImportBody) -> dict:
+    """从 Octop 专家目录导入（~/.octop/agents/<id>/ 或 Octop library/<id>/）。"""
+    from app.domain.agents.importer import import_octop_expert
+
+    try:
+        row = import_octop_expert(body.source_dir, name=body.name)
+    except (FileNotFoundError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return enrich_agent(row)
 
 
 @router.post("/agents")
 async def create_agent(body: AgentCreateBody) -> dict:
-    return agent_service.create(body.model_dump())
+    data = body.model_dump()
+    row = agent_service.create(data)
+    ensure_agent_workspace(row["agent_id"], row["name"])
+    return enrich_agent(row)
 
 
 @router.get("/agents/{agent_id}")
@@ -333,7 +404,7 @@ async def get_agent(agent_id: str) -> dict:
     row = agent_service.get(agent_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Agent 不存在")
-    return row
+    return enrich_agent(row)
 
 
 @router.patch("/agents/{agent_id}")

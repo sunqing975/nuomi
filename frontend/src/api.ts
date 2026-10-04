@@ -183,9 +183,92 @@ export interface ChatStreamOptions {
   skills?: string[];
   /** per-turn 连接器（不传=默认挂载，传空数组=不挂载） */
   connectors?: string[];
-  /** per-turn 模型（provider/model；不传=默认模型） */
-  model?: string;
+  /** per-turn 模型（provider/model；null/不传=默认模型，由后端按 agent 解析） */
+  model?: string | null;
+  /** per-turn 知识库（不传/空数组=不注入，[id...]=只检索这些库） */
+  knowledge_base_ids?: string[];
 }
+
+// —— 知识库（M6）——
+
+export interface OnnxPreset {
+  id: string;
+  size_gb: number | null;
+  hf_source: string | null;
+  supported: boolean;
+}
+
+export interface KnowledgeCapability {
+  enabled: boolean;
+  model: string;
+  ready: boolean;
+  downloaded: boolean;
+  cache_dir: string;
+  local_models: string[];
+  presets: string[];
+  presets_meta?: OnnxPreset[];
+  deps_available: boolean;
+  ocr_enabled: boolean;
+  max_bases: number;
+  downloading: string[];
+}
+
+export interface KnowledgeBase {
+  id: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+  icon_name: string;
+  embedding_model: string;
+  embedding_dim: number | null;
+  doc_count: number;
+  max_documents: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export type KnowledgeDocStatus = 'pending' | 'processing' | 'ready' | 'failed';
+
+export interface KnowledgeDocument {
+  id: string;
+  kb_id: string;
+  path: string;
+  filename: string;
+  is_dir: boolean;
+  content_type: string;
+  byte_size: number;
+  status: KnowledgeDocStatus;
+  error_message: string;
+  chunk_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+// —— 知识库 API（契约见 docs/knowledge-frontend-design.md §6）——
+export const knowledgeApi = {
+  capability: () => get<KnowledgeCapability>('/knowledge/capability'),
+  feature: (b: { enabled?: boolean; model?: string }) => put<KnowledgeCapability>('/knowledge/feature', b),
+  onnxDownload: (model: string) => post<{ started: boolean; reason?: string; model: string }>('/knowledge/onnx-download', { model }),
+  onnxDelete: (model: string) => del<{ ok: boolean; removed: boolean }>(`/knowledge/onnx-model?model=${encodeURIComponent(model)}`),
+  listBases: () => get<KnowledgeBase[]>('/knowledge-bases'),
+  createBase: (b: Partial<KnowledgeBase>) => post<KnowledgeBase>('/knowledge-bases', b),
+  getBase: (id: string) => get<KnowledgeBase>(`/knowledge-bases/${id}`),
+  patchBase: (id: string, b: Partial<KnowledgeBase>) => patch<KnowledgeBase>(`/knowledge-bases/${id}`, b),
+  deleteBase: (id: string) => del<{ ok: boolean }>(`/knowledge-bases/${id}`),
+  listDocs: (kbId: string, prefix?: string) =>
+    get<KnowledgeDocument[]>(`/knowledge-bases/${kbId}/documents${prefix ? `?prefix=${encodeURIComponent(prefix)}` : ''}`),
+  createFolder: (kbId: string, path: string) => post<KnowledgeDocument>(`/knowledge-bases/${kbId}/folders`, { path }),
+  uploadDoc: (kbId: string, file: File) => upload<KnowledgeDocument>(`/knowledge-bases/${kbId}/documents`, file),
+  createTextDoc: (kbId: string, b: { name: string; format: 'md' | 'txt'; content: string; path?: string }) =>
+    post<KnowledgeDocument>(`/knowledge-bases/${kbId}/documents/text`, b),
+  previewDoc: (kbId: string, docId: string) => get<{ id: string; filename: string; text: string }>(`/knowledge-bases/${kbId}/documents/${docId}/preview`),
+  readContent: (kbId: string, docId: string) => get<{ id: string; filename: string; content_type: string; text: string }>(`/knowledge-bases/${kbId}/documents/${docId}/content`),
+  writeContent: (kbId: string, docId: string, content: string) => put<KnowledgeDocument>(`/knowledge-bases/${kbId}/documents/${docId}/content`, { content }),
+  renameDoc: (kbId: string, docId: string, newName: string) => post<KnowledgeDocument>(`/knowledge-bases/${kbId}/documents/${docId}/rename`, { new_name: newName }),
+  reindexDoc: (kbId: string, docId: string) => post<KnowledgeDocument>(`/knowledge-bases/${kbId}/documents/${docId}/reindex`),
+  deleteDoc: (kbId: string, docId: string) => del<{ ok: boolean }>(`/knowledge-bases/${kbId}/documents/${docId}`),
+  fileUrl: (kbId: string, docId: string) => `/api/knowledge-bases/${kbId}/documents/${docId}/file`,
+};
 
 /** 调用专家对话 SSE 流（octop 原生事件帧），逐事件回调（token 累积由调用方处理）。 */
 export async function chatStream(

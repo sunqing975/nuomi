@@ -23,6 +23,24 @@ from octop_harness.protocols.langgraph import AgentEventType
 from app.infra.harness.manager import manager
 
 
+def _stamp_knowledge(request_kwargs: dict, *, explicit_ids: list[str] | None) -> None:
+    """知识库启用时写入本轮 configurable（显式指定才注入，无默认打开一说）。
+
+    未启用时不写 configurable——检索工具未挂载，中间件也无从改写。
+    visible_bases 只含启用库：停用库不进检索工具描述（对话侧同样不展示）。
+    """
+    from app.infra.knowledge.default_open import stamp_turn_knowledge_config
+    from app.infra.knowledge.onnx_service import load_config
+    from app.infra.knowledge.repo import KnowledgeRepo
+
+    if not load_config().enabled:
+        return
+    bases = [b for b in KnowledgeRepo().list_bases() if b.enabled]
+    stamp_turn_knowledge_config(
+        request_kwargs, visible_bases=bases, explicit_ids=explicit_ids
+    )
+
+
 async def stream_chat(
     messages: str,
     thread_id: str,
@@ -30,6 +48,7 @@ async def stream_chat(
     agent_id: str,
     name: str,
     system_prompt: str,
+    workspace_dir=None,
     plugin_tools: list | None = None,
     skills_dir=None,
     skills_disabled: frozenset[str] = frozenset(),
@@ -38,19 +57,24 @@ async def stream_chat(
     skills: list[str] | None = None,
     connectors: list[str] | None = None,
     model: str | None = None,
+    knowledge_base_ids: list[str] | None = None,
 ) -> AsyncIterator[dict]:
     """流式对话：把 harness 事件翻译成 nuomi 标准化事件。
 
+    workspace_dir：专家级工作区（persona 文件自动注入、独立记忆/sessions）；None 用全局数据根。
     skills / connectors / model 为 per-turn 能力选择（对齐 octop 对话框语义）：
     - skills=None 全量技能；[] 禁用全部技能；[name/slug...] 只启用这些
     - connectors=None 用默认连接器（agent 配置的 mcp_default_servers）；
       [] 不挂载连接器；[name...] 只挂载这些连接器
     - model=None 用 agent 默认模型；[provider/model] 覆盖本次模型（harness 原生优先）
+    - knowledge_base_ids=None 本轮不注入；[] 本轮不注入；[id...] 只检索这些库
+      （显式指定才注入，无默认打开；未知 id 由路由层校验）
     """
     agent = manager.get_agent(
         agent_id,
         name=name,
         system_prompt=system_prompt,
+        workspace_dir=workspace_dir,
         plugin_tools=plugin_tools,
         skills_dir=skills_dir,
         skills_disabled=skills_disabled,
@@ -66,14 +90,16 @@ async def stream_chat(
     else:
         mcp_use_default = False
         mcp_servers = connectors
-    request = ChatRequest(
-        messages=messages,
-        thread_id=thread_id,
-        skills=skills,
-        mcp_servers=mcp_servers,
-        mcp_use_default=mcp_use_default,
-        model=model,
-    )
+    request_kwargs: dict = {
+        "messages": messages,
+        "thread_id": thread_id,
+        "skills": skills,
+        "mcp_servers": mcp_servers,
+        "mcp_use_default": mcp_use_default,
+        "model": model,
+    }
+    _stamp_knowledge(request_kwargs, explicit_ids=knowledge_base_ids)
+    request = ChatRequest(**request_kwargs)
 
     text_parts: list[str] = []
     seen_tool_results: set[tuple] = set()

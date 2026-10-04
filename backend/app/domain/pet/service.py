@@ -63,10 +63,27 @@ def _expression_has_file(model_dir: Path, expr: dict) -> bool:
     return bool(file) and (model_dir / file).is_file()
 
 
+def _load_actions_manifest(model_dir: Path) -> dict:
+    """读模型目录的 actions.json（语义动作清单）。
+
+    格式：{"actions": {"wave": {"motion": "main_1", "expressions": [], "label_zh": "挥手"}, ...}}
+    没有文件时返回空 dict（fallback 到按 motion group 名注册工具）。
+    """
+    p = model_dir / "actions.json"
+    if not p.is_file():
+        return {}
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+        return data.get("actions") or {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
 def list_models() -> list[dict]:
-    """扫描模型目录，返回 [{id, path, motions, expressions}]。
+    """扫描模型目录，返回 [{id, path, motions, expressions, actions}]。
 
     motions/expressions 只列文件真实存在的（资产不完整的模型如实显示为空）。
+    actions 来自模型目录 actions.json（语义动作清单，没有则为空）。
     """
     _seed_builtin_models()
     models: list[dict] = []
@@ -95,12 +112,10 @@ def list_models() -> list[dict]:
         models.append(
             {
                 "id": char_dir.name,
-                # 绝对路径（资产在工作区）；壳侧转 file:// URL 加载
                 "path": str(char_dir / model_files[0].name),
                 "motions": motions,
                 "expressions": expressions,
-                # 种子机制分发的内置模型（仓库 assets/models/2D/<id>），
-                # 删除后启动播种会复原，故页面上不可删除
+                "actions": _load_actions_manifest(char_dir),
                 "builtin": (SEED_MODEL_DIR / char_dir.name).is_dir(),
             }
         )
@@ -255,19 +270,23 @@ def _zh_label(kind: str, name: str) -> str:
 def generate_model_plugin(model: dict) -> Path | None:
     """为单个模型生成插件（工作区 plugins/<model_id>/）。
 
-    工具名 = 动作/表情名（模型真实能力），一次可注册多个工具（octop 支持）。
-    工具返回 {"motion"/"expression": 名称, "display": 中文语义}，壳播放器按字段直接播放。
+    两种模式：
+    1. 有 actions.json（语义清单）：工具名 = 语义名（wave/dance/nod...），
+       工具一次返回 motion + expressions 组合，LLM 看到的是"挥手"不是 main_1。
+    2. 无 manifest：fallback 到每个 motion group / expression 名一个工具（旧行为）。
     """
     model_id = model["id"]
+    actions = model.get("actions") or {}
     motions = model.get("motions") or []
     expressions = model.get("expressions") or []
+    if actions:
+        return _generate_semantic_plugin(model_id, actions)
     if not motions and not expressions:
-        return None  # 无动作无表情的模型不生成插件
+        return None
 
     plugin_dir = settings.workspace_path / "plugins" / model_id
     plugin_dir.mkdir(parents=True, exist_ok=True)
 
-    # plugin.yaml
     yaml = (
         f"id: {model_id}\n"
         f"version: 1.0.0\n"
@@ -280,7 +299,6 @@ def generate_model_plugin(model: dict) -> Path | None:
     )
     (plugin_dir / "plugin.yaml").write_text(yaml, encoding="utf-8")
 
-    # main.py：每个动作/表情注册一个 ctx.tool
     lines = [
         '"""模型插件（自动生成）：工具名 = 模型真实动作/表情名，壳按返回字段播放。"""',
         "from __future__ import annotations",
@@ -330,6 +348,78 @@ def generate_model_plugin(model: dict) -> Path | None:
     return plugin_dir
 
 
+def _generate_semantic_plugin(model_id: str, actions: dict) -> Path:
+    """有 actions.json 时：按语义名生成工具，一次绑定 motion+expressions。"""
+    plugin_dir = settings.workspace_path / "plugins" / model_id
+    plugin_dir.mkdir(parents=True, exist_ok=True)
+
+    yaml = (
+        f"id: {model_id}\n"
+        f"version: 1.0.0\n"
+        f"name: 桌宠动作-{model_id}\n"
+        f"kind: tool\n"
+        f"description: 桌宠「{model_id}」的动作工具集。"
+        f"根据对话情绪和场景选择合适的动作，让桌宠生动地回应。"
+        f"共 {len(actions)} 个动作。\n"
+        "entry: main.py\n"
+    )
+    (plugin_dir / "plugin.yaml").write_text(yaml, encoding="utf-8")
+
+    # 生成 instructions.md：自动拼动作清单，注入到 system_prompt
+    action_lines = []
+    for name, spec in actions.items():
+        label = spec.get("label_zh", name)
+        action_lines.append(f"- {name}：{label}")
+    instructions = (
+        "你有一个 Live2D 形象身体，对话时要主动调用动作工具让自己动起来，"
+        "不要只靠文字和 emoji。\n\n"
+        "可用动作工具：\n"
+        + "\n".join(action_lines)
+        + "\n\n"
+        "使用原则：\n"
+        "- 用户让你打招呼、做动作、表达情绪时，调用对应动作工具让身体做出来，不要用 emoji 代替\n"
+        "- 动作要自然：打招呼用 wave，思考用 think，完成任务用 celebrate，同意用 nod\n"
+        "- 调用动作后简短回应即可，不要长篇大论\n"
+    )
+    (plugin_dir / "instructions.md").write_text(instructions, encoding="utf-8")
+
+    tool_regs: list[str] = []
+    for semantic_name, spec in actions.items():
+        motion = spec.get("motion", "")
+        exprs = spec.get("expressions", []) or []
+        label = spec.get("label_zh", semantic_name)
+        expr_desc = f"，同时呈现表情：{ '、'.join(exprs) }" if exprs else ""
+        tool_regs.append(
+            f"    ctx.tool(\n"
+            f'        "{semantic_name}",\n'
+            f'        _make_action_player({json.dumps(motion)}, {json.dumps(exprs)}, {json.dumps(label, ensure_ascii=False)}),\n'
+            f'        description="让桌宠做出「{label}」动作{expr_desc}。",\n'
+            f"    )"
+        )
+
+    lines = [
+        '"""模型插件（自动生成）：工具名 = 语义动作名，一次绑定 motion+expressions。"""',
+        "from __future__ import annotations",
+        "",
+        "import json",
+        "",
+        "",
+        "def _make_action_player(motion: str, expressions: list, label: str):",
+        '    """闭包绑定：LLM 调用语义工具时，返回 motion+expressions 组合 payload。"""',
+        "    def _play(*args, **kwargs) -> str:",
+        '        return json.dumps({"motion": motion, "expressions": expressions, "label": label}, ensure_ascii=False)',
+        "    return _play",
+        "",
+        "",
+        "def setup(ctx) -> None:",
+        '    """注册工具：每个语义动作一个工具。"""',
+        *tool_regs,
+        "",
+    ]
+    (plugin_dir / "main.py").write_text("\n".join(lines), encoding="utf-8")
+    return plugin_dir
+
+
 def generate_all_model_plugins() -> list[dict]:
     """为所有有动作/表情的模型生成插件，返回生成结果。"""
     results: list[dict] = []
@@ -343,3 +433,30 @@ def generate_all_model_plugins() -> list[dict]:
             }
         )
     return results
+
+
+def load_pet_instructions() -> str:
+    """读当前激活模型插件的 instructions.md（身体使用说明）。
+
+    拼到 system_prompt 后面，让 LLM 知道"你有身体要主动做动作"。
+    插件未启用 / 无 instructions.md 时返回空字符串。
+    """
+    active = get_active_model()
+    if not active:
+        return ""
+    # 检查插件是否启用
+    from app.storage import db
+
+    with db.connect() as conn:
+        row = conn.execute(
+            "SELECT enabled FROM plugins WHERE plugin_id=?", (active,)
+        ).fetchone()
+    if not row or not row["enabled"]:
+        return ""
+    instructions_path = settings.workspace_path / "plugins" / active / "instructions.md"
+    if not instructions_path.is_file():
+        return ""
+    try:
+        return instructions_path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""

@@ -18,19 +18,20 @@ from app.domain.agents.service import agent_service
 from app.infra.harness.manager import manager
 from app.storage.db import init_db
 from app.transport.api import router
+from app.transport.knowledge_api import router as knowledge_router
 from app.transport.openai_compat import router as openai_router
 
 
 def seed_default_agent() -> None:
-    """agents 表为空时创建默认专家（糯米，小猫伙伴人格）。"""
+    """agents 表为空时创建默认专家（糯米，AI 助手人格）。"""
     if agent_service.list_all():
         return
     agent_service.create(
         {
             "name": "糯米",
-            "description": "住在电脑里的默认专家：能干、记得、在乎",
+            "description": "住在你电脑里的人工智能助手：能干、记得、在乎",
             "system_prompt": default_system_prompt(),
-            "icon_name": "cat",
+            "icon_name": "bot",
             "color": "#f59e0b",
             "welcome_message": default_welcome_message(),
             "kind": "expert",
@@ -38,16 +39,36 @@ def seed_default_agent() -> None:
     )
 
 
+def ensure_agent_workspaces() -> None:
+    """启动时为全部专家补齐独立 workspace（persona 文件 + manifest）。"""
+    from app.domain.agents.service import ensure_agent_workspace
+
+    for row in agent_service.list_all():
+        ensure_agent_workspace(row["agent_id"], row["name"])
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     _sync_env_file()  # 应用设置 env（env.json）→ 进程环境，先于一切
     init_db()
     seed_default_agent()
+    ensure_agent_workspaces()
     _ensure_model_plugins()
     _sync_plugins()
     _sync_connectors_file()
+    _resume_knowledge_index_jobs()
     yield
     manager.close()
+
+
+def _resume_knowledge_index_jobs() -> None:
+    """启动时恢复中断的知识库索引任务（上次进程退出时 pending/processing 的文档）。"""
+    from contextlib import suppress
+
+    from app.infra.knowledge.jobs import resume_pending_index_jobs
+
+    with suppress(Exception):
+        resume_pending_index_jobs()
 
 
 def _sync_env_file() -> None:
@@ -106,6 +127,7 @@ app.add_middleware(
 )
 app.include_router(router)
 app.include_router(openai_router)
+app.include_router(knowledge_router)
 
 # —— 前端控制台（frontend/dist 静态挂载，同源零 CORS；浏览器或壳内都访问 /console/）——
 _FRONTEND_DIR = REPO_ROOT / "frontend" / "dist"

@@ -16,12 +16,16 @@ class PetEventBus:
     def __init__(self) -> None:
         self._subscribers: set[asyncio.Queue] = set()
 
-    def publish(self, name: str) -> None:
-        """广播一个工具调用事件（工具名 = 动作/表情名）。"""
-        payload = {"type": "tool_call", "name": name}
+    def publish(self, payload: dict) -> None:
+        """广播一个桌宠动作事件。
+
+        payload 形如 {"motion": "main_1", "expressions": ["happy"], "label": "挥手"}，
+        壳据此同时播动作和表情（原子组合）。
+        """
+        envelope = {"type": "pet_action", **payload}
         for q in list(self._subscribers):
             with suppress(asyncio.QueueFull):
-                q.put_nowait(payload)
+                q.put_nowait(envelope)
 
     async def stream(self):
         """SSE 生成器：注册订阅队列，持续产出事件（连接断开自动注销）。"""

@@ -29,6 +29,7 @@ class HarnessManager:
 
     @property
     def workspace(self) -> Path:
+        """默认工作区（全局数据根；专家级 workspace 由 get_agent 的 workspace_dir 指定）。"""
         return settings.workspace_path
 
     def get_agent(
@@ -37,6 +38,7 @@ class HarnessManager:
         *,
         name: str,
         system_prompt: str,
+        workspace_dir: Path | None = None,
         plugin_tools: list | None = None,
         skills_dir=None,
         skills_disabled: frozenset[str] = frozenset(),
@@ -45,13 +47,14 @@ class HarnessManager:
     ) -> HarnessAgent:
         """按 agent_id 取实例；不存在则构造并缓存（start 语义）。
 
+        workspace_dir：专家级工作区（persona 文件 + 独立记忆/sessions）。None 时用全局数据根。
         plugin_tools / skills / mcp：随 agent 绑定变化；实例已存在时忽略（改绑定需重启实例）。
         模型不绑专家（2026-10-04）：agent 默认模型 = providers 默认；对话时由
         ChatRequest.model per-turn 覆盖。
         """
         if agent_id not in self._agents:
             cfg = build_agent_config(
-                self.workspace,
+                workspace_dir or self.workspace,
                 name=name,
                 system_prompt=system_prompt,
                 plugin_tools=plugin_tools,

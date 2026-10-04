@@ -916,7 +916,7 @@ function cleanMessagesForAPI(messages) {
 
 // ============ Nuomi 后端模式（SSE）：后端统一执行工具，壳只消费事件流播放 ============
 
-// 动作映射表：pet_action 工具参数 → 壳可播放的 motion（aidang 分组）/ 表情组合
+// 语义动作映射表（P1 改造用：未来后端工具名直接用语义名，壳内部映射到 motion+expression 组合）
 // aidang 可用分组：idle/home/login/mail/main_1~3/mission/mission_complete/complete/wedding/touch_body/touch_head/touch_special
 const PET_ACTION_MAP = {
     heart:     { motion: 'touch_special', expressions: ['开心', '害羞'], text: '比心' },
@@ -928,57 +928,45 @@ const PET_ACTION_MAP = {
     blow_kiss: { motion: 'touch_special', expressions: ['开心', '害羞'], text: '飞吻' }
 }
 
-// 桌宠动作播放：表情组合（5s 自动恢复）+ 动作（Tap 兜底）
-function playPetAction(action) {
-    const cfg = PET_ACTION_MAP[action] || { motion: 'Tap', expressions: ['开心'], text: action }
-    log('桌宠动作: ' + (cfg.text || action), 'info')
+// 表情自动恢复定时器：LLM 调一次表情工具后，N 秒后自动回默认表情（避免脸卡死）
+let _expressionRecoveryTimer = null
+const EXPRESSION_RECOVERY_MS = 5000
+
+function playPetMotion(name) {
+    if (!model) return
+    log('桌宠动作: ' + name, 'info')
+    try { model.motion(name) } catch (e) { log('动作播放失败: ' + e.message, 'warn') }
+}
+
+function playPetExpression(name) {
+    if (!model) return
+    log('桌宠表情: ' + name, 'info')
     try {
-        if (cfg.expressions && cfg.expressions.length > 0) {
-            for (const e of cfg.expressions) {
-                if (_applyEmotionExpression) _applyEmotionExpression(e)
-            }
+        model.expression(name)
+        // 重置旧定时器（连续表情调用时刷新恢复时间）
+        if (_expressionRecoveryTimer) {
+            clearTimeout(_expressionRecoveryTimer)
+            _expressionRecoveryTimer = null
         }
-        if (cfg.motion && model) model.motion(cfg.motion)
-    } catch (e) {
-        log('动作播放失败: ' + e.message, 'warn')
-    }
-}
-
-// tool_result → 播放器（pet_action 动作 / set_emotion 表情）
-function handleNuomiToolResult(name, content) {
-    let data = {}
-    try { data = JSON.parse(content || '{}') } catch (e) { return }
-    // 模型插件（工具名=动作/表情名）：返回 {motion} 或 {expression}，直接播放
-    if (data.motion) {
-        log('桌宠动作: ' + data.motion, 'info')
-        try { if (model) model.motion(data.motion) } catch (e) { log('动作播放失败: ' + e.message, 'warn') }
-        return
-    }
-    if (data.expression) {
-        log('桌宠表情: ' + data.expression, 'info')
-        try {
-            if (model) model.expression(data.expression)
-        } catch (e) { log('表情播放失败: ' + e.message, 'warn') }
-        return
-    }
-    // 兼容旧插件 pet_action（已废弃，仅防御性保留）
-    if (name === 'pet_action' && data.action) {
-        playPetAction(data.action)
-    }
-}
-
-
-// 按工具名播放动作/表情（模型插件工具名 = 动作/表情名）
-let lastPlayedTool = null // 去重：广播动作与本地播放（1s 内同名跳过）
-function playPetToolByName(name) {
-    lastPlayedTool = { name, ts: Date.now() }
-    log('桌宠工具: ' + name, 'info')
-    try {
-        if (model && model.motion) { model.motion(name); return }
-    } catch (e) { log('动作播放失败: ' + e.message, 'warn') }
-    try {
-        if (model && model.expression) model.expression(name)
+        // N 秒后恢复默认表情（pixi expression() 不传参=重置所有表情参数）
+        _expressionRecoveryTimer = setTimeout(() => {
+            try { model.expression() } catch (e) {}
+            _expressionRecoveryTimer = null
+        }, EXPRESSION_RECOVERY_MS)
     } catch (e) { log('表情播放失败: ' + e.message, 'warn') }
+}
+
+// 按动作 payload 播放（后端已解析好 motion+expressions 组合，壳不再反查）
+let lastPlayedAction = null // 去重：1s 内同 label 跳过
+function playPetActionPayload(payload) {
+    if (!payload) return
+    const label = payload.label || payload.motion || payload.expressions?.[0] || 'action'
+    const now = Date.now()
+    if (lastPlayedAction && lastPlayedAction.label === label && now - lastPlayedAction.ts < 1000) return
+    lastPlayedAction = { label, ts: now }
+    log('桌宠动作: ' + label, 'info')
+    if (payload.motion) playPetMotion(payload.motion)
+    for (const expr of (payload.expressions || [])) playPetExpression(expr)
 }
 
 // 订阅后端动作广播：控制台等任何来源的对话触发工具调用时，桌宠同步播放
@@ -1002,10 +990,8 @@ async function subscribePetEvents() {
                 if (!p) continue
                 let ev
                 try { ev = JSON.parse(p) } catch (e) { continue }
-                if (ev.type === 'tool_call' && ev.name) {
-                    const now = Date.now()
-                    if (lastPlayedTool && lastPlayedTool.name === ev.name && now - lastPlayedTool.ts < 1000) continue
-                    playPetToolByName(ev.name)
+                if (ev.type === 'pet_action') {
+                    playPetActionPayload(ev)
                 }
             }
         }

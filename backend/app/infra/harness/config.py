@@ -51,6 +51,8 @@ def build_agent_config(
     模型不绑专家（2026-10-04）：默认模型 = providers[0] 的 models[0]；
     对话时由 ChatRequest.model per-turn 覆盖（harness 原生优先于 default_model）。
     plugin_tools：插件注册的工具（build_plugin_tools 结果），经 cfg.tools 注入 agent。
+    知识库启用时（KNOWLEDGE_EMBEDDING_ENABLED=true）额外注入 search_knowledge 工具
+    与 KnowledgeSearchHintMiddleware（每轮改写工具描述；无选中库时隐藏工具）。
     skills_dir / skills_disabled：自定义技能目录与禁用集合。
     mcp_server_configs / mcp_default_servers：MCP 服务器（对话请求经 mcp_use_default 启用）。
     """
@@ -59,6 +61,7 @@ def build_agent_config(
     default_model = None
     if providers and providers[0].models:
         default_model = f"{providers[0].id}/{providers[0].models[0].id}"
+    tools, middleware = _knowledge_capabilities(plugin_tools)
     return HarnessAgentConfig(
         name=name,
         workspace_dir=workspace_dir,
@@ -66,9 +69,25 @@ def build_agent_config(
         default_model=default_model or f"llm/{settings.llm_model}",
         system_prompt=system_prompt
         or "你是糯米，一个住在用户电脑里的桌面 AI 人格。中文回答，简洁友好。",
-        tools=plugin_tools,
+        tools=tools,
+        middleware=middleware,
         skills_dir=skills_dir,
         skills_disabled=skills_disabled,
         mcp_server_configs=mcp_server_configs or {},
         mcp_default_servers=mcp_default_servers,
     )
+
+
+def _knowledge_capabilities(
+    plugin_tools: list | None,
+) -> tuple[list | None, list | None]:
+    """知识库启用时挂载检索工具与提示中间件（未启用不挂，避免无谓开销）。"""
+    from app.infra.knowledge.hint import KnowledgeSearchHintMiddleware
+    from app.infra.knowledge.onnx_service import load_config
+    from app.infra.knowledge.tools import build_knowledge_tools
+
+    if not load_config().enabled:
+        return plugin_tools, None
+    tools = list(plugin_tools or [])
+    tools.extend(build_knowledge_tools())
+    return tools, [KnowledgeSearchHintMiddleware()]

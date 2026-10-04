@@ -1,29 +1,16 @@
-"""默认专家种子：从 experts/<name>/ 模板资产组装 system_prompt（IDENTITY + SOUL）。
+"""默认专家种子：system_prompt 兜底 + 专家 workspace 由 ensure_agent_workspace 从模板复制。
 
-糯米 = 默认专家（小猫伙伴人格）。多专家时每个 Agent 可带自己的 system_prompt。
+糯米 = 默认专家（AI 助手人格）。详细 persona（USER/SOUL/AGENTS/MEMORY.md）在
+专家 workspace（data_root/agent-workspaces/<agent_id>/）由 harness 每轮自动注入；
+此处只提供兜底短句（experts/<name>/ 模板复制见 agents/service.ensure_agent_workspace）。
 """
 
 from __future__ import annotations
 
-from pathlib import Path
-
-# backend/app/domain/agents/seed.py -> parents: [agents, domain, app, backend, nuomi]
-EXPERTS_DIR = Path(__file__).resolve().parents[4] / "experts"
-
-
-def _read(rel: str) -> str:
-    p = EXPERTS_DIR / rel
-    return p.read_text(encoding="utf-8").strip() if p.exists() else ""
-
 
 def default_system_prompt() -> str:
-    """组装糯米默认人设（IDENTITY + SOUL，AGENTS.md 作为工作记忆由 workspace 承载）。"""
-    identity = _read("nuomi/IDENTITY.md")
-    soul = _read("nuomi/SOUL.md")
-    parts = [p for p in (identity, soul) if p]
-    if not parts:
-        return "你是糯米，一个住在用户电脑里的桌面 AI 人格。中文回答，简洁友好。"
-    return "\n\n".join(parts)
+    """糯米默认人设兜底：详细 persona 由专家 workspace 的记忆文件注入（A2 对齐 octop）。"""
+    return "你是糯米，住在用户电脑里的人工智能助手。中文回答，简洁友好。"
 
 
 def default_welcome_message() -> str:

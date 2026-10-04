@@ -17,7 +17,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.domain.agents.seed import default_system_prompt
-from app.domain.agents.service import agent_service
+from app.domain.agents.service import agent_service, ensure_agent_workspace
 from app.infra.harness.chat import stream_chat, stream_openai_sse
 
 router = APIRouter(prefix="/api/v1", tags=["openai"])
@@ -87,6 +87,7 @@ async def chat_completions(body: OpenAIChatBody, request: Request) -> StreamingR
             agent_id=agent["agent_id"],
             name=agent["name"],
             system_prompt=system_prompt,
+            workspace_dir=ensure_agent_workspace(agent["agent_id"], agent["name"]),
         )
         if body.stream:
             async for frame in stream_openai_sse(

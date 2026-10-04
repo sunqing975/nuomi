@@ -140,31 +140,39 @@ class ChatSessionService:
                 else None
             )
         self._write(cfg)
-        self._delete_checkpoint_history(thread_id)
+        self._delete_checkpoint_history(thread_id, agent_id)
         return True
 
     @staticmethod
-    def _delete_checkpoint_history(thread_id: str) -> None:
-        """清除该线程的 LLM 对话上下文（octop checkpointer 存于 memory.sqlite）。
+    def _delete_checkpoint_history(thread_id: str, agent_id: str | None = None) -> None:
+        """清除该线程的 LLM 对话上下文（octop checkpointer 存于专家 workspace 的 memory.sqlite）。
 
-        只清 checkpoints/writes（thread_id 列直删）；hm_checkpoint_blobs 无
+        同时清理专家工作区与全局根的 memory.sqlite（兼容迁移期）。只清
+        checkpoints/writes（thread_id 列直删）；hm_checkpoint_blobs 无
         thread_id 列、删除后成无害孤儿，不强求。历史清除失败不阻断列表删除。
         """
         from app.config import settings
 
-        db_path = settings.workspace_path / "memory.sqlite"
-        if not db_path.is_file():
-            return
-        try:
-            import sqlite3
+        db_paths = [settings.workspace_path / "memory.sqlite"]
+        if agent_id:
+            from app.domain.agents.service import agent_workspace_dir
 
-            with sqlite3.connect(db_path) as conn:
-                for table in ("checkpoints", "writes"):
-                    cols = [r[1] for r in conn.execute(f"PRAGMA table_info({table})")]
-                    if "thread_id" in cols:
-                        conn.execute(f"DELETE FROM {table} WHERE thread_id = ?", (thread_id,))
-        except Exception:
-            pass
+            db_paths.insert(0, agent_workspace_dir(agent_id) / "memory.sqlite")
+        for db_path in db_paths:
+            if not db_path.is_file():
+                continue
+            try:
+                import sqlite3
+
+                with sqlite3.connect(db_path) as conn:
+                    for table in ("checkpoints", "writes"):
+                        cols = [r[1] for r in conn.execute(f"PRAGMA table_info({table})")]
+                        if "thread_id" in cols:
+                            conn.execute(
+                                f"DELETE FROM {table} WHERE thread_id = ?", (thread_id,)
+                            )
+            except Exception:
+                pass
 
 
 chat_sessions = ChatSessionService()

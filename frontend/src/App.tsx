@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Layout, Menu, Tag, Typography } from 'antd';
 import {
   RobotOutlined, ApiOutlined, ReadOutlined, GlobalOutlined, DatabaseOutlined,
-  SmileOutlined, MessageOutlined, SettingOutlined,
+  SmileOutlined, MessageOutlined, SettingOutlined, BookOutlined,
 } from '@ant-design/icons';
 import ChatPage from './pages/Chat';
 import ExpertsPage from './pages/Experts';
@@ -12,6 +12,8 @@ import ConnectorsPage from './pages/Connectors';
 import StoragePage from './pages/Storage';
 import PetModelsPage from './pages/PetModels';
 import SettingsPage from './pages/Settings';
+import KnowledgePage from './pages/Knowledge';
+import KnowledgeDetailPage from './pages/KnowledgeDetail';
 
 const { Sider, Content, Header } = Layout;
 
@@ -21,6 +23,7 @@ const NAV = [
   { key: 'plugins', icon: <ApiOutlined />, label: '插件', title: '插件' },
   { key: 'skills', icon: <ReadOutlined />, label: '技能', title: '技能' },
   { key: 'connectors', icon: <GlobalOutlined />, label: '连接器', title: '连接器（MCP 协议）' },
+  { key: 'knowledge', icon: <BookOutlined />, label: '知识库', title: '知识库 / 文档检索' },
   { key: 'petModels', icon: <SmileOutlined />, label: '桌宠', title: '桌宠模型资产' },
   { key: 'settings', icon: <SettingOutlined />, label: '设置', title: '设置 / 环境变量' },
   { key: 'storage', icon: <DatabaseOutlined />, label: '存储', title: '存储 / 总览' },
@@ -28,23 +31,30 @@ const NAV = [
 
 export default function App() {
   const [page, setPage] = useState('chat');
+  const [kbDetailId, setKbDetailId] = useState<string | null>(null); // #knowledge/detail/<id> 独立详情页
   const [backendOk, setBackendOk] = useState<boolean | null>(null);
 
-  // 与 URL hash 同步（#plugins 直达 / 浏览器前进后退）
+  // 与 URL hash 同步（#plugins 直达 / #knowledge/detail/<id> 详情页 / 浏览器前进后退）
   useEffect(() => {
     const applyHash = () => {
       const h = location.hash.replace('#', '');
-      if (NAV.some(n => n.key === h)) setPage(h);
+      const m = h.match(/^knowledge\/detail\/([^/]+)$/);
+      if (m) { setPage('knowledge'); setKbDetailId(m[1]); return; }
+      if (NAV.some(n => n.key === h)) {
+        setPage(h);
+        setKbDetailId(null); // 非详情路由一律清详情（detail 格式已在上方提前 return）
+      }
     };
     applyHash();
     window.addEventListener('hashchange', applyHash);
     return () => window.removeEventListener('hashchange', applyHash);
   }, []);
 
-  const title = NAV.find(n => n.key === page)?.title ?? '';
+  const title = kbDetailId ? '知识库详情' : (NAV.find(n => n.key === page)?.title ?? '');
 
   const switchPage = (key: string) => {
     setPage(key);
+    setKbDetailId(null);
     history.replaceState(null, '', '#' + key);
   };
 
@@ -84,6 +94,7 @@ export default function App() {
           {page === 'plugins' && <PluginsPage />}
           {page === 'skills' && <SkillsPage />}
           {page === 'connectors' && <ConnectorsPage />}
+          {page === 'knowledge' && (kbDetailId ? <KnowledgeDetailPage kbId={kbDetailId} /> : <KnowledgePage />)}
           {page === 'petModels' && <PetModelsPage />}
           {page === 'settings' && <SettingsPage />}
           {page === 'storage' && <StoragePage />}
