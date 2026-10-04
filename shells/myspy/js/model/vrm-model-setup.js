@@ -61,10 +61,8 @@ class VRMModelSetup {
             throw e;
         }
 
-        // 拒绝VRM 1.0模型（仅支持VRM 0.x）
-        if (vrm.meta?.metaVersion === '1') {
-            throw new Error('不支持VRM 1.0模型，请使用VRM 0.x格式的模型');
-        }
+        // VRM 1.0 也支持（three-vrm v2+ 原生支持）
+        console.log(`VRM 版本: ${vrm.meta?.metaVersion || 'unknown'}`)
 
         // 用 Group 包裹 vrm.scene（用于统一控制可见性）
         // 朝向由轨道摄像头控制，不在此处旋转
