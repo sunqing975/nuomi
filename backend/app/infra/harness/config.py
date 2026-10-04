@@ -3,6 +3,7 @@
 对齐 Octop 的做法（src/octop/infra/agents/manager.py）：把领域配置翻译成
 HarnessAgentConfig，再由 manager 负责生命周期。
 """
+
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -49,7 +50,8 @@ def build_agent_config(
         workspace_dir=workspace_dir,
         providers=[build_provider()],
         default_model=f"llm/{settings.llm_model}",
-        system_prompt=system_prompt or "你是糯米，一个住在用户电脑里的桌面 AI 人格。中文回答，简洁友好。",
+        system_prompt=system_prompt
+        or "你是糯米，一个住在用户电脑里的桌面 AI 人格。中文回答，简洁友好。",
         tools=plugin_tools,
         skills_dir=skills_dir,
         skills_disabled=skills_disabled,

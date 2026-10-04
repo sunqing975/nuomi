@@ -10,6 +10,7 @@
 对外统一输出 OpenAI Chat Completions 格式（stream_openai_sse），
 表情/动作由模型插件工具驱动（工具名即动作/表情名），不再有独立的 emotion 事件。
 """
+
 from __future__ import annotations
 
 import json
@@ -65,7 +66,9 @@ async def stream_chat(
         elif kind == AgentEventType.TOOL_CALL_CHUNK.value:
             # 聚合工具调用分块（name 首个 chunk 携带，args 分块累积）
             idx = event.get("index", 0)
-            slot = pending_tools.setdefault(idx, {"id": event.get("id", ""), "name": "", "args": ""})
+            slot = pending_tools.setdefault(
+                idx, {"id": event.get("id", ""), "name": "", "args": ""}
+            )
             if event.get("name"):
                 slot["name"] = event["name"]
             if event.get("args"):
@@ -88,10 +91,21 @@ async def stream_chat(
                     if key in seen_tool_results:
                         break  # langgraph 会对同一工具结果重复发事件，去重
                     seen_tool_results.add(key)
-                    yield {"type": "tool_result", "name": getattr(m, "name", None), "content": str(content)[:500]}
+                    yield {
+                        "type": "tool_result",
+                        "name": getattr(m, "name", None),
+                        "content": str(content)[:500],
+                    }
                     break  # messages 可能含多个带 content 的消息，只透出首个结果
         elif kind == AgentEventType.USAGE.value:
-            yield {"type": "usage", **{k: v for k, v in (event.get("usage") or {}).items() if k in ("input_tokens", "output_tokens")}}
+            yield {
+                "type": "usage",
+                **{
+                    k: v
+                    for k, v in (event.get("usage") or {}).items()
+                    if k in ("input_tokens", "output_tokens")
+                },
+            }
 
     answer = "".join(text_parts).strip()
     yield {"type": "done", "answer": answer}
@@ -163,43 +177,53 @@ async def stream_octop_sse(
     async for ev in events:
         t = ev.get("type")
         if t == "token":
-            yield format_sse({
-                "type": "token",
-                "content": ev.get("content", ""),
-                "node": "model",
-                "thread_id": thread_id,
-            })
+            yield format_sse(
+                {
+                    "type": "token",
+                    "content": ev.get("content", ""),
+                    "node": "model",
+                    "thread_id": thread_id,
+                }
+            )
         elif t == "tool_call":
-            yield format_sse({
-                "type": "tool_call_chunk",
-                "id": ev.get("id") or f"call_{uuid.uuid4().hex[:8]}",
-                "name": ev.get("name", ""),
-                "args": ev.get("args") or "",
-                "index": 0,
-                "node": "model",
-                "thread_id": thread_id,
-            })
+            yield format_sse(
+                {
+                    "type": "tool_call_chunk",
+                    "id": ev.get("id") or f"call_{uuid.uuid4().hex[:8]}",
+                    "name": ev.get("name", ""),
+                    "args": ev.get("args") or "",
+                    "index": 0,
+                    "node": "model",
+                    "thread_id": thread_id,
+                }
+            )
         elif t == "tool_result":
-            yield format_sse({
-                "type": "tool_result",
-                "node": "tools",
-                "messages": [
-                    {"type": "tool", "name": ev.get("name"), "content": ev.get("content", "")}
-                ],
-                "thread_id": thread_id,
-            })
+            yield format_sse(
+                {
+                    "type": "tool_result",
+                    "node": "tools",
+                    "messages": [
+                        {"type": "tool", "name": ev.get("name"), "content": ev.get("content", "")}
+                    ],
+                    "thread_id": thread_id,
+                }
+            )
         elif t == "usage":
-            yield format_sse({
-                "type": "usage",
-                "usage": {
-                    k: v for k, v in ev.items() if k in ("input_tokens", "output_tokens")
-                },
-                "node": "model",
-                "thread_id": thread_id,
-            })
+            yield format_sse(
+                {
+                    "type": "usage",
+                    "usage": {
+                        k: v for k, v in ev.items() if k in ("input_tokens", "output_tokens")
+                    },
+                    "node": "model",
+                    "thread_id": thread_id,
+                }
+            )
         elif t == "done":
-            yield format_sse({
-                "type": "done",
-                "conversation_mode": conversation_mode,
-                "thread_id": thread_id,
-            })
+            yield format_sse(
+                {
+                    "type": "done",
+                    "conversation_mode": conversation_mode,
+                    "thread_id": thread_id,
+                }
+            )

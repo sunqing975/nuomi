@@ -5,6 +5,7 @@
 - tools：接受但忽略（工具由 harness 运行时内部管理）
 - 多轮 history：忽略（harness checkpointer 按 thread_id 管理上下文，thread 固定 desktop）
 """
+
 from __future__ import annotations
 
 import json
@@ -110,10 +111,18 @@ async def chat_completions(body: OpenAIChatBody, request: Request) -> StreamingR
                 "id": _chat_id(),
                 "object": "chat.completion",
                 "model": agent["name"],
-                "choices": [{"index": 0, "message": {"role": "assistant", "content": answer}, "finish_reason": "stop"}],
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": answer},
+                        "finish_reason": "stop",
+                    }
+                ],
             },
             ensure_ascii=False,
         )
 
     media = "text/event-stream" if body.stream else "application/json"
-    return StreamingResponse(gen(), media_type=media, headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+    return StreamingResponse(
+        gen(), media_type=media, headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    )

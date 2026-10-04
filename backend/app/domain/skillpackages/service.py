@@ -5,6 +5,7 @@
 包内技能不可单独启停（类似模型插件只读）；注入 agent 时包内技能目录
 作为额外技能根（skills_dir 列表）与工作区单技能平级生效。
 """
+
 from __future__ import annotations
 
 import logging

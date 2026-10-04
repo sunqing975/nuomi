@@ -6,6 +6,7 @@
 依赖规则：infra 禁 import domain/transport——manager 只接收构造参数
 （name/system_prompt 由调用方从 agents 表取出传入），不做领域查询。
 """
+
 from __future__ import annotations
 
 from contextlib import suppress

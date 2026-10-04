@@ -2,6 +2,7 @@
 
 糯米 = 默认专家（小猫伙伴人格）。多专家时每个 Agent 可带自己的 system_prompt。
 """
+
 from __future__ import annotations
 
 from pathlib import Path

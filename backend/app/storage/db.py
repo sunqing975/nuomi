@@ -2,6 +2,7 @@
 
 v0.13 起不背历史数据：库文件不存在时全新创建，不写迁移脚本。
 """
+
 from __future__ import annotations
 
 import json

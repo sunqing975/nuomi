@@ -9,6 +9,7 @@
 
 安全边界（与 Octop 一致）：路径防穿越、文件数/字节/压缩比上限。
 """
+
 from __future__ import annotations
 
 import io
@@ -57,7 +58,9 @@ def _host() -> str:
     return (settings.skillhub_host or DEFAULT_SKILLHUB_HOST).rstrip("/")
 
 
-def _get(path: str, *, params: dict[str, Any] | None = None, timeout: float = 15.0) -> dict[str, Any]:
+def _get(
+    path: str, *, params: dict[str, Any] | None = None, timeout: float = 15.0
+) -> dict[str, Any]:
     try:
         resp = httpx.get(
             f"{_host()}{path}",
@@ -132,7 +135,9 @@ def _normalize_item(raw: dict) -> dict:
     ns = raw.get("namespace") or {}
     return {
         "slug": slug,
-        "display_name": str(raw.get("displayName") or raw.get("display_name") or raw.get("name") or slug),
+        "display_name": str(
+            raw.get("displayName") or raw.get("display_name") or raw.get("name") or slug
+        ),
         "summary": str(raw.get("summary") or raw.get("summary_zh") or raw.get("description") or ""),
         "description": str(raw.get("description_zh") or raw.get("description") or ""),
         "scene": str(raw.get("scene") or raw.get("category") or ""),
@@ -161,7 +166,10 @@ def download(slug: str) -> list[tuple[str, bytes]]:
             params={"slug": safe},
             timeout=60.0,
             follow_redirects=True,
-            headers={"User-Agent": "nuomi-skillhub/1.0", "Accept": "application/zip,application/octet-stream,*/*"},
+            headers={
+                "User-Agent": "nuomi-skillhub/1.0",
+                "Accept": "application/zip,application/octet-stream,*/*",
+            },
         )
         resp.raise_for_status()
     except httpx.HTTPError as exc:
@@ -205,7 +213,7 @@ def parse_skillhub_zip(payload: bytes, *, source: str) -> list[tuple[str, bytes]
     if len(top_dirs) == 1 and not any(name.startswith("/") for name, _ in raw_files):
         prefix = next(iter(top_dirs)) + "/"
         if all(name.startswith(prefix) for name, _ in raw_files):
-            raw_files = [(name[len(prefix):], content) for name, content in raw_files]
+            raw_files = [(name[len(prefix) :], content) for name, content in raw_files]
 
     files = _normalize_files(raw_files)
     if not files:

@@ -168,20 +168,19 @@ logs-follow:
 test:
 	@cd $(ROOT)/backend && .venv/bin/python -m pytest -q
 
-# ---- 质量门禁（对齐 Octop make all 模式：提交前 make check 全绿） ----
-check: layers lint format-check typecheck test
-
-layers:
-	@cd $(ROOT)/backend && .venv/bin/python scripts/check_layering.py
+# ---- 质量门禁（提交前 make check 全绿） ----
+# 注：layers（check_layering.py）与 test（pytest 用例）尚无脚本/用例（backend 无 tests/），
+# 暂不纳入 check；test 目标保留，待有测试用例后加入 check。
+check: lint format-check typecheck
 
 lint:
-	@cd $(ROOT)/backend && .venv/bin/ruff check app tests scripts ../plugins --config pyproject.toml
+	@cd $(ROOT)/backend && .venv/bin/ruff check app --config pyproject.toml
 
 format-check:
-	@cd $(ROOT)/backend && .venv/bin/ruff format --check app tests scripts ../plugins --config pyproject.toml
+	@cd $(ROOT)/backend && .venv/bin/ruff format --check app --config pyproject.toml
 
 format:
-	@cd $(ROOT)/backend && .venv/bin/ruff format app tests scripts ../plugins --config pyproject.toml
+	@cd $(ROOT)/backend && .venv/bin/ruff format app --config pyproject.toml
 
 typecheck:
 	@cd $(ROOT)/backend && .venv/bin/mypy

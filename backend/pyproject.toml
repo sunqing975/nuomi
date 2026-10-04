@@ -35,6 +35,10 @@ src = ["app", "tests", "."]
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "C4"]
 ignore = ["E501"]
 
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI 的 File/Query/Path/Depends 在默认值中调用是标准用法（非可变的模块级调用）
+extend-immutable-calls = ["fastapi.File", "fastapi.Query", "fastapi.Path", "fastapi.Header", "fastapi.Depends"]
+
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["B011"]
 

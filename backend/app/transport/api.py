@@ -7,6 +7,7 @@
 会话：以工作区 nuomi-state.json 为权威（thread_id / threads，2026-10-04 起，
 无 default 桌宠线程、无模型专属会话；桌宠=纯表现层，拦截工具调用播放动作）。
 """
+
 from __future__ import annotations
 
 import json
@@ -126,6 +127,7 @@ async def _publish_actions(events):
 @router.get("/pet/events")
 async def pet_events_sse(request: Request) -> StreamingResponse:
     """桌宠动作事件流（SSE 长连接）：任意对话产生的工具调用实时广播。"""
+
     async def gen():
         async for ev in pet_events.stream():
             if await request.is_disconnected():
@@ -348,7 +350,11 @@ async def patch_plugin(plugin_id: str, body: PluginPatchBody) -> dict:
             status_code=400,
             detail="桌宠模型插件由「桌宠」页切换模型控制（同一时间只启用一个），不能手动启停",
         )
-    row = plugin_service.set_enabled(plugin_id, body.enabled) if body.enabled is not None else plugin_service.get(plugin_id)
+    row = (
+        plugin_service.set_enabled(plugin_id, body.enabled)
+        if body.enabled is not None
+        else plugin_service.get(plugin_id)
+    )
     if row is None:
         raise HTTPException(status_code=404, detail="插件不存在")
     return row
@@ -358,7 +364,9 @@ async def patch_plugin(plugin_id: str, body: PluginPatchBody) -> dict:
 async def delete_plugin(plugin_id: str) -> dict:
     """删除插件（含绑定与插件目录）。模型插件由「桌宠」删除模型时级联删除。"""
     if plugin_id in plugin_service.model_plugin_ids():
-        raise HTTPException(status_code=400, detail="桌宠模型插件由「桌宠」页删除模型时级联删除，不能单独删除")
+        raise HTTPException(
+            status_code=400, detail="桌宠模型插件由「桌宠」页删除模型时级联删除，不能单独删除"
+        )
     if not plugin_service.delete(plugin_id):
         raise HTTPException(status_code=404, detail="插件不存在")
     manager.close()  # 释放全部实例：下次对话重建，不再携带被删插件工具
@@ -466,7 +474,9 @@ async def skillhub_search(q: str = "", page: int = 1, page_size: int = 20) -> li
 
 
 @router.get("/skillhub/rankings")
-async def skillhub_rankings(ranking_type: str = "hot", page: int = 1, page_size: int = 20) -> list[dict]:
+async def skillhub_rankings(
+    ranking_type: str = "hot", page: int = 1, page_size: int = 20
+) -> list[dict]:
     return skillhub.rankings(ranking_type, page=page, page_size=page_size)
 
 
@@ -516,9 +526,7 @@ async def create_skill_package(body: SkillPackageBody) -> dict:
     if not body.name or not body.name.strip():
         raise HTTPException(status_code=400, detail="包名不能为空")
     try:
-        return skill_package_service.create(
-            body.name, body.description or "", body.icon_url or ""
-        )
+        return skill_package_service.create(body.name, body.description or "", body.icon_url or "")
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
@@ -553,10 +561,14 @@ async def patch_skill_package(package_id: str, body: SkillPackagePatchBody) -> d
 
         new_id = _slug_from_hub(body.name)
         with db.connect() as conn:
-            conn.execute("UPDATE skill_packages SET name = ?, id = ? WHERE id = ?",
-                         (body.name.strip(), new_id, package_id))
-            conn.execute("UPDATE skill_package_skills SET package_id = ? WHERE package_id = ?",
-                         (new_id, package_id))
+            conn.execute(
+                "UPDATE skill_packages SET name = ?, id = ? WHERE id = ?",
+                (body.name.strip(), new_id, package_id),
+            )
+            conn.execute(
+                "UPDATE skill_package_skills SET package_id = ? WHERE package_id = ?",
+                (new_id, package_id),
+            )
         old_dir = skill_package_service.package_dir(package_id)
         if old_dir.is_dir():
             shutil.move(str(old_dir), str(skill_package_service.package_dir(new_id)))
@@ -591,7 +603,9 @@ class McpServerBody(BaseModel):
 def _validate_mcp_spec(body: McpServerBody) -> dict:
     transport = (body.transport or "stdio").strip().lower()
     if transport not in _MCP_TRANSPORTS:
-        raise HTTPException(status_code=400, detail=f"transport 仅支持 {', '.join(_MCP_TRANSPORTS)}")
+        raise HTTPException(
+            status_code=400, detail=f"transport 仅支持 {', '.join(_MCP_TRANSPORTS)}"
+        )
     if transport == "stdio" and not (body.command or "").strip():
         raise HTTPException(status_code=400, detail="stdio 传输需要 command")
     return {
@@ -725,7 +739,12 @@ async def switch_pet_model(body: PetModelSwitchBody) -> dict:
         # 工具集随绑定变化：释放 agent 实例，下次对话重建（带新模型插件工具）
         manager.release(agent_id)
 
-    return {"ok": True, "model": model, "agent_id": agent_id, "activated_plugin": model["id"] if has_plugin else None}
+    return {
+        "ok": True,
+        "model": model,
+        "agent_id": agent_id,
+        "activated_plugin": model["id"] if has_plugin else None,
+    }
 
 
 @router.delete("/pet/models/{model_id}")

@@ -6,6 +6,7 @@
 - 切换：更新壳 config.json 的 ui.model / ui.model_path（壳 watch 后自动重载）
 - 会话状态：nuomi.* 已迁出壳 config → 工作区 nuomi-state.json（见 chat.service）
 """
+
 from __future__ import annotations
 
 import json
@@ -51,7 +52,9 @@ def _seed_builtin_models() -> None:
 def _group_has_files(model_dir: Path, meta: dict, group: str) -> bool:
     """动作组引用的文件至少一个真实存在于磁盘（避免资产不完整导致的假能力）。"""
     items = ((meta.get("FileReferences") or {}).get("Motions") or {}).get(group) or []
-    return any((model_dir / str(it.get("File", ""))).is_file() for it in items if isinstance(it, dict))
+    return any(
+        (model_dir / str(it.get("File", ""))).is_file() for it in items if isinstance(it, dict)
+    )
 
 
 def _expression_has_file(model_dir: Path, expr: dict) -> bool:
@@ -78,11 +81,14 @@ def list_models() -> list[dict]:
         meta = _load_json(model_files[0])
         fr = meta.get("FileReferences") or {}
         motions = sorted(
-            g for g in (fr.get("Motions") or {})
-            if _group_has_files(char_dir, meta, g)
+            g for g in (fr.get("Motions") or {}) if _group_has_files(char_dir, meta, g)
         )
         expressions = [
-            (e.get("Name") if isinstance(e, dict) and e.get("Name") else Path(e.get("File", "")).stem)
+            (
+                e.get("Name")
+                if isinstance(e, dict) and e.get("Name")
+                else Path(e.get("File", "")).stem
+            )
             for e in (fr.get("Expressions") or [])
             if isinstance(e, dict) and _expression_has_file(char_dir, e)
         ]
@@ -183,19 +189,40 @@ def delete_model(model_id: str) -> dict:
 # ---------- 模型插件生成（插件名=模型名，工具名=动作/表情名） ----------
 
 _MOTION_ZH: dict[str, str] = {
-    "idle": "待机", "tap": "点击", "tap_body": "摸身体", "touch_body": "摸身体",
-    "touch_head": "摸头", "touch_special": "特殊互动", "main_1": "主页动作一",
-    "main_2": "主页动作二", "main_3": "主页动作三", "home": "回家动作",
-    "login": "登录动作", "mail": "看邮件", "mission": "任务动作",
-    "mission_complete": "任务完成", "complete": "完成动作", "wedding": "婚礼动作",
-    "flick": "轻弹", "flickup": "向上轻弹", "flickdown": "向下轻弹",
-    "idle1": "待机一", "idle2": "待机二",
-    "tap_left": "摸左边", "tap_right": "摸右边",
+    "idle": "待机",
+    "tap": "点击",
+    "tap_body": "摸身体",
+    "touch_body": "摸身体",
+    "touch_head": "摸头",
+    "touch_special": "特殊互动",
+    "main_1": "主页动作一",
+    "main_2": "主页动作二",
+    "main_3": "主页动作三",
+    "home": "回家动作",
+    "login": "登录动作",
+    "mail": "看邮件",
+    "mission": "任务动作",
+    "mission_complete": "任务完成",
+    "complete": "完成动作",
+    "wedding": "婚礼动作",
+    "flick": "轻弹",
+    "flickup": "向上轻弹",
+    "flickdown": "向下轻弹",
+    "idle1": "待机一",
+    "idle2": "待机二",
+    "tap_left": "摸左边",
+    "tap_right": "摸右边",
 }
 
 _EXPRESSION_ZH: dict[str, str] = {
-    "happy": "开心", "sad": "难过", "angry": "生气", "surprise": "惊讶",
-    "shy": "害羞", "playful": "俏皮", "sleepy": "困倦", "normal": "平常",
+    "happy": "开心",
+    "sad": "难过",
+    "angry": "生气",
+    "surprise": "惊讶",
+    "shy": "害羞",
+    "playful": "俏皮",
+    "sleepy": "困倦",
+    "normal": "平常",
 }
 
 
@@ -246,37 +273,37 @@ def generate_model_plugin(model: dict) -> Path | None:
     tool_regs: list[str] = []
     for name in motions:
         tool_regs.append(
-            f'    ctx.tool(\n'
+            f"    ctx.tool(\n"
             f'        "{name}",\n'
             f'        _make_motion_player("{name}"),\n'
             f'        description="让桌宠执行动作「{_zh_label("motion", name)}」。调用后向用户确认已执行。",\n'
-            f'    )'
+            f"    )"
         )
     for name in expressions:
         tool_regs.append(
-            f'    ctx.tool(\n'
+            f"    ctx.tool(\n"
             f'        "{name}",\n'
             f'        _make_expression_player("{name}"),\n'
             f'        description="让桌宠做出表情「{_zh_label("expression", name)}」。调用后向用户确认已展示。",\n'
-            f'    )'
+            f"    )"
         )
     lines += [
-        'def _make_motion_player(name: str):',
+        "def _make_motion_player(name: str):",
         '    """闭包绑定动作名：无论 LLM 传什么参数，都播放工具名对应的真实动作。"""',
-        '    def _play(*args, **kwargs) -> str:',
+        "    def _play(*args, **kwargs) -> str:",
         '        return json.dumps({"motion": name}, ensure_ascii=False)',
-        '    return _play',
+        "    return _play",
         "",
         "",
-        'def _make_expression_player(name: str):',
+        "def _make_expression_player(name: str):",
         '    """闭包绑定表情名：无论 LLM 传什么参数，都展示工具名对应的真实表情。"""',
-        '    def _play(*args, **kwargs) -> str:',
+        "    def _play(*args, **kwargs) -> str:",
         '        return json.dumps({"expression": name}, ensure_ascii=False)',
-        '    return _play',
+        "    return _play",
         "",
         "",
         "def setup(ctx) -> None:",
-        "    \"\"\"注册工具：模型每个动作/表情一个工具（octop 插件支持多工具）。\"\"\"",
+        '    """注册工具：模型每个动作/表情一个工具（octop 插件支持多工具）。"""',
         *tool_regs,
         "",
     ]
@@ -290,7 +317,10 @@ def generate_all_model_plugins() -> list[dict]:
     for model in list_models():
         plugin_dir = generate_model_plugin(model)
         results.append(
-            {"model": model["id"], "generated": plugin_dir is not None,
-             "path": str(plugin_dir) if plugin_dir else None}
+            {
+                "model": model["id"],
+                "generated": plugin_dir is not None,
+                "path": str(plugin_dir) if plugin_dir else None,
+            }
         )
     return results

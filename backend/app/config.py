@@ -3,6 +3,7 @@
 v0.13 起配置大幅精简：自研 engine 已删除，LLM 提供商交给 octop-harness
 （ProviderConfig/ModelConfig 映射见 infra/harness/config.py）。
 """
+
 from __future__ import annotations
 
 import sys

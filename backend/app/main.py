@@ -3,6 +3,7 @@
 架构：transport（协议）→ domain（业务层）→ infra/harness（适配层）→ octop-harness。
 启动时：建库 + 种子默认专家（糯米）；退出时：释放全部 Agent 实例。
 """
+
 from __future__ import annotations
 
 from contextlib import asynccontextmanager

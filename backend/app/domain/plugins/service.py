@@ -5,6 +5,7 @@
 - 插件目录是 source of truth（plugin.yaml）；DB 只存启停状态与 agent 绑定
 - 全局启用（plugins.enabled）后，工具默认对所有 agent 可用；agent 可按需禁用/配置
 """
+
 from __future__ import annotations
 
 import json
@@ -47,7 +48,13 @@ class PluginService:
                     """INSERT OR IGNORE INTO plugins
                        (plugin_id, name, kind, version, description)
                        VALUES (?, ?, ?, ?, ?)""",
-                    (manifest.id, manifest.name, manifest.kind, manifest.version, manifest.description),
+                    (
+                        manifest.id,
+                        manifest.name,
+                        manifest.kind,
+                        manifest.version,
+                        manifest.description,
+                    ),
                 )
                 rows.append(self._row_from_manifest(manifest))
         return rows
@@ -85,17 +92,32 @@ class PluginService:
 
     # ---------- agent 绑定 ----------
 
-    def bind(self, agent_id: str, plugin_id: str, *, enabled: bool = True, tool_configs: dict | None = None) -> None:
+    def bind(
+        self,
+        agent_id: str,
+        plugin_id: str,
+        *,
+        enabled: bool = True,
+        tool_configs: dict | None = None,
+    ) -> None:
         with db.connect() as conn:
             conn.execute(
                 """INSERT OR REPLACE INTO agent_plugins (agent_id, plugin_id, enabled, tool_configs)
                    VALUES (?, ?, ?, ?)""",
-                (agent_id, plugin_id, 1 if enabled else 0, json.dumps(tool_configs or {}, ensure_ascii=False)),
+                (
+                    agent_id,
+                    plugin_id,
+                    1 if enabled else 0,
+                    json.dumps(tool_configs or {}, ensure_ascii=False),
+                ),
             )
 
     def unbind(self, agent_id: str, plugin_id: str) -> None:
         with db.connect() as conn:
-            conn.execute("DELETE FROM agent_plugins WHERE agent_id = ? AND plugin_id = ?", (agent_id, plugin_id))
+            conn.execute(
+                "DELETE FROM agent_plugins WHERE agent_id = ? AND plugin_id = ?",
+                (agent_id, plugin_id),
+            )
 
     def delete(self, plugin_id: str) -> bool:
         """删除插件：DB 记录 + 全部 agent 绑定 + 插件目录（source of truth）。

@@ -3,9 +3,11 @@
 控制台/壳/任何端发起的对话，只要触发模型插件工具（动作/表情），
 都会经此总线推给桌宠壳播放——桌宠视觉与对话来源解耦。
 """
+
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 
 
 class PetEventBus:
@@ -18,10 +20,8 @@ class PetEventBus:
         """广播一个工具调用事件（工具名 = 动作/表情名）。"""
         payload = {"type": "tool_call", "name": name}
         for q in list(self._subscribers):
-            try:
+            with suppress(asyncio.QueueFull):
                 q.put_nowait(payload)
-            except asyncio.QueueFull:
-                pass
 
     async def stream(self):
         """SSE 生成器：注册订阅队列，持续产出事件（连接断开自动注销）。"""

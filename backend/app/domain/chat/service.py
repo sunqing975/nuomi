@@ -9,6 +9,7 @@
 2026-10-04：会话状态从壳 config.json（nuomi.*）迁出到工作区 nuomi-state.json；
 壳 config.json 仅保留表现层偏好（ui.*）。
 """
+
 from __future__ import annotations
 
 import json
@@ -48,7 +49,8 @@ class ChatSessionService:
         cfg = self._read()
         nuomi = self._nuomi(cfg)
         threads = [
-            t for t in nuomi.get("threads", [])
+            t
+            for t in nuomi.get("threads", [])
             if not t.get("agent_id") or t.get("agent_id") == agent_id
         ]
         threads.sort(key=lambda t: t.get("updated_at") or 0, reverse=True)
@@ -67,12 +69,15 @@ class ChatSessionService:
         nuomi = self._nuomi(cfg)
         tid = f"{agent_id}:{uuid.uuid4().hex[:12]}"
         threads = nuomi.setdefault("threads", [])
-        threads.insert(0, {
-            "thread_id": tid,
-            "title": title,
-            "updated_at": int(time.time() * 1000),
-            "agent_id": agent_id,
-        })
+        threads.insert(
+            0,
+            {
+                "thread_id": tid,
+                "title": title,
+                "updated_at": int(time.time() * 1000),
+                "agent_id": agent_id,
+            },
+        )
         nuomi["thread_id"] = tid
         self._write(cfg)
         return {"thread_id": tid, "title": title}
@@ -114,23 +119,25 @@ class ChatSessionService:
         nuomi = self._nuomi(cfg)
         threads = nuomi.get("threads", [])
         existed = any(
-            t.get("thread_id") == thread_id and t.get("agent_id") == agent_id
-            for t in threads
+            t.get("thread_id") == thread_id and t.get("agent_id") == agent_id for t in threads
         )
         if not existed:
             return False
         nuomi["threads"] = [
-            t for t in threads
+            t
+            for t in threads
             if not (t.get("thread_id") == thread_id and t.get("agent_id") == agent_id)
         ]
         if nuomi.get("thread_id") == thread_id:
             remaining = [
-                t for t in nuomi["threads"]
+                t
+                for t in nuomi["threads"]
                 if not t.get("agent_id") or t.get("agent_id") == agent_id
             ]
             nuomi["thread_id"] = (
                 max(remaining, key=lambda t: t.get("updated_at") or 0).get("thread_id")
-                if remaining else None
+                if remaining
+                else None
             )
         self._write(cfg)
         self._delete_checkpoint_history(thread_id)

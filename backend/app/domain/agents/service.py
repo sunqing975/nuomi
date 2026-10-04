@@ -3,6 +3,7 @@
 与 runtime 的关系：service 只管领域数据；HarnessAgent 实例的生命周期
 （创建/释放）由 infra/harness/manager 承担，service 通过状态字段感知。
 """
+
 from __future__ import annotations
 
 import json

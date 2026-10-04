@@ -10,6 +10,7 @@
 - 目标目录已存在则拒绝（不覆盖用户数据）
 - 跳过 __MACOSX / .DS_Store 等打包垃圾
 """
+
 from __future__ import annotations
 
 import io
@@ -54,7 +55,9 @@ def _safe_extract(data: bytes) -> Path:
                 info = zf.getinfo(name)
                 total += info.file_size
                 if total > _MAX_BYTES:
-                    raise ZipImportError(f"zip 解压总量超限（>{_MAX_BYTES // (1024 * 1024)}MB），已拒绝")
+                    raise ZipImportError(
+                        f"zip 解压总量超限（>{_MAX_BYTES // (1024 * 1024)}MB），已拒绝"
+                    )
                 target = (tmp_root / norm).resolve()
                 if not target.is_relative_to(tmp_root.resolve()):
                     raise ZipImportError("zip 内含非法路径（路径穿越），已拒绝")

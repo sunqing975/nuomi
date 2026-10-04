@@ -3,6 +3,7 @@
 对齐 Octop 技能概念：技能 = 目录下的 SKILL.md（frontmatter 定义 name/description），
 内容注入 agent 系统提示词。技能目录是 source of truth，DB 只存启停状态。
 """
+
 from __future__ import annotations
 
 import re
