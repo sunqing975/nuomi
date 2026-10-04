@@ -588,9 +588,10 @@ def _validate_providers(providers: list[dict], existing: list[dict]) -> list[dic
         ]
         if not models:
             raise HTTPException(status_code=400, detail=f"Provider「{pid}」至少需要一个模型")
-        # api_key 空串 = 保持原值（按 id 匹配旧配置）
+        # api_key 空串或脱敏串（含 ***）= 保持原值（按 id 匹配旧配置）
+        # 防呆：GET 返回的脱敏串（sk-2***fa1e）若被前端回写，绝不能当真实 key 存
         api_key = str(p.get("api_key") or "").strip()
-        if not api_key:
+        if not api_key or "***" in api_key:
             old = next((x for x in existing if x.get("id") == pid), None)
             api_key = (old or {}).get("api_key") or ""
         out.append(

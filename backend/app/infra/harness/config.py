@@ -26,7 +26,9 @@ def build_providers() -> list[ProviderConfig]:
             ProviderConfig(
                 id=p["id"],
                 base_url=p.get("base_url") or "",
-                api_key=p.get("api_key") or "",
+                # harness 硬性要求 api_key 非空；本地服务（llama.cpp 等）无鉴权，
+                # 用占位 key 满足校验，请求头被服务端忽略
+                api_key=p.get("api_key") or "sk-local",
                 protocol=p.get("protocol") or "openai",
                 models=models,
             )
