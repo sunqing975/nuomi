@@ -17,6 +17,7 @@ const { VRMModelSetup } = require('./js/model/vrm-model-setup.js')
 const { VRMInteractionController } = require('./js/model/vrm-model-interaction.js')
 const { UnifiedModelAdapter } = require('./js/model/unified-model-adapter.js')
 const { UnifiedInteractionController } = require('./js/model/unified-interaction-controller.js')
+const { Layer1Liveness } = require('./js/layer1-liveness.js')
 const { appState } = require('./js/core/app-state.js')
 const { ModelScanner } = require('./js/model/model-scanner.js')
 const { logToTerminal } = require('./js/api-utils')
@@ -546,6 +547,10 @@ async function main() {
             unifiedCtrl.init(model, config)
             unifiedCtrl.setupInitialModelProperties()
 
+            // 启动第 1 层活感（视线追踪 + 自动眨眼 + idle 微抖）
+            global.layer1Liveness = new Layer1Liveness()
+            global.layer1Liveness.init(live2dModel, app)
+
             // 初始化情绪表情映射器
             emotionMapper.init(model.innerModel)
             model.setEmotionMapper(emotionMapper)
@@ -661,6 +666,10 @@ async function main() {
                     const unifiedCtrl = new UnifiedInteractionController()
                     unifiedCtrl.init(model, config)
                     unifiedCtrl.setupInitialModelProperties()
+                    // 重启第 1 层活感
+                    if (global.layer1Liveness) global.layer1Liveness.destroy()
+                    global.layer1Liveness = new Layer1Liveness()
+                    global.layer1Liveness.init(live2dModel, app)
                     emotionMapper.init(model.innerModel)
                     model.setEmotionMapper(emotionMapper)
                     modelCtrl = { setMouthOpenY: (v) => unifiedCtrl.setMouthOpenY(v) }

@@ -15,12 +15,12 @@
   "ui": {
     "intro_text": "你好，我是糯米。",
     "model_type": "live2d",
-    "model_path": "/Users/superman/Nuomi/models/2D/cat/hijiki.model3.json",
+    "model_path": "/Users/superman/Nuomi/models/2D/haru/Haru.model3.json",
     "show_chat_box": true,
     "show_model": true,
-    "model_x": 1004.3077012847807,
-    "model_y": 388.8812743263473,
-    "model": "cat",
+    "model_x": 449.14344500000004,
+    "model_y": 467.66758749999997,
+    "model": "haru",
     "pet_enabled": true
   },
   "subtitle_labels": {
