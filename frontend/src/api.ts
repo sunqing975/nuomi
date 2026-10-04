@@ -106,7 +106,7 @@ export interface SkillPackage {
   skills: SkillPackageSkill[];
 }
 
-export interface McpServer {
+export interface ConnectorServer {
   name: string;
   transport: string;
   command: string;

@@ -40,7 +40,7 @@ SSE 事件协议（桌宠前端消费）：`token` / `tool_call` / `tool_result`
 - R2 新 backend 骨架 ✅：app/{main,config,transport/api,infra/harness/{config,manager,chat}}，ruff+mypy 全绿
 - R3 最小对话 API ✅：`POST /api/chat` SSE 流式验证通过（token 流 + done；糯米人设生效）
 - 工具调用：插件未接入（M5），模型无工具时诚实回答
-- 后续：M3 Agent 生命周期 → M4 会话 → M5 插件 → M6 技能/MCP/知识库 → M7 桌宠前端 → M8 产品体验
+- 后续：M3 Agent 生命周期 → M4 会话 → M5 插件 → M6 技能/连接器/知识库 → M7 桌宠前端 → M8 产品体验
 
 ## 环境事实（重要）
 
@@ -61,7 +61,7 @@ SSE 事件协议（桌宠前端消费）：`token` / `tool_call` / `tool_result`
 - M3 Agent 生命周期：agents 表（对齐 Octop schema：agent_id/name/default_model/system_prompt/enabled/config_json/last_state...）+ 多专家实例管理
 - M4 会话通道：threads/messages 表 + checkpointer 持久化 + 历史会话
 - M5 插件接入：harness 插件目录（plugin.yaml）+ 前端 zip 导入（工作区 plugins/）；旧 myspy plugins//skills/ 资产已删（2026-10-04）；旧 service-* 概念废弃（harness 原生替代）
-- M6 技能/MCP/知识库：skills_dir 接入 + MCP server 配置 + 知识库工具
+- M6 技能/连接器/知识库：skills_dir 接入 + 连接器（MCP 协议）配置 + 知识库工具
 - M7 桌宠前端：myspy 二次开发（形象/情绪/字幕/TTS）+ 控制面板
 - M8 产品体验：人格/情绪协议、工具执行可视化（"干活中"动画）
 

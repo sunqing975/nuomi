@@ -44,16 +44,16 @@ async def lifespan(_: FastAPI):
     seed_default_agent()
     _ensure_model_plugins()
     _sync_plugins()
-    _sync_mcp_file()
+    _sync_connectors_file()
     yield
     manager.close()
 
 
-def _sync_mcp_file() -> None:
-    """MCP 配置源：data_root/mcp_servers.json 优先（控制台增删后持久化），无文件时用 env 种子。"""
+def _sync_connectors_file() -> None:
+    """连接器配置源：data_root/connectors.json 优先（控制台增删后持久化），无文件时用 env 种子。"""
     from app.config import settings
 
-    p = settings.data_root / "mcp_servers.json"
+    p = settings.data_root / "connectors.json"
     if not p.is_file():
         return
     try:

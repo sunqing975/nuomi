@@ -3,7 +3,7 @@ import { Card, Col, Row, Statistic, Typography } from 'antd';
 import { get, type WorkspaceOverview } from '../api';
 
 const LABELS: Record<string, string> = {
-  experts: '专家', plugins: '插件', skills: '技能', mcp_servers: 'MCP 服务器',
+  experts: '专家', plugins: '插件', skills: '技能', connectors: '连接器',
 };
 
 export default function StoragePage() {

@@ -53,7 +53,7 @@ transport（FastAPI 路由） → domain（领域服务） → infra/harness（�
 ## 路线图
 
 - [x] R1-R3：推倒重来 + harness 适配层 + SSE 对话 API
-- [ ] M3-M6：Agent 生命周期 / 会话存储 / 插件 / 技能+MCP+知识库
+- [ ] M3-M6：Agent 生命周期 / 会话存储 / 插件 / 技能+连接器+知识库
 - [ ] M7-M8：桌宠形象层（myspy）+ 人格/情绪体验
 
 ## 许可证

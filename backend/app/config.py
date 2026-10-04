@@ -46,10 +46,10 @@ class Settings(BaseSettings):
     # --- CORS（桌宠前端 dev） ---
     cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
-    # --- MCP 服务器（langchain-mcp-adapters 连接格式，JSON env NUOMI_MCP_SERVERS） ---
+    # --- 连接器（MCP 协议，langchain-mcp-adapters 连接格式；JSON env NUOMI_CONNECTORS） ---
     mcp_servers: dict[str, dict] = Field(
         default_factory=dict,
-        validation_alias=AliasChoices("NUOMI_MCP_SERVERS", "MCP_SERVERS"),
+        validation_alias=AliasChoices("NUOMI_CONNECTORS", "NUOMI_MCP_SERVERS"),
     )
 
     # --- SkillHub 技能市场（默认腾讯市场，可用 SKILLHUB_HOST 覆盖） ---

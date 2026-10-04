@@ -588,23 +588,23 @@ async def delete_skill_package(package_id: str) -> dict:
     return {"ok": True}
 
 
-# ---------- MCP 服务器（连接器：控制台增删改，写 data_root/mcp_servers.json，manager.close 重载） ----------
+# ---------- MCP 服务器（连接器：控制台增删改，写 data_root/connectors.json，manager.close 重载） ----------
 
-_MCP_TRANSPORTS = ("stdio", "sse", "http")
+_CONNECTOR_TRANSPORTS = ("stdio", "sse", "http")
 
 
-class McpServerBody(BaseModel):
+class ConnectorBody(BaseModel):
     name: str | None = None  # POST 创建时必填；PUT 以路径名为准
     transport: str = "stdio"
     command: str = ""
     args: list[str] = Field(default_factory=list)
 
 
-def _validate_mcp_spec(body: McpServerBody) -> dict:
+def _validate_connector_spec(body: ConnectorBody) -> dict:
     transport = (body.transport or "stdio").strip().lower()
-    if transport not in _MCP_TRANSPORTS:
+    if transport not in _CONNECTOR_TRANSPORTS:
         raise HTTPException(
-            status_code=400, detail=f"transport 仅支持 {', '.join(_MCP_TRANSPORTS)}"
+            status_code=400, detail=f"transport 仅支持 {', '.join(_CONNECTOR_TRANSPORTS)}"
         )
     if transport == "stdio" and not (body.command or "").strip():
         raise HTTPException(status_code=400, detail="stdio 传输需要 command")
@@ -615,16 +615,16 @@ def _validate_mcp_spec(body: McpServerBody) -> dict:
     }
 
 
-def _persist_mcp_servers() -> None:
-    """写 data_root/mcp_servers.json（重启后由 main._sync_mcp_file 读回，json 为权威）。"""
-    p = settings.data_root / "mcp_servers.json"
+def _persist_connectors() -> None:
+    """写 data_root/connectors.json（重启后由 main._sync_mcp_file 读回，json 为权威）。"""
+    p = settings.data_root / "connectors.json"
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(settings.mcp_servers, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-@router.get("/mcp")
-async def list_mcp_servers() -> list[dict]:
-    """MCP 服务器列表（配置来自 settings.mcp_servers，json 权威）。"""
+@router.get("/connectors")
+async def list_connectors() -> list[dict]:
+    """连接器列表（配置来自 settings.mcp_servers，connectors.json 权威）。"""
     return [
         {
             "name": name,
@@ -636,42 +636,42 @@ async def list_mcp_servers() -> list[dict]:
     ]
 
 
-@router.post("/mcp")
-async def create_mcp_server(body: McpServerBody) -> dict:
-    """新增 MCP 服务器：写配置 + 释放实例，下次对话挂载其工具。"""
+@router.post("/connectors")
+async def create_connector(body: ConnectorBody) -> dict:
+    """新增连接器：写配置 + 释放实例，下次对话挂载其工具。"""
     name = (body.name or "").strip()
     if not name or not re.match(r"^[a-zA-Z0-9_-]+$", name):
-        raise HTTPException(status_code=400, detail="服务器名仅限字母/数字/_/-")
+        raise HTTPException(status_code=400, detail="连接器名仅限字母/数字/_/-")
     if name in settings.mcp_servers:
-        raise HTTPException(status_code=400, detail=f"MCP 服务器已存在: {name}")
-    spec = _validate_mcp_spec(body)
+        raise HTTPException(status_code=400, detail=f"连接器已存在: {name}")
+    spec = _validate_connector_spec(body)
     settings.mcp_servers[name] = spec
-    _persist_mcp_servers()
+    _persist_connectors()
     manager.close()  # 重载：下次对话重建实例，挂载新 MCP 工具
     return {"ok": True, "name": name, **spec}
 
 
-@router.put("/mcp/{name}")
-async def update_mcp_server(name: str, body: McpServerBody) -> dict:
-    """编辑 MCP 服务器：更新配置 + 释放实例（下次对话生效）。"""
+@router.put("/connectors/{name}")
+async def update_connector(name: str, body: ConnectorBody) -> dict:
+    """编辑连接器：更新配置 + 释放实例（下次对话生效）。"""
     if name not in settings.mcp_servers:
-        raise HTTPException(status_code=404, detail="MCP 服务器不存在")
-    spec = _validate_mcp_spec(body)
+        raise HTTPException(status_code=404, detail="连接器不存在")
+    spec = _validate_connector_spec(body)
     settings.mcp_servers[name] = spec
-    _persist_mcp_servers()
+    _persist_connectors()
     manager.close()
     return {"ok": True, "name": name, **spec}
 
 
-@router.delete("/mcp/{name}")
-async def delete_mcp_server(name: str) -> dict:
-    """删除 MCP 服务器：从运行配置移除并持久化（data_root/mcp_servers.json），
-    释放全部 agent 实例，下次对话重建后不再挂载该 MCP 工具。
+@router.delete("/connectors/{name}")
+async def delete_connector(name: str) -> dict:
+    """删除连接器：从运行配置移除并持久化（data_root/connectors.json），
+    释放全部 agent 实例，下次对话重建后不再挂载该连接器工具。
     """
     if name not in settings.mcp_servers:
-        raise HTTPException(status_code=404, detail="MCP 服务器不存在")
+        raise HTTPException(status_code=404, detail="连接器不存在")
     settings.mcp_servers.pop(name)
-    _persist_mcp_servers()
+    _persist_connectors()
     manager.close()
     return {"ok": True}
 
@@ -691,7 +691,7 @@ async def workspace_overview() -> dict:
             "experts": len(agent_service.list_all()),
             "plugins": len(plugin_service.list_all()),
             "skills": len(skill_service.list_all()),
-            "mcp_servers": len(settings.mcp_servers),
+            "connectors": len(settings.mcp_servers),
         },
     }
 

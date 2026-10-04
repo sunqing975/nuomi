@@ -8,7 +8,7 @@ import ChatPage from './pages/Chat';
 import ExpertsPage from './pages/Experts';
 import PluginsPage from './pages/Plugins';
 import SkillsPage from './pages/Skills';
-import McpPage from './pages/Mcp';
+import ConnectorsPage from './pages/Connectors';
 import StoragePage from './pages/Storage';
 import ModelsPage from './pages/Models';
 
@@ -19,7 +19,7 @@ const NAV = [
   { key: 'experts', icon: <RobotOutlined />, label: '专家', title: '专家' },
   { key: 'plugins', icon: <ApiOutlined />, label: '插件', title: '插件' },
   { key: 'skills', icon: <ReadOutlined />, label: '技能', title: '技能' },
-  { key: 'mcp', icon: <GlobalOutlined />, label: 'MCP', title: 'MCP 服务器' },
+  { key: 'connectors', icon: <GlobalOutlined />, label: '连接器', title: '连接器（MCP 协议）' },
   { key: 'models', icon: <SmileOutlined />, label: '桌宠', title: '桌宠模型资产' },
   { key: 'storage', icon: <DatabaseOutlined />, label: '存储', title: '存储 / 总览' },
 ];
@@ -81,7 +81,7 @@ export default function App() {
           {page === 'experts' && <ExpertsPage onBackend={setBackendOk} />}
           {page === 'plugins' && <PluginsPage />}
           {page === 'skills' && <SkillsPage />}
-          {page === 'mcp' && <McpPage />}
+          {page === 'connectors' && <ConnectorsPage />}
           {page === 'models' && <ModelsPage />}
           {page === 'storage' && <StoragePage />}
         </Content>

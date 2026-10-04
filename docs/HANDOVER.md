@@ -8,7 +8,7 @@
 ## 0. 一句话定位
 
 **Nuomi = AI 大脑（backend，基于 octop-harness）+ 通用控制台（frontend，React + antd）+ 可插拔表现层（shells/myspy 桌宠壳）。**
-表现层只消费标准化 SSE 协议（v3：**octop 原生事件帧**）；能力（专家/插件/技能/MCP/技能包）由后端统一管理，控制台统一呈现。领域语言对齐 octop：Expert / Plugin / Skill / MCP / Workspace。
+表现层只消费标准化 SSE 协议（v3：**octop 原生事件帧**）；能力（专家/插件/技能/连接器/技能包）由后端统一管理，控制台统一呈现。产品命名：连接器（底层 MCP 协议）；内部领域语言对齐 octop：Expert / Plugin / Skill / MCP / Workspace。
 
 ## 1. 架构与目录
 
@@ -35,7 +35,7 @@ nuomi/
 | 插件 Plugin | `plugin.yaml` + `main.py`（`ctx.tool(...)` 注册）给 LLM 的工具集；**模型对应插件在插件页只读不可启停**（模型 1:1 对应插件） |
 | 技能 Skill | SKILL.md（frontmatter + 提示词），随 harness 注入；目录 `工作区/skills/<slug>/` |
 | 技能包 Skill Package | SkillHub 技能集的本地安装（一包多技能，`skill_packages/<id>/skills/<slug>/`）；**包级整体启停/删除**（禁用=不注入）；**不做版本更新** |
-| MCP | stdio 外部工具服务器，`NUOMI_MCP_SERVERS` 配置 |
+| 连接器 | 外部工具服务（MCP 协议，stdio/sse/http），`NUOMI_CONNECTORS` 种子 + `connectors.json` 权威 |
 | 桌宠模型 Model | 表现层资产（Live2D，**工作区 `models/2D/<id>/`**，2026-10-04 迁出壳仓库；仓库仅留可分发种子 `assets/models/2D/hiyori`，扫描时幂等播种）；选中模型 = 激活对应插件（互斥）；**与会话解耦**（2026-10-04 起切模型不换会话） |
 | 动作播放链 | 对话触发模型插件工具（动作/表情）→ 后端事件总线（`/api/pet/events` SSE）→ 壳常驻订阅播放（断线 3s 重连） |
 | 表现层协议 | v3 octop 事件帧（token/tool_call_chunk/tool_result/usage/done，带 node+thread_id）；**无 emotion 事件** |
@@ -73,13 +73,13 @@ cd shells/myspy && npm start
 
 **技能/技能包**：`GET|PATCH|DELETE /skills/{name}` · `POST /skills/import`（zip 导入）· `POST /skills/install`（SkillHub 单技能）· `GET /skillhub/search|rankings|skillsets{?q,/{slug}}` · `GET|POST /skill-packages` · `POST /skill-packages/from-skillhub` · `PATCH|DELETE /skill-packages/{id}`
 
-**其他**：`GET|POST /mcp` · `PUT|DELETE /mcp/{name}`（控制台增删改，json 持久化，变更下次对话生效）· `GET /workspace` · `GET /pet/models` · `POST /pet/models/switch` · `DELETE /pet/models/{id}`（级联删插件+资产，**不换会话**）
+**其他**：`GET|POST /connectors` · `PUT|DELETE /connectors/{name}`（控制台增删改，connectors.json 持久化，变更下次对话生效）· `GET /workspace` · `GET /pet/models` · `POST /pet/models/switch` · `DELETE /pet/models/{id}`（级联删插件+资产，**不换会话**）
 
 OpenAI 兼容：`app/transport/openai_compat.py`（`/v1/chat/completions`，model 形如 `nuomi/agent:<id>`）。
 
 ## 5. 已验证链路（回归依据；细节以代码/实测为准）
 
-插件链（weather 触发 tool_call→tool_result）、技能链（frontmatter+启停）、MCP 链（pet_mood）、协议链（/chat octop 帧 56 帧无解析错误）、控制台链（各板块无 console 错误）、壳链（面板重试/订阅断线重连）、**SkillHub 链**（真实市场：search/rankings/skillsets、单技能安装、技能集建包 6 技能、包启停/删除、chat 注入均实测通过）、模型切换链（插件互斥+manager.release，**不换会话**，2026-10-04 起）、会话链（真实线程列表，无 default 合成）。
+插件链（weather 触发 tool_call→tool_result）、技能链（frontmatter+启停）、连接器链（pet_mood，MCP 协议）、协议链（/chat octop 帧 56 帧无解析错误）、控制台链（各板块无 console 错误）、壳链（面板重试/订阅断线重连）、**SkillHub 链**（真实市场：search/rankings/skillsets、单技能安装、技能集建包 6 技能、包启停/删除、chat 注入均实测通过）、模型切换链（插件互斥+manager.release，**不换会话**，2026-10-04 起）、会话链（真实线程列表，无 default 合成）。
 
 **注意**：部分市场技能 SKILL.md 的 description 含裸 `: ` 导致 harness YAML 解析失败被跳过（如 superpowers-tdd）——与 Octop 行为一致，非 nuomi bug。
 
@@ -90,7 +90,7 @@ OpenAI 兼容：`app/transport/openai_compat.py`（`/v1/chat/completions`，mode
 - **中文工具名被 DeepSeek API 拒**（工具名须 `^[a-zA-Z0-9_-]+$`）：service 层 slug 防御。
 - **Vite base**：挂 /console 必须 `base: '/console/'`；验证新构建带 nonce query 强制刷新。
 - **Settings alias 忘写**：报 `'Settings' object has no attribute 'mcp_servers'`，需 `validation_alias=AliasChoices(...)`。
-- **MCP 配置写死 .env**：控制台只读；改动后重启 uvicorn。
+- **连接器配置曾写死 .env**：控制台只读、改动需重启；2026-10-04 起控制台可增删改（connectors.json 权威 + manager.close 重载）。
 - **模型资产不完整 = 假能力**：cat（hijiki）motion/ 缺失 → 切换报 Texture loading error；扫描已校验文件存在性，缺失能力如实显示 0 动作。
 - **octop 插件"无绑定=默认可用"**：废弃插件必须连目录一起删（否则工具照样进 LLM 工具集）。
 - **渲染进程错误看不见**：看 `/tmp/myspy-shell.log` 的 `[renderer:N]` 行（main.js 已转发 console-message）。
@@ -108,7 +108,7 @@ OpenAI 兼容：`app/transport/openai_compat.py`（`/v1/chat/completions`，mode
 - [ ] **octop WS 迁移**（暂缓）：事件帧已对齐，通道仍 HTTP SSE；注意 websockets 403 坑
 - [ ] **HITL 工具审批流**（当前不启用）：octop_harness 自带 HumanInTheLoopMiddleware，未来有高风险工具再开启
 - [ ] **糯米人设源头约束**：回复仍会出现 `<开心>` 等尖括号标签，已决定从源头治理，未实施
-- [ ] MCP 控制台内编辑/重载（目前仅 GET）
+- [x] 连接器控制台增删改/重载（#2，2026-10-04 完成）
 - [ ] 壳启动时自动拉起 uvicorn
 - [ ] 前端 bundle 1MB 可 code-split
 - [ ] 模型资产补全：cat（hijiki）动作文件缺失；表情插件（expressions 为空）待有数据可测
