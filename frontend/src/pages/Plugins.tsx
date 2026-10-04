@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Button, Input, Modal, Popconfirm, Table, Switch, Tag, Upload, message, Typography } from 'antd';
+import {
+  Avatar, Button, Card, Empty, Input, List, Modal, Popconfirm, Space, Switch, Tag,
+  Typography, Upload, message,
+} from 'antd';
 import { CloudUploadOutlined, DeleteOutlined, GithubOutlined, ReloadOutlined } from '@ant-design/icons';
 import { del, get, post, patch, upload, type Plugin } from '../api';
+
+const AVATAR_COLORS = ['#f59e0b', '#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
 
 export default function PluginsPage() {
   const [plugins, setPlugins] = useState<Plugin[]>([]);
@@ -70,37 +75,62 @@ export default function PluginsPage() {
     }
   };
 
-  const columns = [
-    { title: '插件', dataIndex: 'name', render: (_: unknown, p: Plugin) => (
-        <span><b>{p.name}</b><br /><small style={{ color: '#9ca3af' }}>{p.plugin_id}</small></span>) },
-    { title: '类型', dataIndex: 'kind', width: 90, render: (k: string) => <Tag>{k || 'tool'}</Tag> },
-    { title: '版本', dataIndex: 'version', width: 90, render: (v: string) => v || '—' },
-    { title: '工具数', dataIndex: 'tool_count', width: 90 },
-    { title: '启用', width: 130, render: (_: unknown, p: Plugin) => (
-        p.model_plugin ? (
-          <span>
-            <Tag color={p.enabled ? 'orange' : 'default'} style={{ marginRight: 4 }}>
-              {p.enabled ? '启用中' : '已停用'}
+  const renderPlugin = (p: Plugin) => {
+    const color = AVATAR_COLORS[(p.plugin_id.charCodeAt(0) || 0) % AVATAR_COLORS.length];
+    return (
+      <List.Item>
+        <Card size="small" style={{ height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+          <Tag color="blue" style={{ position: 'absolute', top: 8, right: 8, margin: 0, fontSize: 11 }}>
+            {p.kind || 'tool'}
+          </Tag>
+          {p.model_plugin && (
+            <Tag color="orange" style={{ position: 'absolute', top: 30, right: 8, margin: 0, fontSize: 11 }}>
+              桌宠模型
             </Tag>
-            <small style={{ color: '#9ca3af' }}>桌宠页控制</small>
-          </span>
-        ) : (
-          <Switch checked={p.enabled} onChange={v => toggle(p, v)} />
-        )) },
-    { title: '操作', width: 70, render: (_: unknown, p: Plugin) => (
-        p.model_plugin ? (
-          <small style={{ color: '#d1d5db' }}>随模型删除</small>
-        ) : (
-          <Popconfirm
-            title="删除插件？"
-            description="将删除插件目录与全部绑定，不可恢复"
-            okText="删除" cancelText="取消"
-            onConfirm={() => remove(p)}
-          >
-            <Button size="small" type="text" danger icon={<DeleteOutlined />} />
-          </Popconfirm>
-        )) },
-  ];
+          )}
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', paddingRight: 44 }}>
+            <Avatar size={40} style={{ backgroundColor: color, flexShrink: 0 }}>
+              {(p.plugin_id[0] || '?').toUpperCase()}
+            </Avatar>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <Typography.Text strong ellipsis style={{ display: 'block' }} title={p.name}>
+                {p.name}
+              </Typography.Text>
+              <Typography.Text code style={{ fontSize: 11 }}>{p.plugin_id}</Typography.Text>
+            </div>
+          </div>
+          <div style={{ marginTop: 8, fontSize: 12, color: '#6b7280' }}>
+            版本 {p.version || '—'} · {p.tool_count ?? 0} 个工具
+          </div>
+          <div style={{ flex: 1 }} />
+          <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            {p.model_plugin ? (
+              <Tag color={p.enabled ? 'orange' : 'default'} style={{ margin: 0 }}>
+                {p.enabled ? '启用中' : '已停用'}
+              </Tag>
+            ) : (
+              <span style={{ color: '#9ca3af', fontSize: 12 }}>全局启停</span>
+            )}
+            {p.model_plugin ? (
+              <small style={{ color: '#d1d5db', fontSize: 12 }}>随模型删除</small>
+            ) : (
+              <Space size={4}>
+                <Switch size="small" checked={p.enabled} onChange={v => toggle(p, v)} />
+                <Popconfirm
+                  title="删除插件？"
+                  description="将删除插件目录与全部绑定，不可恢复"
+                  okText="删除" cancelText="取消"
+                  onConfirm={() => remove(p)}
+                >
+                  <Button size="small" type="text" danger icon={<DeleteOutlined />} />
+                </Popconfirm>
+              </Space>
+            )}
+          </div>
+        </Card>
+      </List.Item>
+    );
+  };
 
   return (
     <>
@@ -138,12 +168,11 @@ export default function PluginsPage() {
           autoFocus
         />
       </Modal>
-      <Table<Plugin>
-        rowKey="plugin_id"
-        columns={columns}
-        dataSource={plugins}
-        loading={loading}
-        pagination={false}
+      <List
+        grid={{ gutter: 12, xs: 1, sm: 2, md: 3, lg: 3, xl: 4, xxl: 5 }}
+        dataSource={plugins} loading={loading} size="small"
+        locale={{ emptyText: <Empty description="还没有插件，可导入或重新扫描" /> }}
+        renderItem={renderPlugin}
       />
       <Typography.Paragraph type="secondary" style={{ marginTop: 10, fontSize: 12 }}>
         插件目录：<Typography.Text code>工作区/plugins/</Typography.Text>（plugin.yaml + main.py，ctx.tool 注册工具）。

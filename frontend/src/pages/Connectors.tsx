@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  Button, Card, Empty, Form, Input, Modal, Popconfirm, Select, Space, Table,
+  Avatar, Button, Card, Empty, Form, Input, List, Modal, Popconfirm, Select, Space,
   Tag, Typography, message,
 } from 'antd';
 import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons';
@@ -12,6 +12,9 @@ interface McpFormValues {
   command: string;
   args?: string[];
 }
+
+const AVATAR_COLORS = ['#f59e0b', '#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
+const TRANSPORT_COLOR: Record<string, string> = { stdio: 'blue', sse: 'green', http: 'purple' };
 
 export default function McpPage() {
   const [servers, setServers] = useState<ConnectorServer[]>([]);
@@ -79,41 +82,66 @@ export default function McpPage() {
     }
   };
 
-  const columns = [
-    { title: '服务器', dataIndex: 'name', render: (n: string) => <b>{n}</b> },
-    { title: '传输', dataIndex: 'transport', width: 90, render: (t: string) => <Tag color="blue">{t}</Tag> },
-    { title: '命令', dataIndex: 'command', render: (c: string) => <span style={{ color: '#6b7280' }}>{c || '—'}</span> },
-    { title: '参数', dataIndex: 'args', render: (a: string[]) => <span style={{ color: '#6b7280' }}>{(a || []).join(' ')}</span> },
-    { title: '操作', width: 110, render: (_: unknown, s: ConnectorServer) => (
-        <Space size={4}>
-          <Button size="small" type="text" icon={<EditOutlined />} onClick={() => openEdit(s)} />
-          <Popconfirm
-            title="删除连接器？"
-            description="将移除该服务器及其工具，下次对话生效"
-            okText="删除" cancelText="取消"
-            onConfirm={() => remove(s.name)}
-          >
-            <Button size="small" type="text" danger icon={<DeleteOutlined />} />
-          </Popconfirm>
-        </Space>) },
-  ];
+  const renderConnector = (s: ConnectorServer) => {
+    const t = s.transport || 'stdio';
+    const color = AVATAR_COLORS[(s.name.charCodeAt(0) || 0) % AVATAR_COLORS.length];
+    const cmd = s.command || '—';
+    const args = (s.args || []).join(' ');
+    return (
+      <List.Item>
+        <Card size="small" style={{ height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+          <Tag color={TRANSPORT_COLOR[t] || 'default'} style={{ position: 'absolute', top: 8, right: 8, margin: 0, fontSize: 11 }}>
+            {t}
+          </Tag>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', paddingRight: 44 }}>
+            <Avatar size={40} style={{ backgroundColor: color, flexShrink: 0 }}>
+              {(s.name[0] || '?').toUpperCase()}
+            </Avatar>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <Typography.Text strong ellipsis style={{ display: 'block' }} title={s.name}>
+                {s.name}
+              </Typography.Text>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }} ellipsis title={cmd}>
+                {cmd}
+              </Typography.Text>
+              {args && (
+                <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block' }} ellipsis title={args}>
+                  {args}
+                </Typography.Text>
+              )}
+            </div>
+          </div>
+          <div style={{ flex: 1 }} />
+          <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ color: '#9ca3af', fontSize: 12 }}>工具名带 {s.name}_ 前缀</span>
+            <Space size={4}>
+              <Button size="small" type="text" icon={<EditOutlined />} onClick={() => openEdit(s)} />
+              <Popconfirm
+                title="删除连接器？"
+                description="将移除该服务器及其工具，下次对话生效"
+                okText="删除" cancelText="取消"
+                onConfirm={() => remove(s.name)}
+              >
+                <Button size="small" type="text" danger icon={<DeleteOutlined />} />
+              </Popconfirm>
+            </Space>
+          </div>
+        </Card>
+      </List.Item>
+    );
+  };
 
   return (
     <>
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
-        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增服务器</Button>
+        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增连接器</Button>
       </div>
-      {servers.length === 0 && !loading ? (
-        <Card><Empty description="还没有配置连接器" /></Card>
-      ) : (
-        <Table<ConnectorServer>
-          rowKey="name"
-          columns={columns}
-          dataSource={servers}
-          loading={loading}
-          pagination={false}
-        />
-      )}
+      <List
+        grid={{ gutter: 12, xs: 1, sm: 2, md: 3, lg: 3, xl: 4, xxl: 5 }}
+        dataSource={servers} loading={loading} size="small"
+        locale={{ emptyText: <Empty description="还没有配置连接器" /> }}
+        renderItem={renderConnector}
+      />
       <Card style={{ marginTop: 16 }} size="small">
         <Typography.Text strong>如何接入连接器</Typography.Text>
         <Typography.Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0, fontSize: 13, lineHeight: 1.8 }}>
@@ -121,7 +149,7 @@ export default function McpPage() {
           配置持久化在 <Typography.Text code>data_root/connectors.json</Typography.Text>（重启不丢）；
           仓库根 <Typography.Text code>.env</Typography.Text> 的{' '}
           <Typography.Text code>NUOMI_CONNECTORS</Typography.Text> 仅作首次播种（无 json 时生效）。
-          对话时工具名带 <Typography.Text code>{'{服务器名}_'}</Typography.Text> 前缀，自动对专家可用；
+          对话时工具名带 <Typography.Text code>{'{连接器名}_'}</Typography.Text> 前缀，自动对专家可用；
           增删改后下次对话生效。
         </Typography.Paragraph>
       </Card>
@@ -138,9 +166,9 @@ export default function McpPage() {
       >
         <Form form={form} layout="vertical" preserve={false}>
           <Form.Item
-            name="name" label="服务器名"
+            name="name" label="连接器名"
             rules={[
-              { required: true, message: '请输入服务器名' },
+              { required: true, message: '请输入连接器名' },
               { pattern: /^[a-zA-Z0-9_-]+$/, message: '仅限字母/数字/_/-' },
             ]}
           >
