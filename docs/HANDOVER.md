@@ -1,6 +1,6 @@
 # Nuomi 交接文档（HANDOVER）
 
-> 最后更新：2026-10-04 · 分支 main · HEAD `4c08ed5`（工作区干净）
+> 最后更新：2026-10-04 · 分支 main · HEAD `3492b20`（工作区干净）
 > 本文件面向「下一个接手的人」：先读它，再读代码。已实现的细节以代码为准（`git show <commit>` 可查）。
 
 ---
@@ -79,7 +79,7 @@ OpenAI 兼容：`app/transport/openai_compat.py`（`/v1/chat/completions`，mode
 
 ## 5. 已验证链路（回归依据；细节以代码/实测为准）
 
-插件链（weather 触发 tool_call→tool_result；zip/git 导入均实测）、技能链（frontmatter+启停；git 导入实测 anthropics/skills→template-skill）、技能链（frontmatter+启停）、连接器链（pet_mood，MCP 协议）、协议链（/chat octop 帧 56 帧无解析错误）、控制台链（各板块无 console 错误）、壳链（面板重试/订阅断线重连）、**SkillHub 链**（真实市场：search/rankings/skillsets、单技能安装、技能集建包 6 技能、包启停/删除、chat 注入均实测通过）、模型切换链（插件互斥+manager.release，**不换会话**，2026-10-04 起）、**桌宠开关链**（控制台「桌宠」页开关 → /pet/status → config watch → 窗口创建/销毁，启动时按开关决定是否创建，2026-10-04）、会话链（真实线程列表，无 default 合成）。
+插件链（weather 触发 tool_call→tool_result；zip/git 导入均实测）、技能链（frontmatter+启停；git 导入实测 anthropics/skills→template-skill）、技能链（frontmatter+启停）、连接器链（pet_mood，MCP 协议）、协议链（/chat octop 帧 56 帧无解析错误）、控制台链（各板块无 console 错误）、壳链（面板重试/订阅断线重连）、**SkillHub 链**（真实市场：search/rankings/skillsets、单技能安装、技能集建包 6 技能、包启停/删除、chat 注入均实测通过）、模型切换链（插件互斥+manager.release，**不换会话**，2026-10-04 起）、**桌宠开关链**（控制台「桌宠」页开关 → /pet/status → config watch → 窗口创建/销毁，启动时按开关决定是否创建，2026-10-04）、会话链（真实线程列表，无 default 合成）、**管理页卡片化链**（专家/技能（已安装+市场）/桌宠/插件/连接器五页统一卡片网格，浏览器实测同行严格等高：技能页 5 列 179px、桌宠 sm 2 列 306px，2026-10-04）。
 
 **注意**：部分市场技能 SKILL.md 的 description 含裸 `: ` 导致 harness YAML 解析失败被跳过（如 superpowers-tdd）——与 Octop 行为一致，非 nuomi bug。
 
@@ -100,6 +100,8 @@ OpenAI 兼容：`app/transport/openai_compat.py`（`/v1/chat/completions`，mode
 - **LLM 幻觉调用旧模型工具名**：曾用"模型专属会话（无旧历史）"根治；**2026-10-04 废除**（桌宠=纯表现层拦截工具调用，会话与模型解耦），幻觉风险由会话切换/清空兜底。
 - **python websockets 连 octop 8088 WS 恒 403**：curl/aiohttp 可通；真切 WS 用 aiohttp。
 - **市场技能 frontmatter 质量**：description 裸冒号 → harness 安全跳过（见 §5）。
+- **antd5 grid 卡片等高**：grid List 渲染为 `.ant-row > div`（**无 `.ant-list-items`**，也无 `.ant-col` 类——列是原生 div + colStyle）；Row 默认 `align: top` 列不拉伸，必须 CSS `align-items: stretch`；`nuomi-grid` 类若挂在 List 容器上选择器写 `.nuomi-grid .ant-row`，若挂在 Row 自身（桌宠页）写 `.ant-row.nuomi-grid`——两形态都要覆盖（frontend/src/index.css `.nuomi-grid` 块已兼容）。
+- **壳加载的是 build 产物**：控制面板指向 `http://127.0.0.1:8000/console/`（后端挂 dist），**不是** 5173 vite dev；改前端验证要走 build + 强制刷新（`?v=n` nonce），5173 的 vite proxy 未配置好也不影响壳。
 
 ## 7. 遗留事项 / 下一步
 
@@ -128,6 +130,15 @@ afbed65  壳 SSE 动作/表情播放器 + aidang 模型试装
 1bf979d  docs: HANDOVER 更新到 1e2b54c
 b35e874  feat: SkillHub 技能市场 + 技能包 + 会话/删除/壳简化主线（28 文件）
 4c08ed5  docs: HANDOVER 回填 b35e874
+657a37f  连接器命名统一（/api/connectors、connectors.json、NUOMI_CONNECTORS；mcp_* 仅留技术层）
+ce05b80  Git 导入（插件/技能）+ SkillHub 分页修复（服务端固定 10 条/页，后端循环翻页）
+fcb4516  内置技能只读展示（/skills/builtin，24 个）+ 环境变量设置（/settings/env）+ requires_api_key
+5c2d405  技能市场卡片化：slug 去重、等宽卡片、首字头像、描述省略+tooltip
+8f2684d  已安装技能卡片化：内置/技能/技能包统一平铺 + 类型筛选 + 搜索 + 角标
+e65477d  插件/连接器页卡片化（桌宠模型橙色标、传输协议角标、清「服务器」文案）
+5e3a268  卡片等高 CSS（首版选择器未命中，见 §6 踩坑）
+dc242b1  卡片等高修复：antd5 grid 列为裸 div，.ant-row > div（amend 掉误提交的 .vite 缓存）
+3492b20  桌宠页等高：补 .ant-row.nuomi-grid 形态 + align-items: stretch
 ```
 
 开发规范：`make lint`（ruff）/ `make typecheck`（mypy），CI 在 .github/workflows。
