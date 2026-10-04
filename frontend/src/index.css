@@ -4,3 +4,15 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif;
   background: #f7f8fa;
 }
+
+/* 卡片网格等高：grid 列表的列 flex 撑满，卡片高度一致 */
+.nuomi-grid .ant-list-items > .ant-row > .ant-col {
+  display: flex;
+}
+.nuomi-grid .ant-list-item {
+  width: 100%;
+  height: 100%;
+}
+.nuomi-grid .ant-list-item .ant-card {
+  width: 100%;
+}

@@ -398,6 +398,7 @@ export default function SkillsPage() {
                 </Modal>
                 <List
                   grid={{ gutter: 12, xs: 1, sm: 2, md: 3, lg: 3, xl: 4, xxl: 5 }}
+          className="nuomi-grid"
                   dataSource={installedItems} loading={loading} size="small"
                   locale={{ emptyText: <Empty description="没有匹配的已安装项" /> }}
                   renderItem={renderInstalledItem}
@@ -431,6 +432,7 @@ export default function SkillsPage() {
                 />
                 <List
                   grid={{ gutter: 12, xs: 1, sm: 2, md: 3, lg: 3, xl: 4, xxl: 5 }}
+          className="nuomi-grid"
                   dataSource={hubItems} loading={hubLoading} size="small"
                   locale={{ emptyText: <Empty description="暂无结果，换个关键词试试" /> }}
                   renderItem={renderHubItem}

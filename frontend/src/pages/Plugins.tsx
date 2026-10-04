@@ -170,6 +170,7 @@ export default function PluginsPage() {
       </Modal>
       <List
         grid={{ gutter: 12, xs: 1, sm: 2, md: 3, lg: 3, xl: 4, xxl: 5 }}
+          className="nuomi-grid"
         dataSource={plugins} loading={loading} size="small"
         locale={{ emptyText: <Empty description="还没有插件，可导入或重新扫描" /> }}
         renderItem={renderPlugin}
