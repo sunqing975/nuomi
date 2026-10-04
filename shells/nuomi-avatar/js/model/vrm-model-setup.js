@@ -200,7 +200,6 @@ class VRMModelSetup {
         renderer.autoClear = false;
         const clock = new THREE.Clock();
         let _frameCount = 0;
-        let _hoveringCanvas = false; // 鼠标悬停时暂停自转（便于观察/操作）
         function animate() {
             requestAnimationFrame(animate);
             const delta = clock.getDelta();
@@ -217,9 +216,19 @@ class VRMModelSetup {
             renderer.setViewport(vr.x, vpY, vr.width, vr.height);
             renderer.setScissor(vr.x, vpY, vr.width, vr.height);
             renderer.setScissorTest(true);
-            // 缓慢自转（3D 观感；右键拖拽后暂停 8s，鼠标悬停时暂停）
-            if (Date.now() > (model._autoRotatePausedUntil || 0) && !_hoveringCanvas) {
-                model._orbitTheta += delta * 0.1;
+            // 待机摆动（3D 观感）：围绕正面（_orbitTheta=π 是相机看正面）±14° 慢速往复。
+            // 注意：不能用 canvas hover 暂停——数字人窗口是全屏透明层，canvas 常驻全屏，
+            // 鼠标永远"悬停"会导致摆动永不触发。仅右键拖拽后暂停 8s（interaction 设置 _autoRotatePausedUntil）。
+            if (Date.now() > (model._autoRotatePausedUntil || 0)) {
+                model._swayTime = (model._swayTime || 0) + delta;
+                const target = Math.PI + Math.sin(model._swayTime * 0.35) * 0.25;
+                const step = Math.min(1, delta * 2.0);
+                const diff = target - model._orbitTheta;
+                if (Math.abs(diff) < 0.002) {
+                    model._orbitTheta = target; // 收敛到位，避免小抖
+                } else {
+                    model._orbitTheta += diff * step;
+                }
             }
             model.updateCameraOrbit();
             camera.aspect = vr.width / vr.height;
@@ -227,10 +236,6 @@ class VRMModelSetup {
             renderer.render(scene, camera);
         }
         animate();
-
-        // 鼠标悬停暂停自转标志由 _hoveringCanvas 控制（事件绑定）
-        canvas.addEventListener('mouseenter', () => { _hoveringCanvas = true; });
-        canvas.addEventListener('mouseleave', () => { _hoveringCanvas = false; });
 
         // 注意：窗口大小变化由model-interaction.js中的_setupWindowResize处理
 

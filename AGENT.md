@@ -157,3 +157,10 @@ SSE 事件协议（AI 数字人前端消费）：`token` / `tool_call` / `tool_r
 - **端到端实测**：壳启动日志 `[VRM动画] 加载 idle 成功, 8.22s / 播放 idle`（循环待机）；预览 bow → `播放 bow` → 播完自动 `播放 idle` ✓；动作清单 = 5 个 VRMA（Body Block/bow/elbow_punch/idle/sitting_laughing），动态工具 enum 同源
 - **清理**：删 `Illegal Elbow Punch.vrma`（与 elbow_punch.vrma 同字节重复）、`elbow_punch.fbx`（转换源文件残留）
 - **遗留**：动作名=文件名（含空格如 "Body Block" 仍可播，后续可规范化空格→下划线）；VRMA_01~07 未导入
+
+## 预览/自转/动作清单修复（2026-10-05 凌晨）
+
+- **自转 bug 根因（用户反馈"一直360转"→"转到180°停住背朝我"）**：① 上一版 360 自转 `_orbitTheta += delta*0.1` 永续转；② 改成摆动后用了 canvas hover 暂停——**数字人窗口是全屏透明层，canvas 常驻全屏，鼠标永远"悬停"，摆动永不触发**，模型停在用户拖到的角度；③ 摆动目标围绕 **0** 而正面是 **π**（adapter `_orbitTheta=Math.PI // PI=front`），收敛方向错误会拉向背面。修复：摆动围绕 `Math.PI + sin(t*0.35)*0.25`（正面 ±14° 慢速往复），去掉 hover 暂停（仅右键拖拽后暂停 8s），收敛用 delta*2.0 + 到位钳制
+- **表情预览"没效果"结论**：链路全通（前端按钮→POST /avatar/preview→SSE→壳 playAvatarActionPayload→setValue），壳日志有用户点击触发的 happy/sad/blink/neutral/aa 播放记录；看不到的根因 = ① 模型当时背朝用户（自转 bug 所致）；② 表情保持 3s 太短。修复：显式表情路径 `_playExpression(…, 3000)→8000`、app.js EXPRESSION_RECOVERY_MS 5000→8000
+- **前端动作区空（用户反馈"下面没有动作可以预览"）**：`/api/avatar/models` 的 models[].motions 恒空（list_models 硬编码）——补为 `list_avatar_actions()` 全局 VRMA 清单（motions=[name]，actions={name:{label_zh,has_vrma}}），前端卡片动作区渲染 5 个动作 + ▶ 预览按钮
+- **视觉验证限制**：数字人窗口透明全屏 + 控制台窗口遮挡，screencapture 拿不到模型画面（AX 树也无透明窗口），表情视觉验证依赖用户确认；模型 viewRect 默认 (1.0,0.6,0.5) = 屏幕右侧中部

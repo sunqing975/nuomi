@@ -36,8 +36,11 @@ def list_models() -> list[dict]:
     """扫描模型目录，返回 [{id, path, type, motions, expressions, actions}]。
 
     3D: models/3D/<xxx>.vrm（单个文件）；2D Live2D 已下线（2026-10-04）。
+    motions/actions 填**全局 VRMA 动作清单**（list_avatar_actions()，所有模型共用，
+    放文件即出现、删即消失）——前端卡片据此渲染动作列表与预览按钮。
     """
     models: list[dict] = []
+    actions = list_avatar_actions()
     if MODEL_DIR_3D.is_dir():
         for vrm_file in sorted(MODEL_DIR_3D.glob("*.vrm")):
             models.append(
@@ -45,9 +48,9 @@ def list_models() -> list[dict]:
                     "id": vrm_file.stem,
                     "path": str(vrm_file),
                     "type": "vrm",
-                    "motions": [],
+                    "motions": [a["name"] for a in actions],
                     "expressions": list_vrm_expressions(vrm_file),
-                    "actions": {},
+                    "actions": {a["name"]: {"label_zh": a["label_zh"], "has_vrma": a["has_vrma"]} for a in actions},
                     "builtin": False,
                 }
             )

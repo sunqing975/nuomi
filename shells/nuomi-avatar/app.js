@@ -465,7 +465,7 @@ const PET_ACTION_MAP = {
 
 // 表情自动恢复定时器：LLM 调一次表情工具后，N 秒后自动回默认表情（避免脸卡死）
 let _expressionRecoveryTimer = null
-const EXPRESSION_RECOVERY_MS = 5000
+const EXPRESSION_RECOVERY_MS = 8000
 
 // 状态→表情映射（第 2 层：LLM 状态自动切脸）
 const STATUS_EXPRESSION = {

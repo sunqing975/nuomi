@@ -327,7 +327,7 @@ class VRMModelAdapter extends EventEmitter {
             const raw = String(name).toLowerCase();
             const normalized = raw === 'normal' ? 'neutral' : raw;
             const vrmExpr = this._expressionMap[normalized] || normalized;
-            this._playExpression(vrmExpr, 3000);
+            this._playExpression(vrmExpr, 8000);
         } else {
             // 无参 = 重置所有表情到默认（与 Live2D/调用方契约一致，不做随机）
             this._resetExpressions();
