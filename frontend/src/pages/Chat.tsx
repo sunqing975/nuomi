@@ -360,7 +360,7 @@ export default function ChatPage() {
   return (
     <div style={{ display: 'flex', gap: 16, height: 'calc(100vh - 108px)' }}>
       {/* 左侧：专家 + 会话列表 */}
-      <div style={{ width: 240, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ width: 200, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
         <Select
           value={agentId ?? undefined}
           style={{ width: '100%' }}
@@ -470,25 +470,24 @@ export default function ChatPage() {
         </div>
 
         <div>
-          {hasAbility && (
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
-              {selectedSkills.map(s => (
-                <AbilityChip key={s} label={`技能 · ${s}`} color="#1677ff" onRemove={() => toggleSkill(s)} />
-              ))}
-              {selectedConnectors.map(c => (
-                <AbilityChip key={c} label={`连接器 · ${c}`} color="#52c41a" onRemove={() => toggleConnector(c)} />
-              ))}
-            </div>
-          )}
-          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
-            <Space size={4} style={{ marginBottom: 4 }}>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+            {selectedSkills.map(s => (
+              <AbilityChip key={s} label={`技能 · ${s}`} color="#1677ff" onRemove={() => toggleSkill(s)} />
+            ))}
+            {selectedConnectors.map(c => (
+              <AbilityChip key={c} label={`连接器 · ${c}`} color="#52c41a" onRemove={() => toggleConnector(c)} />
+            ))}
+            {selectedModel && <AbilityChip key={selectedModel} label={`模型 · ${selectedModel}`} color="#722ed1" onRemove={() => setSelectedModel(null)} />}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            <Space size={4}>
               <SkillPicker skills={skills} selected={selectedSkills} onToggle={toggleSkill} />
               <ConnectorPicker connectors={connectors} selected={selectedConnectors} onToggle={toggleConnector} />
               <Select
                 size="small"
                 allowClear
                 placeholder="模型"
-                style={{ width: 170 }}
+                style={{ width: 150 }}
                 value={selectedModel ?? undefined}
                 onChange={setSelectedModel}
                 options={modelOptions}
@@ -496,12 +495,17 @@ export default function ChatPage() {
                 popupMatchSelectWidth={false}
               />
             </Space>
+            <Typography.Text type="secondary" style={{ fontSize: 12, flex: 1, textAlign: 'right' }}>
+              不选 = 全部技能 / 默认连接器 / 默认模型
+            </Typography.Text>
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
             <Input.TextArea
               value={input}
               onChange={e => setInput(e.target.value)}
               onPressEnter={e => { if (!e.shiftKey) { e.preventDefault(); send(); } }}
-              placeholder="输入消息，Enter 发送 / Shift+Enter 换行"
-              autoSize={{ minRows: 1, maxRows: 4 }}
+              placeholder="输入消息，Enter 发送"
+              autoSize={{ minRows: 1, maxRows: 6 }}
               disabled={sending || !agentId}
               style={{ flex: 1 }}
             />

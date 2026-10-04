@@ -606,6 +606,25 @@ def _validate_providers(providers: list[dict], existing: list[dict]) -> list[dic
     return out
 
 
+class ProviderProbeBody(BaseModel):
+    """Provider 模型探测请求体（不落盘，仅探测一次）。"""
+
+    base_url: str = Field(description="OpenAI 兼容服务的 base_url")
+    api_key: str = Field(default="", description="探测用 API Key（不落盘）")
+
+
+@router.post("/settings/providers/probe")
+async def probe_provider_models(body: ProviderProbeBody) -> dict:
+    """探测服务的 /models 接口，返回可用模型 id 列表（新增 Provider 时拉取勾选用）。"""
+    from app.infra.providers_store import probe_models
+
+    try:
+        models = probe_models(body.base_url, body.api_key)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"models": models}
+
+
 @router.get("/settings/providers")
 async def get_providers() -> dict:
     """大模型 Provider 列表（api_key 脱敏；未配置过时返回 .env 种子）。"""

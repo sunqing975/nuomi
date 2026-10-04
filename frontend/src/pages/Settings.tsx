@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  Button, Card, Form, Input, Modal, Select, Space, Table, Tabs, Tag, Typography, message,
+  Button, Card, Checkbox, Form, Input, Modal, Select, Space, Table, Tabs, Tag, Typography, message,
 } from 'antd';
 import {
   PlusOutlined, SaveOutlined, DeleteOutlined, EyeOutlined, EyeInvisibleOutlined, ApiOutlined,
+  ThunderboltOutlined,
 } from '@ant-design/icons';
-import { get, put, type Provider } from '../api';
+import { get, post, put, type Provider } from '../api';
 
 interface EnvRow {
   key: string;
@@ -120,7 +121,10 @@ function ProvidersTab() {
   const [saving, setSaving] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Provider | null>(null);
+  const [probing, setProbing] = useState(false);
+  const [candidates, setCandidates] = useState<string[]>([]);
   const [form] = Form.useForm();
+  const modelValues = Form.useWatch('models', form) as string[] | undefined;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -138,15 +142,38 @@ function ProvidersTab() {
 
   const openEdit = (p?: Provider) => {
     setEditing(p ?? null);
+    setCandidates([]);
     form.resetFields();
     if (p) {
       form.setFieldsValue({ ...p, api_key: '' }); // key 留空 = 保持原值
     } else {
       form.setFieldsValue({
-        id: '', name: '', base_url: '', api_key: '', protocol: 'openai', models: ['deepseek-chat'],
+        id: '', name: '', base_url: '', api_key: '', protocol: 'openai', models: [],
       });
     }
     setModalOpen(true);
+  };
+
+  /** 探测 Provider /models，拉取模型列表；默认勾选第一个作为默认模型 */
+  const probe = async () => {
+    const base_url = String(form.getFieldValue('base_url') || '').trim();
+    const api_key = String(form.getFieldValue('api_key') || '').trim();
+    if (!base_url) {
+      message.warning('先填 Base URL 再探测');
+      return;
+    }
+    setProbing(true);
+    try {
+      const r = await post<{ models: string[] }>('/settings/providers/probe', { base_url, api_key });
+      setCandidates(r.models);
+      form.setFieldsValue({ models: r.models.slice(0, 1) }); // 默认勾选第一个
+      message.success(`探测到 ${r.models.length} 个模型，已默认勾选第一个`);
+    } catch (e) {
+      setCandidates([]);
+      message.error(`探测失败：${(e as Error).message}`);
+    } finally {
+      setProbing(false);
+    }
   };
 
   const save = async () => {
@@ -210,7 +237,7 @@ function ProvidersTab() {
       <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 0 }}>
         配置对话用的大模型服务（OpenAI 兼容协议，默认 DeepSeek）。API Key 明文存于
         <Typography.Text code>工作区/providers.json</Typography.Text>（仓库外），列表展示脱敏。
-        修改后下次对话生效；各专家的默认模型在「专家」页编辑时选择。
+        修改后下次对话生效；模型在对话框工具条 per-turn 选择（不绑专家）。
       </Typography.Paragraph>
       <Table<Provider>
         rowKey="id" columns={columns} dataSource={providers} size="small"
@@ -264,7 +291,27 @@ function ProvidersTab() {
           <Form.Item name="protocol" label="协议" initialValue="openai">
             <Select options={[{ value: 'openai', label: 'OpenAI 兼容' }]} />
           </Form.Item>
-          <Form.Item name="models" label="模型" rules={[{ required: true, message: '至少一个模型' }]}>
+          <Space style={{ marginBottom: 4 }}>
+            <Button size="small" icon={<ThunderboltOutlined />} loading={probing} onClick={probe}>
+              探测模型
+            </Button>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {candidates.length > 0
+                ? `探测到 ${candidates.length} 个模型，勾选后作为本 Provider 可用模型`
+                : editing
+                  ? '可手动输入模型，或重新探测'
+                  : '填 Base URL / API Key 后点「探测模型」，默认勾选第一个'}
+            </Typography.Text>
+          </Space>
+          {candidates.length > 0 && (
+            <Checkbox.Group
+              style={{ display: 'flex', flexWrap: 'wrap', gap: 4, maxHeight: 160, overflow: 'auto', marginBottom: 4 }}
+              options={candidates.map(c => ({ label: c, value: c }))}
+              value={modelValues ?? []}
+              onChange={vals => form.setFieldsValue({ models: vals })}
+            />
+          )}
+          <Form.Item name="models" label="模型" rules={[{ required: true, message: '至少勾选/填写一个模型' }]}>
             <Select mode="tags" placeholder="输入模型名后回车，如 deepseek-chat" open={false} suffixIcon={null} />
           </Form.Item>
         </Form>

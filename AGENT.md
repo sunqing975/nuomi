@@ -46,6 +46,8 @@ SSE 事件协议（桌宠前端消费）：`token` / `tool_call` / `tool_result`
 - **对话框大改动（2026-10-04）**：能力按 per-turn（每次请求）注入，对齐 octop 对话框语义。`POST /agents/{id}/chat` body 扩展 `{skills, connectors}`：skills=None 全量/[] 禁用全部/[name|slug] 只启用（校验存在性，400）；connectors=None 默认挂载/[] 不挂载/[name] 只挂载。底层走 harness 原生 `ChatRequest.skills`（SkillFilterMiddleware 白名单）+ `mcp_servers/mcp_use_default`，无需自研。前端对话框：技能/连接器选择器（Popover）+ 输入框上方能力 chips（可移除）+ 消息气泡内工具步骤折叠（tool_call→tool_result）+ 轨迹抽屉（当前会话工具时间线）。**踩坑：per-turn 能力校验必须在 StreamingResponse 的 generator 之外（端点函数体）执行，否则抛错不转 400**
 - **大模型配置页（2026-10-04）**：LLM Provider 多配置管理（对齐 octop providers 管理）。存储 `工作区/providers.json`（运行时权威，.env LLM_* 仅种子回退；api_key 明文存工作区、不进 git）；`GET|PUT /settings/providers`（整体保存；api_key 空串=保持原值；GET 脱敏 sk-2***fa1e；校验 id 唯一/base_url/模型非空，400）。`build_providers()` 从 providers.json 构建 ProviderConfig 列表
 - **模型不绑专家（2026-10-04）**：agents 表 `default_model` 字段删除（含旧库 DROP COLUMN 迁移），专家与模型解耦；模型在**对话框 per-turn 选择**（工具条「模型」Select，选项来自 providers×models），发送带 `model`（provider/model）字段，走 harness 原生 `ChatRequest.model`（优先于 default_model）；后端校验 model 存在于 providers（非法 400）。agent 默认模型 = providers[0] 默认
+- **Provider 模型探测（2026-10-04）**：`POST /settings/providers/probe`（body base_url/api_key，不落盘）调 OpenAI 兼容 `/models` 拉取模型列表；新增 Provider 弹窗「探测模型」按钮 → 勾选列表（默认勾选第一个作为默认模型）→ 回填；探测失败 400 带原因
+- **对话框输入区优化（2026-10-04）**：能力选择器（技能/连接器/模型）独立一行（输入框上方，提示「不选=全部技能/默认连接器/默认模型」），输入框独占整行 flex:1 + autoSize（1–6 行）；会话左栏 240→200、模型 Select 180→150、placeholder 缩短
 - 后续：M3 Agent 生命周期 → M4 会话 → M5 插件 → M6 技能/连接器/知识库 → M7 桌宠前端 → M8 产品体验
 
 ## 环境事实（重要）
@@ -67,7 +69,7 @@ SSE 事件协议（桌宠前端消费）：`token` / `tool_call` / `tool_result`
 - M3 Agent 生命周期：agents 表（对齐 Octop schema：agent_id/name/default_model/system_prompt/enabled/config_json/last_state...）+ 多专家实例管理
 - M4 会话通道：threads/messages 表 + checkpointer 持久化 + 历史会话
 - M5 插件接入：harness 插件目录（plugin.yaml）+ 前端 zip 导入（工作区 plugins/）；旧 myspy plugins//skills/ 资产已删（2026-10-04）；旧 service-* 概念废弃（harness 原生替代）
-- M6 技能/连接器/知识库：skills_dir 接入 + 连接器（MCP 协议）配置 + 知识库工具（调研完成，决策见上：本地 ONNX 嵌入 + OCR + 全局默认注入）
+- M6 技能/连接器/知识库：skills_dir 接入 + 连接器（MCP 协议）配置 + 知识库工具（调研完成，决策见上：本地 ONNX 嵌入 + OCR + 全局默认注入；**实现进度 2026-10-04：嵌入服务（多源下载+fastembed 推理+就绪检查）与存储层（repo/parse/chunk/index.sqlite/service/jobs 状态机）已端到端验证，probe_embeddings.py / probe_knowledge.py；OCR、检索工具+对话注入、API+前端待做**）
 - M7 桌宠前端：myspy 二次开发（形象/情绪/字幕/TTS）+ 控制面板
 - M8 产品体验：人格/情绪协议、工具执行可视化（"干活中"动画）
 

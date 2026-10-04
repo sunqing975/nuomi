@@ -76,3 +76,37 @@ def mask_key(key: str) -> str:
     if len(key) <= 8:
         return "******"
     return f"{key[:4]}***{key[-4:]}"
+
+
+def probe_models(base_url: str, api_key: str = "") -> list[str]:
+    """探测 OpenAI 兼容服务的 /models，返回模型 id 列表。
+
+    - base_url 尾部斜杠归一；Authorization: Bearer <api_key>（未提供则不带头）
+    - 失败抛 ValueError（带可读原因），由接口层转 400
+    """
+    import httpx
+
+    base = (base_url or "").strip().rstrip("/")
+    if not base:
+        raise ValueError("Base URL 必填")
+    headers = {"Accept": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    try:
+        resp = httpx.get(f"{base}/models", headers=headers, timeout=15)
+    except httpx.HTTPError as exc:
+        raise ValueError(f"连接失败：{exc.__class__.__name__}") from exc
+    if resp.status_code != 200:
+        raise ValueError(f"探测失败 HTTP {resp.status_code}：{resp.text[:200]}")
+    try:
+        data = resp.json()
+    except ValueError as exc:
+        raise ValueError("服务响应不是合法 JSON") from exc
+    models = [
+        str(m.get("id") or "").strip()
+        for m in (data.get("data") or [])
+        if isinstance(m, dict) and m.get("id")
+    ]
+    if not models:
+        raise ValueError("服务未返回任何模型（/models 响应缺少 data[].id）")
+    return models
