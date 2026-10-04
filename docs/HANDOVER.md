@@ -1,6 +1,6 @@
 # Nuomi 交接文档（HANDOVER）
 
-> 最后更新：2026-10-04 · 分支 main · HEAD `988b65e`（工作区干净）
+> 最后更新：2026-10-04 · 分支 main · HEAD `05dbdee`（工作区干净）
 > 本文件面向「下一个接手的人」：先读它，再读代码。已实现的细节以代码为准（`git show <commit>` 可查）。
 
 ---
@@ -173,3 +173,4 @@ dc242b1  卡片等高修复：antd5 grid 列为裸 div，.ant-row > div（amend 
 6b71691  feat: 大模型配置页（providers.json CRUD）+ 模型不绑专家（default_model 列删除，对话框 per-turn 选模型）
 988b65e  docs: HANDOVER 回填（大模型配置 + 模型解耦）
 35d86d9  feat: Provider 模型探测（probe API + 勾选默认）· 对话框输入区布局优化（选择器独立行/输入框整行）
+05dbdee  docs: HANDOVER 回填（Provider 探测 + 输入框优化）
