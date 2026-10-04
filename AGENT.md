@@ -89,3 +89,6 @@ SSE 事件协议（桌宠前端消费）：`token` / `tool_call` / `tool_result`
 
 - **MCP（langchain-mcp-adapters 0.3.x）**：`MultiServerMCPClient({"<s>": StdioConnection(transport="stdio", command=..., args=..., env=...)})`；**不是上下文管理器**，直接 `tools = await client.get_tools()`；StdioConnection 必须带 `transport` 键；env 不默认继承，需显式 `env=dict(os.environ)`。
 - **DeepSeek 工具调用可靠**；本地小模型（Qwen3.5-2B）工具调用不稳定，仅适合纯对话。
+- **Agent 实例缓存必须统一构造入口（2026-10-04 会话历史丢失 bug）**：`HarnessManager.get_agent(agent_id)` 按 agent_id 单例缓存，构造参数（workspace_dir/插件工具/技能目录/MCP）只在首次构造生效。`GET /agents/{id}/chat/history` 曾漏传 `workspace_dir`，页面加载自动拉历史时抢先把「全局根 memory.sqlite + 无工具」的残缺实例缓存 → 专家工作区历史读不到、对话错写全局根库。**修复**：`transport/api.py` 加 `ensure_agent_runtime(agent_row)` 统一入口，控制台对话/历史/桌宠 OpenAI 兼容三端点都走它；manager 缓存命中时对 workspace_dir 漂移打 warning。
+- **octop-memory checkpoint 迁移三表齐搬（2026-10-04）**：会话历史不是只存 `checkpoints`+`writes` 两表——checkpoint 内容 blob 按 digest 存在 `hm_checkpoint_blobs(digest PK, type, value)`。只搬前两表会报 `ValueError: Missing checkpoint content; restore the matching database backup`，且 aget_history 静默返回 []（对话一启动才炸）。跨库迁移会话必须 **checkpoints + writes + hm_checkpoint_blobs 三表**一起搬（blob 按 digest 主键，INSERT OR IGNORE 合并即可）。
+- **`make stop` 会回收 :8000 后端进程**：重启桌宠壳前先 `make stop` 再补起后端（`cd backend && nohup .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 > /tmp/nuomi-backend.log 2>&1 &`）。

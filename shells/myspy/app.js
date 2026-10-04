@@ -960,6 +960,16 @@ function playStatusExpression(status) {
             clearTimeout(_expressionRecoveryTimer)
             _expressionRecoveryTimer = null
         }
+        // 额外参数：thinking 时张嘴（Surprised 的 exp3 里 MouthOpenY=0，手动加）
+        const inner = model.innerModel || model
+        if (inner.internalModel && inner.internalModel.coreModel) {
+            const cm = inner.internalModel.coreModel
+            if (status === 'thinking') {
+                try { cm.setParameterValueById('ParamMouthOpenY', 0.4) } catch (e) {}
+            } else {
+                try { cm.setParameterValueById('ParamMouthOpenY', 0) } catch (e) {}
+            }
+        }
     } catch (e) { log('状态表情失败: ' + e.message, 'warn') }
 }
 
