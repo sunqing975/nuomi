@@ -172,3 +172,10 @@ SSE 事件协议（AI 数字人前端消费）：`token` / `tool_call` / `tool_r
 - 顺带确认 three-vrm v3 语义：`VRMExpression.name`=`VRMExpression_happy`（包装名）、`_expressionMap` 键=`expressionName`（'happy'），壳 `_exprByLower` 索引与 `_resolveExpression` 大小写匹配均正确
 - **新增检测**：后端 `vrm_has_expression_data(model_path)` 解析 GLB 检查任一 group binds 非空（VRM1.0 查 morphTargetBinds）；`list_models` 返回 `expressions_have_data` 字段；前端模型卡片在无数据时显示警告"⚠ 该模型无表情变形数据…"并隐藏表情预览按钮（已 build，控制台刷新可见）
 - **结论/建议**：更换带表情的 VRM（多数 VRoid Studio 导出模型带表情）即可正常预览；当前模型仅适用于动作演示
+
+## 模型热切换修复（2026-10-05）
+
+- **卡点**：壳 app.js switch-model IPC 原来只 log「VRM 模型切换需要重启AI 数字人生效」就返回——切模型必须重启壳，用户点切换"没反应"
+- **方案**：页面重载热切换。后端 switch 已同步 config.ui.model_path → 壳收到 switch-model 后 `setTimeout(() => location.reload(), 400)` → 渲染进程 initialize 重跑读取新模型路径。窗口不关、进程不重启，约 1-2s 换模型
+- **验证**：双向切换（630926↔868274）日志均出现「重载页面加载新模型 → 正在加载VRM模型: 新路径 → 糯米启动完成」；active/config 同步正确
+- **表情数据实证**（three-vrm 壳同款加载链，非后端 JSON 解析）：868274793854709131.vrm 的 `angry` 表情 binds=1（有 morph 变形），旧 6309260419351179234.vrm 全部 binds=0——**用户已导入的新模型即有表情数据，切换后表情预览即可生效**（脚本 vrm_expr_check_tmp.js 已完成使命，删除）

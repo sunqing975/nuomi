@@ -268,8 +268,9 @@ async function main() {
                     log('不支持的模型类型 ' + newType + '（2D Live2D/图片已下线，仅支持 VRM 3D）')
                     return
                 }
-                // VRM 模型切换：壳侧场景重建不可行，由后端切模型 + 重启AI 数字人生效
-                log('VRM 模型切换需要重启AI 数字人生效')
+                // VRM 切换：后端已同步 config.ui.model_path，重载页面让 initialize 读取新模型（窗口不关，零重启）
+                log('VRM 模型切换：重载页面加载新模型')
+                setTimeout(() => window.location.reload(), 400)
             } catch (e) {
                 console.error('切换模型失败:', e)
             }
