@@ -115,3 +115,8 @@ SSE 事件协议（桌宠前端消费）：`token` / `tool_call` / `tool_result`
   - `vrm-model-adapter.js`：loadVRMA 改为 **fs 读文件 + loader.parse**（与 _loadVRM 同模式，原 loadAsync 走 fetch 无法加载 file://，这是它一直没接上的根因）；`motion(name)` **优先播 animations[name]（vrma）**，无则回退手写骨骼动画；playAnimation 一次性动画播完自动 fadeOut 回 idle（不卡最后一帧）
   - 后端 `_enrich_vrm` 动作清单加 `elbow_punch`（肘击攻击），重启后 `enrich_model('6309260419351179234')` 重新生成插件（**注意：启动时 generate_all_model_plugins 只用现有 actions.json 生成插件、不重新 enrich**，改动作清单后需手动调 enrich_model 或删 actions.json 后切模型）
   - 端到端实测：对话"对我来一记肘击" → LLM 调 elbow_punch 工具 → tool_result {motion, expressions, label} → SSE pet_action → 壳 [VRM动画] 播放 elbow_punch ✓
+- **表情工具修复（2026-10-04）**：原 `_generate_semantic_plugin` 只生成动作工具、不读 actions.json 的 expressions——LLM 无表情接口（糯米反馈"只有动作，expressions 恒空"）。已修：
+  - `_generate_semantic_plugin(model_id, actions, expressions)` 增加表情工具 `set_expression_<name>`（_make_expression_player 返回 {motion: None, expressions: [name], label}，与动作 payload 同构，壳播放链路零改动）；plugin.yaml/instructions.md 同步带表情清单
+  - `_resolve_pet_action`（api.py）加表情反查（tool_name.startswith("set_expression_")）
+  - `generate_model_plugin` 表情以 **plugins/<id>/actions.json 的 expressions 为权威**（fallback model dict）
+  - **教训：改动作/表情清单后要 enrich_model 重新生成插件（generate_all_model_plugins 不重新 enrich）**

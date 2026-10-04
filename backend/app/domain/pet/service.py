@@ -299,7 +299,18 @@ def generate_model_plugin(model: dict) -> Path | None:
     motions = model.get("motions") or []
     expressions = model.get("expressions") or []
     if actions:
-        return _generate_semantic_plugin(model_id, actions)
+        # 表情清单以 actions.json 为权威（VRM 模型写 expressions 字段）
+        expr_specs: dict | list = {}
+        actions_path = settings.workspace_path / "plugins" / model_id / "actions.json"
+        if actions_path.is_file():
+            try:
+                data = json.loads(actions_path.read_text(encoding="utf-8"))
+                expr_specs = data.get("expressions") or {}
+            except Exception:
+                expr_specs = {}
+        if not expr_specs:
+            expr_specs = expressions
+        return _generate_semantic_plugin(model_id, actions, expr_specs)
     if not motions and not expressions:
         return None
 
@@ -367,46 +378,71 @@ def generate_model_plugin(model: dict) -> Path | None:
     return plugin_dir
 
 
-def _generate_semantic_plugin(model_id: str, actions: dict) -> Path:
-    """有 actions.json 时：按语义名生成工具，一次绑定 motion+expressions。"""
+def _generate_semantic_plugin(
+    model_id: str, actions: dict, expressions: dict | list | None = None
+) -> Path:
+    """有 actions.json 时：按语义名生成工具，一次绑定 motion+expressions。
+
+    动作工具：工具名 = 语义动作名（返回 motion+expressions+label）。
+    表情工具：工具名 = set_expression_<name>（返回 expressions+label，驱动面部 blend shape）。
+    """
     plugin_dir = settings.workspace_path / "plugins" / model_id
     plugin_dir.mkdir(parents=True, exist_ok=True)
+
+    # 归一化表情表：dict {name: {label_zh, ...}} 或 list [name, ...]
+    expr_specs: dict = {}
+    if isinstance(expressions, dict):
+        expr_specs = expressions
+    elif isinstance(expressions, list):
+        expr_specs = {n: {} for n in expressions}
 
     yaml = (
         f"id: {model_id}\n"
         f"version: 1.0.0\n"
         f"name: 桌宠动作-{model_id}\n"
         f"kind: tool\n"
-        f"description: 桌宠「{model_id}」的动作工具集。"
-        f"根据对话情绪和场景选择合适的动作，让桌宠生动地回应。"
-        f"共 {len(actions)} 个动作。\n"
+        f"description: 桌宠「{model_id}」的动作与表情工具集。"
+        f"根据对话情绪和场景选择合适的动作/表情，让桌宠生动地回应。"
+        f"共 {len(actions)} 个动作、{len(expr_specs)} 个表情。\n"
         "entry: main.py\n"
     )
     (plugin_dir / "plugin.yaml").write_text(yaml, encoding="utf-8")
 
-    # 生成 instructions.md：自动拼动作清单，注入到 system_prompt
+    # 生成 instructions.md：自动拼动作+表情清单，注入到 system_prompt
     action_lines = []
     for name, spec in actions.items():
-        label = spec.get("label_zh", name)
+        label = spec.get("label_zh", name) if isinstance(spec, dict) else name
         action_lines.append(f"- {name}：{label}")
+    expr_lines = []
+    for name, espec in expr_specs.items():
+        label = espec.get("label_zh", name) if isinstance(espec, dict) else name
+        expr_lines.append(f"- set_expression_{name}：{label}")
+    expr_block = (
+        "\n可用表情工具（面部表情，可与动作组合）：\n" + "\n".join(expr_lines)
+        if expr_lines
+        else ""
+    )
     instructions = (
-        "你有一个 Live2D 形象身体，对话时要主动调用动作工具让自己动起来，"
+        "你有一个 Live2D 形象身体，对话时要主动调用动作/表情工具让自己动起来，"
         "不要只靠文字和 emoji。\n\n"
         "可用动作工具：\n"
         + "\n".join(action_lines)
+        + expr_block
         + "\n\n"
         "使用原则：\n"
         "- 用户让你打招呼、做动作、表达情绪时，调用对应动作工具让身体做出来，不要用 emoji 代替\n"
+        "- 用户明确要求表情（如「笑一个/生气/难过」）时，调用 set_expression_* 表情工具\n"
+        "- 动作和表情可以组合（开心时调用 set_expression_happy + 动作工具）\n"
         "- 动作要自然：打招呼用 wave，思考用 think，完成任务用 celebrate，同意用 nod\n"
-        "- 调用动作后简短回应即可，不要长篇大论\n"
+        "- 调用工具后简短回应即可，不要长篇大论\n"
     )
     (plugin_dir / "instructions.md").write_text(instructions, encoding="utf-8")
 
     tool_regs: list[str] = []
     for semantic_name, spec in actions.items():
-        motion = spec.get("motion", "")
-        exprs = spec.get("expressions", []) or []
-        label = spec.get("label_zh", semantic_name)
+        motion = spec.get("motion", "") if isinstance(spec, dict) else ""
+        exprs = spec.get("expressions", []) or [] if isinstance(spec, dict) else []
+        label = spec.get("label_zh", semantic_name) if isinstance(spec, dict) else semantic_name
         expr_desc = f"，同时呈现表情：{ '、'.join(exprs) }" if exprs else ""
         tool_regs.append(
             f"    ctx.tool(\n"
@@ -416,8 +452,19 @@ def _generate_semantic_plugin(model_id: str, actions: dict) -> Path:
             f"    )"
         )
 
+    # 表情工具：set_expression_<name>
+    for expr_name, espec in expr_specs.items():
+        label = espec.get("label_zh", expr_name) if isinstance(espec, dict) else expr_name
+        tool_regs.append(
+            f"    ctx.tool(\n"
+            f'        "set_expression_{expr_name}",\n'
+            f'        _make_expression_player({json.dumps([expr_name])}, {json.dumps(label, ensure_ascii=False)}),\n'
+            f'        description="让桌宠呈现「{label}」表情（面部 blend shape）。",\n'
+            f"    )"
+        )
+
     lines = [
-        '"""模型插件（自动生成）：工具名 = 语义动作名，一次绑定 motion+expressions。"""',
+        '"""模型插件（自动生成）：动作工具 = 语义动作名；表情工具 = set_expression_<名>。"""',
         "from __future__ import annotations",
         "",
         "import json",
@@ -430,8 +477,15 @@ def _generate_semantic_plugin(model_id: str, actions: dict) -> Path:
         "    return _play",
         "",
         "",
+        "def _make_expression_player(expressions: list, label: str):",
+        '    """闭包绑定：LLM 调用表情工具时，返回 expressions payload（无 motion）。"""',
+        "    def _play(*args, **kwargs) -> str:",
+        '        return json.dumps({"motion": None, "expressions": expressions, "label": label}, ensure_ascii=False)',
+        "    return _play",
+        "",
+        "",
         "def setup(ctx) -> None:",
-        '    """注册工具：每个语义动作一个工具。"""',
+        '    """注册工具：动作 + 表情。"""',
         *tool_regs,
         "",
     ]
@@ -733,7 +787,11 @@ def _enrich_vrm(model_id: str, vrm_path: Path) -> dict:
     (plugin_dir / "instructions.md").write_text(instructions, encoding="utf-8")
 
     # 生成插件（直接传 actions，不走 list_models）
-    _generate_semantic_plugin(model_id, actions_json["actions"])
+    _generate_semantic_plugin(
+        model_id,
+        actions_json["actions"],
+        actions_json.get("expressions") or {},
+    )
 
     # _generate_semantic_plugin 会覆盖 instructions.md，这里重写成 VRM 专用
     instructions = f"""# {model_id}（VRM 3D 桌宠）

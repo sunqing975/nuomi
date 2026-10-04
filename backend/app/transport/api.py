@@ -236,7 +236,7 @@ def _resolve_pet_action(tool_name: str) -> dict | None:
 
     # 读当前激活模型的 actions.json（VRM 模型在 plugins/<id>/ 下）
     actions_path = Path(settings.workspace_path) / "plugins" / active / "actions.json"
-    actions = {}
+    actions: dict = {}
     if actions_path.is_file():
         try:
             actions = json.loads(actions_path.read_text(encoding="utf-8")).get("actions") or {}
@@ -250,6 +250,19 @@ def _resolve_pet_action(tool_name: str) -> dict | None:
             "expressions": spec.get("expressions") or [],
             "label": spec.get("label_zh") or tool_name,
         }
+
+    # 表情工具：set_expression_<name> → payload {motion: None, expressions: [name], label}
+    if tool_name.startswith("set_expression_"):
+        expr_name = tool_name[len("set_expression_"):]
+        try:
+            data = json.loads(actions_path.read_text(encoding="utf-8"))
+        except Exception:
+            data = {}
+        expr_specs = data.get("expressions") or {}
+        espec = expr_specs.get(expr_name) if isinstance(expr_specs, dict) else None
+        label = espec.get("label_zh") if isinstance(espec, dict) else expr_name
+        return {"motion": None, "expressions": [expr_name], "label": label or expr_name}
+    return None
 
     # Live2D fallback：裸 motion/expression 名
     for m in list_models():
