@@ -84,6 +84,7 @@ SSE 事件协议（桌宠前端消费）：`token` / `tool_call` / `tool_result`
 - M7 桌宠前端：myspy 二次开发（形象/情绪/字幕/TTS）+ 控制面板
 - M8 产品体验：人格/情绪协议、工具执行可视化（"干活中"动画）
 - **待办（2026-10-04 用户拍板暂缓）**：专家级默认绑定（对齐 octop agents 表 `skill_package_ids`/`knowledge_base_ids`/`mcp_servers` 三列）：nuomi agents 表加绑定列 + 对话时默认注入（per-turn 可覆盖，知识库仍保持显式指定才注入）+ 导入器读取 octop agent 记录的绑定字段；另：octop manifest `prompt_files` 声明的非标准文件（如 IDENTITY.md/HEARTBEAT.md，现已复制资产但不注入）内容合并进注入或 system_prompt
+- **待办（2026-10-04 用户拍板，稍后开工）——桌宠 3D 化 + 动态工具（方案 B）**：用户决定：① **物理删 2D**（壳 Live2D 适配器/pixi 依赖/ModelScanner 2D 分支、后端 list_models 2D 扫描、前端桌宠页 2D tab；models/2D 的 aidang/cat/hiyori 资产直接删）；② **表情单工具** `set_expression(expression: enum)`，enum 由当前激活 VRM 模型的 blend shape 动态注入（替代现 set_expression_* 每表情一工具）；③ **直接方案 B（装配时动态）**：插件只留固定入口，工具 JSON Schema 在对话装配时动态构造——动作 enum 来自扫描 `assets/animations/*.vrma`，表情 enum 来自 Python 解析当前激活 VRM 模型 GLB（glTF JSON chunk `extensions.VRM.blendShapeMaster`，无需 three）——**改动点在项目源码 `PluginService.tools()`（backend/app/domain/plugins/service.py:126），在 `build_plugin_tools`（octop_harness.plugins 基础库，不动）返回结果上追加/替换动态桌宠工具**；切模型/新增 FBX 零重启。前置：后端加 VRM 表情枚举函数（Python 解析 GLB）+ 动作清单查询函数
 
 ## 教训（保留，跨版本有效）
 
