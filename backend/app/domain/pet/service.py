@@ -20,6 +20,7 @@ from app.config import REPO_ROOT, settings
 logger = logging.getLogger(__name__)
 
 MODEL_DIR = settings.workspace_path / "models" / "2D"
+MODEL_DIR_3D = settings.workspace_path / "models" / "3D"
 SEED_MODEL_DIR = REPO_ROOT / "assets" / "models" / "2D"
 SHELL_CONFIG = REPO_ROOT / "shells" / "myspy" / "config.json"
 STATE_FILE = settings.workspace_path / "nuomi-state.json"
@@ -80,45 +81,63 @@ def _load_actions_manifest(model_dir: Path) -> dict:
 
 
 def list_models() -> list[dict]:
-    """扫描模型目录，返回 [{id, path, motions, expressions, actions}]。
+    """扫描模型目录，返回 [{id, path, type, motions, expressions, actions}]。
 
-    motions/expressions 只列文件真实存在的（资产不完整的模型如实显示为空）。
-    actions 来自模型目录 actions.json（语义动作清单，没有则为空）。
+    2D: models/2D/<id>/<xxx>.model3.json
+    3D: models/3D/<xxx>.vrm（单个文件）
     """
     _seed_builtin_models()
     models: list[dict] = []
-    if not MODEL_DIR.is_dir():
-        return models
-    for char_dir in sorted(MODEL_DIR.iterdir()):
-        if not char_dir.is_dir():
-            continue
-        model_files = sorted(char_dir.glob("*.model3.json"))
-        if not model_files:
-            continue
-        meta = _load_json(model_files[0])
-        fr = meta.get("FileReferences") or {}
-        motions = sorted(
-            g for g in (fr.get("Motions") or {}) if _group_has_files(char_dir, meta, g)
-        )
-        expressions = [
-            (
-                e.get("Name")
-                if isinstance(e, dict) and e.get("Name")
-                else Path(e.get("File", "")).stem
+
+    # 2D Live2D 模型
+    if MODEL_DIR.is_dir():
+        for char_dir in sorted(MODEL_DIR.iterdir()):
+            if not char_dir.is_dir():
+                continue
+            model_files = sorted(char_dir.glob("*.model3.json"))
+            if not model_files:
+                continue
+            meta = _load_json(model_files[0])
+            fr = meta.get("FileReferences") or {}
+            motions = sorted(
+                g for g in (fr.get("Motions") or {}) if _group_has_files(char_dir, meta, g)
             )
-            for e in (fr.get("Expressions") or [])
-            if isinstance(e, dict) and _expression_has_file(char_dir, e)
-        ]
-        models.append(
-            {
-                "id": char_dir.name,
-                "path": str(char_dir / model_files[0].name),
-                "motions": motions,
-                "expressions": expressions,
-                "actions": _load_actions_manifest(char_dir),
-                "builtin": (SEED_MODEL_DIR / char_dir.name).is_dir(),
-            }
-        )
+            expressions = [
+                (
+                    e.get("Name")
+                    if isinstance(e, dict) and e.get("Name")
+                    else Path(e.get("File", "")).stem
+                )
+                for e in (fr.get("Expressions") or [])
+                if isinstance(e, dict) and _expression_has_file(char_dir, e)
+            ]
+            models.append(
+                {
+                    "id": char_dir.name,
+                    "path": str(char_dir / model_files[0].name),
+                    "type": "live2d",
+                    "motions": motions,
+                    "expressions": expressions,
+                    "actions": _load_actions_manifest(char_dir),
+                    "builtin": (SEED_MODEL_DIR / char_dir.name).is_dir(),
+                }
+            )
+
+    # 3D VRM 模型（单个 .vrm 文件）
+    if MODEL_DIR_3D.is_dir():
+        for vrm_file in sorted(MODEL_DIR_3D.glob("*.vrm")):
+            models.append(
+                {
+                    "id": vrm_file.stem,
+                    "path": str(vrm_file),
+                    "type": "vrm",
+                    "motions": [],
+                    "expressions": [],
+                    "actions": {},
+                    "builtin": False,
+                }
+            )
+
     return models
 
 
@@ -166,7 +185,7 @@ def switch_model(model_id: str) -> dict:
     ui = cfg.setdefault("ui", {})
     ui["model"] = target["id"]
     ui["model_path"] = target["path"]
-    ui["model_type"] = "live2d"
+    ui["model_type"] = target.get("type", "live2d")
     SHELL_CONFIG.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
     return target
 
