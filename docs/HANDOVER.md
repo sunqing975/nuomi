@@ -47,6 +47,8 @@ nuomi/
 
 ## 3. 启动手册
 
+> **2026-10-05 起：`make start` 一条命令即可**——壳启动时自动检测后端（`/api/health`），未就绪则 spawn uvicorn（cwd=backend，仓库根 .env 自动读入；最多等 30s；后端退出壳后保持常驻，下次启动复用）。以下旧流程仍可用（手动起后端再起壳，壳检测到就绪不会重复拉起）。
+
 ```bash
 # 1) 后端（必须先杀旧进程，否则新代码不生效）
 pkill -9 -f "uvicorn app.main:app" || true
@@ -154,7 +156,7 @@ OpenAI 兼容：`app/transport/openai_compat.py`（`/v1/chat/completions`，mode
 - [ ] **octop WS 迁移**（暂缓）：事件帧已对齐，通道仍 HTTP SSE；注意 websockets 403 坑
 - [ ] **HITL 工具审批流**（当前不启用）：octop_harness 自带 HumanInTheLoopMiddleware，未来有高风险工具再开启
 - [x] **糯米人设源头约束**（2026-10-05 用户确认完成）：改系统提示词后糯米不再是小猫人设，尖括号标签（旧人设拟声标签产物）基本不再出现；约束靠人设变更达成，无显式"禁标签"文本
-- [ ] 壳启动时自动拉起 uvicorn（可选体验项：现需手动先启后端，见 §3）
+- [x] **壳启动时自动拉起 uvicorn**（2026-10-05 完成）：`ensureBackend()`（main.js）启动时 GET `/api/health` 检测后端，未就绪则 spawn `.venv/bin/python -m uvicorn`（cwd=backend、仓库根 .env 自动读入、端口取自 config.json llm.api_url；最多等 30s；stdout 丢弃防刷屏、stderr 带 `[backend]` 前缀进壳日志；uvicorn 访问日志不打印）；退出壳后端**保持常驻**（下次启动复用，不重复拉起）；`make start` 现在一条命令全自动
 - [ ] 前端 bundle 1MB 可 code-split（本地加载场景收益低，可选）
 - [x] **动作名空格**（2026-10-05 用户确认保持现状）：动作名=文件名（Mixamo 原名如 "Body Block"），enum 值带空格在工具调用合法、实测可播，不做规范化
 - [x] **模型资产补全 → 已废弃**（用户 2026-10-05 拍板抛弃）：cat（hijiki）动作缺失不再补；VRMA_01~07（VRoid 官方免费动画）不再导入；动作清单只以 `assets/animations/*.vrma` 为准（现有 6 个：Body Block/bow/elbow_punch/idle/Praying/sitting_laughing）。**背景（2026-10-05 定性）**：当前 VRM 模型 `6309260419351179234` 的 17 个 blendShapeGroup binds 全空 = 模型本身无表情变形；已导入的 `868274793854709131` binds 非空（angry=1，实测可动）——`list_models` 返回 `expressions_have_data`、前端有警告标签

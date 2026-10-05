@@ -1,8 +1,56 @@
 const { app, BrowserWindow, ipcMain, screen, Menu, globalShortcut, desktopCapturer } = require('electron')
 const path = require('path')
 const fs = require('fs')
+const http = require('http')
+const { spawn } = require('child_process')
 
 const configPath = path.join(app.getAppPath(), 'config.json')
+
+// === 后端自动拉起（2026-10-05）：壳启动时检测 nuomi 后端，未就绪则 spawn uvicorn ===
+function checkBackendReady(origin, timeoutMs = 1500) {
+    return new Promise((resolve) => {
+        const req = http.get(origin + '/api/health', { timeout: timeoutMs }, (res) => {
+            res.resume()
+            res.on('end', () => resolve(res.statusCode === 200))
+        })
+        req.on('timeout', () => { req.destroy(); resolve(false) })
+        req.on('error', () => resolve(false))
+    })
+}
+
+function ensureBackend() {
+    const origin = backendOrigin()
+    return checkBackendReady(origin).then(async (alive) => {
+        if (alive) {
+            console.log('后端已就绪: ' + origin)
+            return { started: false }
+        }
+        console.log('后端未就绪，自动拉起 uvicorn ...')
+        const backendDir = path.join(__dirname, '..', '..', 'backend')
+        const venvPython = path.join(backendDir, '.venv', 'bin', 'python')
+        const python = fs.existsSync(venvPython) ? venvPython : 'python3'
+        const port = new URL(origin).port || '8000'
+        const child = spawn(
+            python,
+            ['-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', port],
+            { cwd: backendDir, stdio: ['ignore', 'ignore', 'pipe'], env: process.env }
+        )
+        // 启动错误（端口占用/依赖缺失等）打到壳日志；uvicorn 访问日志丢弃防刷屏
+        child.stderr.on('data', (d) => console.log('[backend] ' + d.toString().trim()))
+        child.on('error', (err) => console.error('[backend] 启动失败: ' + err.message))
+        // 最多等 30s 健康检查通过（后端含依赖加载/嵌入模型就绪）
+        const deadline = Date.now() + 30000
+        while (Date.now() < deadline) {
+            if (await checkBackendReady(origin, 1000)) {
+                console.log('后端已由壳拉起并就绪: ' + origin)
+                return { started: true, pid: child.pid }
+            }
+            await new Promise((r) => setTimeout(r, 1000))
+        }
+        console.error('[backend] 30s 内未就绪（端口被占用或启动失败），控制面板将按重试逻辑兜底')
+        return { started: false, pid: child.pid }
+    })
+}
 
 function createWindow() {
     let config = {}
@@ -141,23 +189,25 @@ function unregisterPTTShortcut() {
 }
 
 app.whenReady().then(() => {
-    let initialConfig = {}
-    try { initialConfig = JSON.parse(fs.readFileSync(configPath, 'utf8')) } catch (e) {}
-    const petEnabled = (initialConfig.ui || {}).avatar_enabled !== false // 缺省开
+    // 先确保后端就绪（未启动则自动拉起），再创建窗口——控制面板加载依赖后端
+    ensureBackend().finally(() => {
+        let initialConfig = {}
+        try { initialConfig = JSON.parse(fs.readFileSync(configPath, 'utf8')) } catch (e) {}
+        const petEnabled = (initialConfig.ui || {}).avatar_enabled !== false // 缺省开
 
-    if (petEnabled) {
-        avatarWindow = createWindow()
-    } else {
-        console.log('AI 数字人开关为关，跳过创建AI 数字人窗口')
-    }
-    controlPanel = createControlPanel()
+        if (petEnabled) {
+            avatarWindow = createWindow()
+        } else {
+            console.log('AI 数字人开关为关，跳过创建AI 数字人窗口')
+        }
+        controlPanel = createControlPanel()
 
-    // 转发渲染进程日志到主进程 stdout（便于排查切换/加载问题）
-    if (avatarWindow && avatarWindow.webContents) {
-        avatarWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
-            console.log('[renderer:' + level + '] ' + message + ' (' + line + ')')
-        })
-    }
+        // 转发渲染进程日志到主进程 stdout（便于排查切换/加载问题）
+        if (avatarWindow && avatarWindow.webContents) {
+            avatarWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+                console.log('[renderer:' + level + '] ' + message + ' (' + line + ')')
+            })
+        }
 
     // 监听 config.json 的 ui.model 变化 → 自动切换模型（后端 /api/avatar/models/switch 写入 config）；
     // ui.avatar_enabled 变化 → 创建/销毁AI 数字人窗口（控制台「模型」页开关）
@@ -217,7 +267,8 @@ app.whenReady().then(() => {
         }
     } catch (e) {}
 
-    console.log('糯米启动完成')
+        console.log('糯米启动完成')
+    }) // ensureBackend().finally 回调结束
 })
 
 app.on('window-all-closed', () => {

@@ -212,9 +212,7 @@ SSE 事件协议（AI 数字人前端消费）：`token` / `tool_call` / `tool_r
 - **修复**：①主进程 `ipcMain.on('reload-control-panel')` → `controlPanel.reload()`；②数字人渲染进程收到 `avatar_animations_changed` SSE 时 `ipcRenderer.send('reload-control-panel')`——动作资产导入/删除时控制面板窗口自动跟随刷新
 - **验证**：DELETE panel_probe 端到端日志「动作资产变更 → 控制面板已刷新（动作资产变更）」
 
-## M3 Agent 生命周期补全 + M4 会话存储（2026-10-05，36 tests/ruff/mypy 全绿）
-
-- **M3 补全（原 agents 表/CRUD/启停/运行时已有，本次补两块缺口）**：
+## M3 Agent 生命周期补全 + M4 会话存储（2026-10-05，36 tests/ruff/mypy 全绿）- **M3 补全（原 agents 表/CRUD/启停/运行时已有，本次补两块缺口）**：
   - **运行时参数接线**：新增 `backend/app/infra/harness/runtime_limits.py`（对齐 Octop runtime_limits.py）——agents.config_json 的 `max_iters`→ChatRequest.recursion_limit、`temperature/top_p/max_tokens`→configurable[model_settings]（harness 默认挂载 ModelSettingsMiddleware 消费）、`max_input_length`→configurable[max_input_tokens]；非法值过滤（bool/越界/非数字忽略）、per-turn 显式值优先。stream_chat 增加 `agent_config` 参数注入
   - **PATCH 支持 config_json**：AgentPatchBody 补 `config_json: dict | None`（此前 PATCH 会静默忽略该字段）
   - **DELETE 级联清工作区**：delete_agent 释放运行时 + 删 DB 行 + rmtree agent-workspaces/<id>（对齐 Octop manager.remove；失败不阻断）
@@ -228,3 +226,16 @@ SSE 事件协议（AI 数字人前端消费）：`token` / `tool_call` / `tool_r
   - **旧库兼容**：v0.13 前遗留 threads 表（id/project_id/title/agent 空壳）→ init_db `_rebuild_legacy_threads` 检测缺 thread_id 列即 DROP 重建（符合"不背历史数据"决策）
 - **端到端实测**：真实库 32 个旧会话全部迁移成功（threads 表 31+1），state 文件清理；历史 backfill 7 条 + 投影 ready；真实对话 2 轮增量 append（7→9→12）；M3 PATCH config_json 生效 + 带参数对话正常；state 文件死字段 enabled 已清（无消费方，agent_id 保留）
 - **遗留**：format-check 基线红（项目原有 12+ 文件未 ruff format，非本次引入，未扩大范围）；前端无改动（/chat/state 返回结构兼容，sessions 新增 pinned/model_ref 字段）
+
+## 壳自动拉起后端 uvicorn（2026-10-05）
+
+- **目标**：`make start` 一条命令全自动——壳启动时检测后端 `/api/health`，未就绪则 spawn uvicorn（此前需手动先 make backend）
+- **实现**：`shells/nuomi-avatar/main.js` 新增 `ensureBackend()`（app.whenReady 最先执行，`finally` 内再建窗口）：`http.get(origin + '/api/health')` 检测 → 未就绪 spawn `backend/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port <config.json llm.api_url 端口>`（cwd=backend，仓库根 .env 自动读入；stdio：stdout 丢弃防 uvicorn 访问日志刷屏、stderr 带 `[backend]` 前缀进壳日志；最多等 30s 健康检查）
+- **设计决策**：退出壳后端**保持常驻**（与手动启动行为一致；浏览器/控制台不断连；下次启动检测到就绪直接复用不重复拉起）
+- **验证**：①后端停 → npm start → 日志「后端未就绪，自动拉起 uvicorn … 后端已由壳拉起并就绪」+ health 200 + 数字人/控制面板正常；②壳退出后端仍在 → 再次 npm start → 日志「后端已就绪」（未重复拉起）；③测试后环境已清理（uvicorn/electron 0 残留）
+
+## 待办核实与决策（2026-10-05）
+
+- **已核实完成**：对话上下文保留（M4 投影含工具步骤）；模型插件工具语义（description 已含动作清单+中文标签）；models[].actions 已定论（全局 VRMA 清单）
+- **用户拍板**：模型资产补全废弃（cat 动作/VRMA_01~07 不补）；AI 数字人模型升级废弃（已全 3D）；动作名空格保持现状（Mixamo 原名，enum 合法可播）；人设约束完成（改系统提示词后不再是小猫，尖括号标签自然消失）；bundle code-split 不做（本地加载收益低）
+- **轨迹抽屉**：增强废弃——简版保持现状，后续轨迹能力集成 **Langfuse**（octop_harness 原生封装 `LangfuseTracer`：LangfuseConfig(public_key/host/secret_key) → set_config + agent.set_langfuse_callbacks 即可出完整 trace；可 docker 自托管，数据不出本地；待办）
