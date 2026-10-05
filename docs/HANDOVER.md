@@ -157,7 +157,7 @@ OpenAI 兼容：`app/transport/openai_compat.py`（`/v1/chat/completions`，mode
 - [ ] 壳启动时自动拉起 uvicorn
 - [ ] 前端 bundle 1MB 可 code-split
 - [ ] **模型资产补全**：cat（hijiki）动作文件缺失（仍缺）；**表情数据已定性（2026-10-05）**：当前 VRM 模型 `6309260419351179234` 的 17 个 blendShapeGroup binds 全空 = 模型文件本身无表情变形（任何 setValue 都无视觉变化）；已导入的 `868274793854709131` binds 非空（angry=1，实测可动）——后端 `list_models` 返回 `expressions_have_data`、前端有警告标签
-- [ ] **VRMA 资源管理（2026-10-05 明确，明日待办）**：动作资产目前**只能导入（`POST /api/avatar/animations/import`）不能删除**——需要新增删除入口（后端 `DELETE /api/avatar/animations/{name}` + 壳 fs.watch 已能感知删除自动注销 + 前端动作卡片删除按钮），注意删除当前正在播放/被 idle 使用的动画的边界处理
+- [x] **VRMA 资源管理（2026-10-05 晚完成，7ca952b）**：`DELETE /api/avatar/animations/{name}`（简单文件名校验禁穿越、404、idle 可删待机降级呼吸微晃兜底）+ 壳 fs.watch 删除注销 + 前端动作 Tag Popconfirm 删除；**导入/删除时数字人页面自动刷新**（后端 `publish_raw` 广播 `avatar_animations_changed` → 壳 SSE → `location.reload()`——注意 `publish()` 会强制 type=avatar_action 覆盖自定义 type，须用 `publish_raw`）；端到端日志验证「动作资产变更 → watch 注销 → 启动完成」；顺带清掉重复资产 Sitting Laughing.vrma
 - [ ] **模型插件工具语义**：工具 description 只有动作名，靠 `_MOTION_ZH` 映射，可再打磨
 - [x] **Mixamo FBX → VRMA 转换链路**（2026-10-04 走通；**2026-10-05 闭环**）：工具链 `shells/nuomi-avatar/tools/fbx2vrma/`（fbx2vrma-converter + FBX2glTF 0.9.7；arm64 机器需 Rosetta 2；npm install 需 --ignore-scripts）；`elbow_punch.vrma`（2.25s/22 骨骼）、`sitting_laughing.vrma` 已转换入库；verify-vrma.js 用壳同款加载链验证通过（Node 需浏览器 polyfill）；壳 `loadVRMA` 已接：动作清单只扫 `assets/animations/*.vrma`（`list_avatar_actions()`），fs.watch 新导入自动注册，idle.vrma（virtual-avatar 包）循环待机
 
