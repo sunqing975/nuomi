@@ -53,8 +53,9 @@ transport（FastAPI 路由） → domain（领域服务） → infra/harness（�
 ## 路线图
 
 - [x] R1-R3：推倒重来 + harness 适配层 + SSE 对话 API
-- [ ] M3-M6：Agent 生命周期 / 会话存储 / 插件 / 技能+连接器+知识库
-- [ ] M7-M8：AI 数字人形象层（nuomi-avatar）+ 人格/情绪体验
+- [x] M3-M5：Agent 生命周期 / 会话存储（threads+消息投影表）/ 插件（2026-10-05）
+- [x] M6：技能+连接器+知识库（2026-10-04；OCR 用户叫停暂缓）
+- [ ] M7-M8：AI 数字人形象层（VRM 已大量完成）+ 人格/情绪体验（TTS 待办）
 
 ## 许可证
 
