@@ -148,7 +148,7 @@ OpenAI 兼容：`app/transport/openai_compat.py`（`/v1/chat/completions`，mode
 
 - [x] **M3 Agent 生命周期补全 + M4 会话存储（2026-10-05 完成）**：①M3——agents.config_json 运行时参数接线（`infra/harness/runtime_limits.py`：max_iters→recursion_limit、temperature/top_p/max_tokens→configurable[model_settings]、max_input_length→configurable[max_input_tokens]，对齐 Octop runtime_limits；PATCH /agents/{id} 支持 config_json；DELETE 级联清专家工作区）；②M4——threads 表（会话元数据落库，state 文件旧 threads 幂等迁移 + 清理）+ thread_messages 投影表（langchain wire 格式，首次读历史 backfill→ready，之后每轮增量 append）+ chat_history 投影优先分页读取（不再依赖 harness 运行时）；删会话级联清理；openai_compat 同样接线。36 tests / ruff / mypy 全绿，真实库 32 会话迁移 + 投影端到端验证通过
 - [ ] **知识库 OCR**（RapidOCR 本地 + 扫描 PDF，用户叫停暂缓；`ocr_enabled=false` 已占位，见知识库 capability）
-- [ ] **轨迹抽屉增强**（简版已上线）：octop 完整版含 Timeline/Inspector/MetricsBar/搜索，可后续补
+- [x] **轨迹抽屉增强 → 已废弃**（2026-10-05 用户拍板）：简版抽屉（工具步骤折叠+时间线）已上线够用，不再做 octop 完整版 Timeline/Inspector/MetricsBar/搜索；**轨迹可观测性改走 Langfuse**（octop_harness 已带原生封装 `observability/langfuse.py`，待办：pip install langfuse + 配 key 即可启用）
 - [ ] **斜杠技能注入**（/slug）：本轮按用户拍板用「工具条选择器+chips」，octop 的 /slug 文本插入可后续加
 - [x] **对话上下文保留**（2026-10-05 M4 完成）：thread_messages 投影（langchain wire）全量保存每轮 human/ai/tool 消息，chat_history 返回有序片段（user/reasoning/tool_call/tool_result/text）——工具步骤历史已持久化可见，不再"仅本次会话内存可见"
 - [x] **AI 数字人模型升级 → 已废弃**（用户 2026-10-05 拍板：已全 3D，无需升级）
@@ -157,7 +157,7 @@ OpenAI 兼容：`app/transport/openai_compat.py`（`/v1/chat/completions`，mode
 - [ ] **HITL 工具审批流**（当前不启用）：octop_harness 自带 HumanInTheLoopMiddleware，未来有高风险工具再开启
 - [x] **糯米人设源头约束**（2026-10-05 用户确认完成）：改系统提示词后糯米不再是小猫人设，尖括号标签（旧人设拟声标签产物）基本不再出现；约束靠人设变更达成，无显式"禁标签"文本
 - [x] **壳启动时自动拉起 uvicorn**（2026-10-05 完成）：`ensureBackend()`（main.js）启动时 GET `/api/health` 检测后端，未就绪则 spawn `.venv/bin/python -m uvicorn`（cwd=backend、仓库根 .env 自动读入、端口取自 config.json llm.api_url；最多等 30s；stdout 丢弃防刷屏、stderr 带 `[backend]` 前缀进壳日志；uvicorn 访问日志不打印）；退出壳后端**保持常驻**（下次启动复用，不重复拉起）；`make start` 现在一条命令全自动
-- [ ] 前端 bundle 1MB 可 code-split（本地加载场景收益低，可选）
+- [x] **前端 bundle code-split → 已废弃**（2026-10-05 用户拍板）：本地加载 1.31MB 收益低，不做；保留 chunk>500kB 构建警告
 - [x] **动作名空格**（2026-10-05 用户确认保持现状）：动作名=文件名（Mixamo 原名如 "Body Block"），enum 值带空格在工具调用合法、实测可播，不做规范化
 - [x] **表情观感幅度 → 已废弃**（2026-10-05 用户拍板）：不同模型表情数据不同（有的 blendShape binds 有数据、有的全空），幅度调整无统一意义；保持现状（权重 setValue 1.0 / 恢复 8s）
 - [x] **模型资产补全 → 已废弃**（用户 2026-10-05 拍板抛弃）：cat（hijiki）动作缺失不再补；VRMA_01~07（VRoid 官方免费动画）不再导入；动作清单只以 `assets/animations/*.vrma` 为准（现有 6 个：Body Block/bow/elbow_punch/idle/Praying/sitting_laughing）。**背景（2026-10-05 定性）**：当前 VRM 模型 `6309260419351179234` 的 17 个 blendShapeGroup binds 全空 = 模型本身无表情变形；已导入的 `868274793854709131` binds 非空（angry=1，实测可动）——`list_models` 返回 `expressions_have_data`、前端有警告标签
