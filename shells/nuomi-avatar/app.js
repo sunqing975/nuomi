@@ -558,6 +558,10 @@ async function subscribePetEvents() {
                     playAvatarActionPayload(ev)
                 } else if (ev.type === 'avatar_status') {
                     playStatusExpression(ev.status)
+                } else if (ev.type === 'avatar_animations_changed') {
+                    // 动作资产导入/删除（后端广播）：刷新页面让新动作可播、注销已删动作、播放器状态干净
+                    log(`动作资产变更（${ev.reason || 'update'} ${ev.action || ''}），刷新数字人页面`)
+                    setTimeout(() => window.location.reload(), 400)
                 }
             }
         }

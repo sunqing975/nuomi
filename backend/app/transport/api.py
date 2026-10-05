@@ -1191,11 +1191,29 @@ async def import_avatar_animation(file: UploadFile = File(...)) -> dict:
 
     data = await file.read()
     try:
-        return import_animation_fbx(data, file.filename or "")
+        result = import_animation_fbx(data, file.filename or "")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except (FileNotFoundError, TimeoutError, RuntimeError) as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
+    # 广播：壳收到后刷新页面（保证新动作可播、播放器状态干净）
+    avatar_events.publish_raw({"type": "avatar_animations_changed", "reason": "import", "action": result["action"]})
+    return result
+
+
+@router.delete("/avatar/animations/{name}")
+async def delete_avatar_animation(name: str) -> dict:
+    """删除动作资产（VRMA 资源管理）：移除 assets/animations/{name}.vrma，壳 watch 注销 + SSE 刷新页面。"""
+    from app.domain.avatar.service import delete_avatar_animation
+
+    try:
+        result = delete_avatar_animation(name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    avatar_events.publish_raw({"type": "avatar_animations_changed", "reason": "delete", "action": name})
+    return result
 
 
 @router.post("/avatar/preview")

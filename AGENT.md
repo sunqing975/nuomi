@@ -191,3 +191,10 @@ SSE 事件协议（AI 数字人前端消费）：`token` / `tool_call` / `tool_r
 - **问题**：方案B 下 vrm-avatar 插件工具不走静态注册（PluginRegistry.all_tools() 统计为 0），插件列表显示"0 个工具"，用户认为不合理
 - **修复**：plugins/service.py `list_all()` 对 vrm-avatar 特殊处理——启用时按当前动作/表情清单统计动态工具数（do_action + set_expression = 2，有数据才各计 1）；未启用为 0。VRM_AVATAR_PLUGIN_ID 提升为模块级 import（函数内 import 会触发 UnboundLocalError）
 - **验证**：/api/plugins 返回 vrm-avatar tools: 2（enabled=1）；weather 1
+
+## VRMA 资源管理（删除）+ 导入/删除时数字人页面刷新（2026-10-05 晚）
+
+- **删除**：`DELETE /api/avatar/animations/{name}`（service.delete_avatar_animation：仅允许简单文件名禁路径穿越、不存在 404、idle 可删待机降级呼吸微晃兜底）；壳 fs.watch 补**删除注销**（文件不存在时 delete model.animations[name]，双保险）；前端动作 Tag 加 Popconfirm 删除按钮（idle 特殊提示）+ 删除/导入后 load() 刷新列表
+- **导入/删除时页面刷新**：后端端点用 `avatar_events.publish_raw()`（新方法，原样广播不强制 type——`publish()` 会强制 type=avatar_action 覆盖自定义 type，这是关键坑）广播 `{"type":"avatar_animations_changed","reason":"import|delete","action":...}`；壳 app.js SSE 收到该 type → `location.reload()`（复用模型热切换思路）
+- **验证**：DELETE 成功/404/路径穿越拒；端到端日志「动作资产变更（delete x）→ watch 注销 → 糯米启动完成(reload)」；顺带用删除功能清掉重复资产 Sitting Laughing.vrma（与 sitting_laughing.vrma 内容一致）
+- 动作清单现 6 个：Body Block/bow/elbow_punch/idle/Praying/sitting_laughing

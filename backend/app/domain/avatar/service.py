@@ -545,6 +545,23 @@ def import_animation_fbx(file_bytes: bytes, filename: str) -> dict:
     return {"ok": True, "action": anim_name, "path": str(out_vrma), "actions": list_avatar_actions()}
 
 
+def delete_avatar_animation(name: str) -> dict:
+    """删除动作资产 assets/animations/{name}.vrma（VRMA 资源管理，2026-10-05 用户要求）。
+
+    - 校验：动作名仅允许简单文件名（禁路径穿越）；.vrma 由函数拼接
+    - 边界：idle.vrma 允许删除（壳待机降级为呼吸微晃兜底）；删除后壳 watch 注销 + SSE 刷新页面
+    - 返回剩余动作清单（list_avatar_actions 实时扫描）
+    """
+    if not name or name != Path(name).name or "/" in name or "\\" in name:
+        raise ValueError("非法的动作名（仅允许文件名，不含路径）")
+    target = SHELL_ANIM_DIR / f"{name}.vrma"
+    if not target.is_file():
+        raise FileNotFoundError(f"动作不存在: {name}")
+    target.unlink()
+    logger.info("delete_avatar_animation -> %s", target)
+    return {"ok": True, "action": name, "actions": list_avatar_actions()}
+
+
 def preview_payload(kind: str, name: str) -> dict:
     """构造预览播放 payload（与动态工具 do_action/set_expression 同构，SSE 广播给壳）。"""
     kind = (kind or "").lower()

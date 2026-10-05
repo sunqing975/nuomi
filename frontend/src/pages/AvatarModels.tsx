@@ -62,7 +62,8 @@ export default function AvatarModelsPage() {
     try {
       const d = await upload<{ ok: boolean; action: string }>('/avatar/animations/import', file);
       message.destroy('fbx-convert');
-      message.success(`动作「${d.action}」已导入（数字人窗口自动注册，LLM 现在可以调用）`);
+      message.success(`动作「${d.action}」已导入，数字人页面正在刷新…`);
+      load(); // 刷新动作清单（后端已广播 SSE，壳自动 reload 页面）
     } catch (e) {
       message.destroy('fbx-convert');
       message.error(`转换失败：${(e as Error).message}`);
@@ -78,9 +79,18 @@ export default function AvatarModelsPage() {
       const r = await post<{ ok: boolean; payload: object }>('/avatar/preview', { kind, name });
       message.success(`已播放${kind === 'action' ? '动作' : '表情'}「${name}」（数字人窗口）`);
     } catch (e) {
-      message.error(`预览失败：${(e as Error).message}`);
-    } finally {
+      message.error(`预览失败：${(e as Error).message}`);    } finally {
       setPreviewing(null);
+    }
+  };
+
+  const deleteAction = async (name: string) => {
+    try {
+      const d = await del<{ ok: boolean; action: string }>(`/avatar/animations/${encodeURIComponent(name)}`);
+      message.success(`动作「${d.action}」已删除，数字人页面已刷新`);
+      load(); // 刷新动作清单（后端已广播 SSE，壳自动 reload 页面）
+    } catch (e) {
+      message.error(`删除失败：${(e as Error).message}`);
     }
   };
 
@@ -284,6 +294,21 @@ export default function AvatarModelsPage() {
                             onClick={ev => { ev.stopPropagation(); preview('action', a); }}
                           />
                         )}
+                        <Popconfirm
+                          title={`删除动作「${a}」？`}
+                          description={a === 'idle'
+                            ? 'idle 是待机动画，删除后数字人退化为呼吸微晃兜底姿态'
+                            : '删除后该动作不再可调用，数字人页面自动刷新'}
+                          onConfirm={() => deleteAction(a)}
+                          okText="删除"
+                          cancelText="取消"
+                          okButtonProps={{ danger: true }}
+                        >
+                          <DeleteOutlined
+                            style={{ marginLeft: 6, color: '#bfbfbf', cursor: 'pointer' }}
+                            onClick={ev => ev.stopPropagation()}
+                          />
+                        </Popconfirm>
                       </Tag>
                     ))}
                   </div>

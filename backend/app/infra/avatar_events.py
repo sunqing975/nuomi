@@ -27,6 +27,12 @@ class PetEventBus:
             with suppress(asyncio.QueueFull):
                 q.put_nowait(envelope)
 
+    def publish_raw(self, payload: dict) -> None:
+        """原样广播（不强制 type）：资源管理类事件（如 avatar_animations_changed，壳收到后刷新页面）。"""
+        for q in list(self._subscribers):
+            with suppress(asyncio.QueueFull):
+                q.put_nowait(payload)
+
     def publish_status(self, status: str) -> None:
         """广播一个状态事件：thinking / working / idle。
 

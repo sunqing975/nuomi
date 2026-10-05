@@ -144,8 +144,16 @@ class VRMModelSetup {
             if (fs.existsSync(animDir)) {
                 fs.watch(animDir, (eventType, filename) => {
                     if (!filename || !filename.endsWith('.vrma')) return;
-                    if (model.animations && model.animations[path.basename(filename, '.vrma')]) return; // 已注册
                     const animName = path.basename(filename, '.vrma');
+                    // 删除：文件已不存在 → 注销已注册动画（后端 DELETE，双保险；SSE 也会刷新页面）
+                    if (!fs.existsSync(path.join(animDir, filename))) {
+                        if (model.animations && model.animations[animName]) {
+                            delete model.animations[animName];
+                            console.log(`[VRM动画] watch 注销: ${animName}`);
+                        }
+                        return;
+                    }
+                    if (model.animations && model.animations[animName]) return; // 已注册
                     const relPath = path.join('assets', 'animations', filename);
                     model.loadVRMA(animName, relPath).then(() => {
                         console.log(`[VRM动画] watch 新动作注册成功: ${animName}`);
