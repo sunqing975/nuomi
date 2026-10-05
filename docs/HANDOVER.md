@@ -148,17 +148,17 @@ OpenAI 兼容：`app/transport/openai_compat.py`（`/v1/chat/completions`，mode
 - [ ] **知识库 OCR**（RapidOCR 本地 + 扫描 PDF，用户叫停暂缓；`ocr_enabled=false` 已占位，见知识库 capability）
 - [ ] **轨迹抽屉增强**（简版已上线）：octop 完整版含 Timeline/Inspector/MetricsBar/搜索，可后续补
 - [ ] **斜杠技能注入**（/slug）：本轮按用户拍板用「工具条选择器+chips」，octop 的 /slug 文本插入可后续加
-- [ ] **对话上下文保留**：当前切会话/加载历史无 tool_events（checkpointer 历史只有 text），工具步骤仅本次会话内存可见
+- [x] **对话上下文保留**（2026-10-05 M4 完成）：thread_messages 投影（langchain wire）全量保存每轮 human/ai/tool 消息，chat_history 返回有序片段（user/reasoning/tool_call/tool_result/text）——工具步骤历史已持久化可见，不再"仅本次会话内存可见"
 - [ ] **AI 数字人模型升级**（暂缓，见主线 #8）：表现层增强/新模型表现力
 - [ ] **AI 数字人直接说话（TTS）**（用户已拍板待办）：AI 数字人现为纯动作/表情层；TTS 客户端代码（`js/tts-client.js`、`TTSStreamProcessor`）已保留未删，届时恢复"收到回复文本→TTS 播报"入口
 - [ ] **octop WS 迁移**（暂缓）：事件帧已对齐，通道仍 HTTP SSE；注意 websockets 403 坑
 - [ ] **HITL 工具审批流**（当前不启用）：octop_harness 自带 HumanInTheLoopMiddleware，未来有高风险工具再开启
-- [ ] **糯米人设源头约束**：回复仍会出现 `<开心>` 等尖括号标签，已决定从源头治理，未实施
+- [x] **糯米人设源头约束**（用户 2026-10-05 确认已完成，修改了系统提示词；⚠ 代码扫描未见约束文本——agents 表 system_prompt 现为「你是糯米…中文回答，简洁友好」，模板/workspace persona 亦无，需确认修改位置是否落库）
 - [ ] 壳启动时自动拉起 uvicorn
 - [ ] 前端 bundle 1MB 可 code-split
-- [ ] **模型资产补全**：cat（hijiki）动作文件缺失（仍缺）；**表情数据已定性（2026-10-05）**：当前 VRM 模型 `6309260419351179234` 的 17 个 blendShapeGroup binds 全空 = 模型文件本身无表情变形（任何 setValue 都无视觉变化）；已导入的 `868274793854709131` binds 非空（angry=1，实测可动）——后端 `list_models` 返回 `expressions_have_data`、前端有警告标签
+- [x] **模型资产补全 → 已废弃**（用户 2026-10-05 拍板抛弃）：cat（hijiki）动作缺失不再补；VRMA_01~07（VRoid 官方免费动画）不再导入；动作清单只以 `assets/animations/*.vrma` 为准（现有 6 个：Body Block/bow/elbow_punch/idle/Praying/sitting_laughing）。**背景（2026-10-05 定性）**：当前 VRM 模型 `6309260419351179234` 的 17 个 blendShapeGroup binds 全空 = 模型本身无表情变形；已导入的 `868274793854709131` binds 非空（angry=1，实测可动）——`list_models` 返回 `expressions_have_data`、前端有警告标签
 - [x] **VRMA 资源管理（2026-10-05 晚完成，7ca952b）**：`DELETE /api/avatar/animations/{name}`（简单文件名校验禁穿越、404、idle 可删待机降级呼吸微晃兜底）+ 壳 fs.watch 删除注销 + 前端动作 Tag Popconfirm 删除；**导入/删除时数字人页面自动刷新**（后端 `publish_raw` 广播 `avatar_animations_changed` → 壳 SSE → `location.reload()`——注意 `publish()` 会强制 type=avatar_action 覆盖自定义 type，须用 `publish_raw`）；端到端日志验证「动作资产变更 → watch 注销 → 启动完成」；顺带清掉重复资产 Sitting Laughing.vrma
-- [ ] **模型插件工具语义**：工具 description 只有动作名，靠 `_MOTION_ZH` 映射，可再打磨
+- [x] **模型插件工具语义**（2026-10-05 核实已基本达标）：工具 description 已含「让AI 数字人做出一个动作（身体动画）。根据对话场景选最合适的动作，可用动作：\n- name：label_zh…」完整动作清单+中文标签（plugins/service.py:156），非"只有动作名"；后续可再打磨（如按场景给推荐优先级）
 - [x] **Mixamo FBX → VRMA 转换链路**（2026-10-04 走通；**2026-10-05 闭环**）：工具链 `shells/nuomi-avatar/tools/fbx2vrma/`（fbx2vrma-converter + FBX2glTF 0.9.7；arm64 机器需 Rosetta 2；npm install 需 --ignore-scripts）；`elbow_punch.vrma`（2.25s/22 骨骼）、`sitting_laughing.vrma` 已转换入库；verify-vrma.js 用壳同款加载链验证通过（Node 需浏览器 polyfill）；壳 `loadVRMA` 已接：动作清单只扫 `assets/animations/*.vrma`（`list_avatar_actions()`），fs.watch 新导入自动注册，idle.vrma（virtual-avatar 包）循环待机
 
 ## 9. 关键 git 历史

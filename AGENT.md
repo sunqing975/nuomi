@@ -146,8 +146,9 @@ SSE 事件协议（AI 数字人前端消费）：`token` / `tool_call` / `tool_r
   - 壳 vrm-model-setup.js **fs.watch assets/animations**：新 .vrma 自动 loadVRMA 注册（已存在跳过），导入动作零重启
   - 前端 AvatarModels.tsx：顶部「导入 VRM 模型」「导入动作（Mixamo FBX）」按钮（Upload + upload() 辅助函数）；激活模型卡片的动作/表情 Tag 内嵌 ▶ 预览按钮（stopPropagation + POST /avatar/preview）。**动作/表情预览只在激活模型卡片显示**（数字人窗口播的是激活模型）
   - 端到端实测：POST /avatar/preview action=wave_hand → 壳日志 `AI 数字人动作: 挥手打招呼 / [VRM动作] wave_hand` ✓；expression=angry → `AI 数字人表情: angry` ✓；导入 VRM（test_import_vrm 导入→清单出现→DELETE 清理）✓；导入 Body Block.fbx → 转换 → watch 注册 → 预览播放 `[VRM动画] 播放 Body Block` ✓
-- **动作清单口径**：`/api/avatar/models` 的 models[].actions 仍恒 {}（list_models 硬编码），动作清单权威在 list_avatar_actions()（全局扫描 18 内置 + assets/animations/*.vrma）；预览按钮直接调 list_avatar_actions 覆盖的动作名。**未决点（低风险，未向用户确认）**：models[].actions 填充 per-model vs 全局
+- **动作清单口径**：`/api/avatar/models` 的 models[].actions 仍恒 {}（list_models 硬编码），动作清单权威在 list_avatar_actions()（全局扫描 18 内置 + assets/animations/*.vrma）；预览按钮直接调 list_avatar_actions 覆盖的动作名。**已定论（2026-10-05）**：models[].actions 填**全局 VRMA 动作清单**（list_models 注释明确"所有模型共用，放文件即出现、删即消失"）——per-model vs 全局已决策为全局
 - **遗留**：表情观感幅度（用户搁置）；动作名含空格（如 "Body Block"）可作 enum 值但较丑，后续可规范化（fbx stem 空格→下划线）；本轮已 git commit
+- **遗留（2026-10-05 更新）**：VRMA_01~07（VRoid 官方免费动画）未导入 → **已废弃**（用户拍板"模型资产补全不需要做了，已抛弃"）；动作名空格规范化仍待办
 
 ## 删内置动作 + idle 待机动画（2026-10-05）
 
