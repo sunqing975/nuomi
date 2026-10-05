@@ -7,12 +7,6 @@ const Events = {
     TTS_END: 'tts:end',                  // TTS播放结束
     TTS_INTERRUPTED: 'tts:interrupted',  // TTS被中断
 
-    // ASR相关事件
-    ASR_START: 'asr:start',              // 开始录音
-    ASR_STOP: 'asr:stop',                // 停止录音
-    ASR_SPEECH_DETECTED: 'asr:speech',   // 检测到语音
-    ASR_TEXT_RECOGNIZED: 'asr:text',     // 语音识别完成
-
     // 用户输入相关
     USER_INPUT_START: 'user:input:start',   // 用户开始输入
     USER_INPUT_END: 'user:input:end',       // 用户输入结束

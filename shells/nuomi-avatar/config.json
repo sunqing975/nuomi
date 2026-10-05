@@ -34,14 +34,6 @@
     "persistent_history": false,
     "history_file": "AI记录室/对话历史.jsonl"
   },
-  "asr": {
-    "enabled": false,
-    "ptt_enabled": false,
-    "voice_barge_in": true,
-    "vad_url": "ws://127.0.0.1:1000/v1/ws/vad",
-    "asr_url": "http://127.0.0.1:1000/v1/upload_audio",
-    "ptt_max_timeout": 9
-  },
   "vision": {
     "use_vision_model": false,
     "auto_screenshot": false,

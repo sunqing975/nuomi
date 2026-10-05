@@ -7,12 +7,11 @@ const { GLTFLoader } = require('../lib/gltf-loader-bundle.cjs');
 const { VRMLoaderPlugin, VRMUtils } = require('@pixiv/three-vrm');
 const { VRMModelAdapter } = require('./vrm-model-adapter.js');
 const { VRMInteractionController } = require('./vrm-model-interaction.js');
-const { MusicPlayer } = require('../services/music-player.js');
 const { logToTerminal } = require('../api-utils.js');
 
 class VRMModelSetup {
     // 初始化Three.js场景和VRM模型
-    static async initialize(modelController, config, ttsEnabled, asrEnabled, ttsProcessor, voiceChat) {
+    static async initialize(modelController, config, ttsEnabled, ttsProcessor, voiceChat) {
         const canvas = document.getElementById('canvas');
 
         // 创建Three.js渲染器（使用已有的canvas）
@@ -207,11 +206,6 @@ class VRMModelSetup {
             ttsProcessor.setExpressionMapper(expressionMapper);
         }
 
-        // 创建音乐播放器
-        const musicPlayer = new MusicPlayer(vrmController);
-        musicPlayer.setEmotionMapper(emotionMapper);
-        global.musicPlayer = musicPlayer;
-
         // 设置模型和情绪映射器（失败不阻塞渲染）
         try {
             if (voiceChat) {
@@ -267,7 +261,7 @@ class VRMModelSetup {
 
         // 注意：窗口大小变化由model-interaction.js中的_setupWindowResize处理
 
-        return { app: appProxy, model, emotionMapper, expressionMapper, musicPlayer, vrmController };
+        return { app: appProxy, model, emotionMapper, expressionMapper, vrmController };
     }
 
     // 加载VRM模型

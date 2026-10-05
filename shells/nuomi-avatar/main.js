@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, screen, Menu, globalShortcut, desktopCapturer } = require('electron')
+const { app, BrowserWindow, ipcMain, screen } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const http = require('http')
@@ -174,23 +174,7 @@ ipcMain.on('reload-control-panel', () => {
     }
 })
 
-// PTT 全局快捷键管理
-let pttKey = 'v'
-function registerPTTShortcut() {
-    globalShortcut.unregisterAll()
-    try {
-        globalShortcut.register(pttKey, () => {
-            if (avatarWindow && !avatarWindow.isDestroyed()) {
-                avatarWindow.webContents.send('ptt-key-down')
-            }
-        })
-    } catch (e) {
-        console.error('注册 PTT 快捷键失败:', e)
-    }
-}
-function unregisterPTTShortcut() {
-    globalShortcut.unregisterAll()
-}
+// PTT 全局快捷键已废弃（旧 ASR 语音输入体系，renderer 无监听，2026-10-05 清理）
 
 app.whenReady().then(() => {
     // 先确保后端就绪（未启动则自动拉起），再创建窗口——控制面板加载依赖后端
@@ -261,16 +245,6 @@ app.whenReady().then(() => {
         app.quit()
     })
 
-    // 读取初始 PTT 配置（AI 数字人关闭时不注册 PTT）
-    try {
-        let pttConfig = {}
-        try { pttConfig = JSON.parse(fs.readFileSync(configPath, 'utf8')) } catch (e) {}
-        pttKey = pttConfig.asr?.ptt_key || 'v'
-        if (petEnabled && pttConfig.asr?.ptt_enabled) {
-            registerPTTShortcut()
-        }
-    } catch (e) {}
-
         console.log('糯米启动完成')
     }) // ensureBackend().finally 回调结束
 })
@@ -320,15 +294,6 @@ ipcMain.on('start-avatar', () => {
         avatarWindow.destroy()
     }
     avatarWindow = createWindow()
-    // 如果 PTT 启用，重新注册全局快捷键
-    try {
-        let pttConfig = {}
-        try { pttConfig = JSON.parse(fs.readFileSync(configPath, 'utf8')) } catch (e) {}
-        if (pttConfig.asr?.ptt_enabled) {
-            pttKey = pttConfig.asr?.ptt_key || 'v'
-            registerPTTShortcut()
-        }
-    } catch (e) {}
 })
 
 // 停止AI 数字人
@@ -337,8 +302,6 @@ ipcMain.on('stop-avatar', () => {
         avatarWindow.destroy()
         avatarWindow = null
     }
-    // 注销 PTT 全局快捷键
-    unregisterPTTShortcut()
 })
 
 // 获取AI 数字人状态
@@ -378,15 +341,6 @@ ipcMain.on('reset-avatar-position', () => {
 ipcMain.on('reload-config', (event, data) => {
     if (avatarWindow && !avatarWindow.isDestroyed()) {
         avatarWindow.webContents.send('reload-config')
-    }
-    // 更新 PTT 全局快捷键
-    if (data && data.ptt_enabled !== undefined) {
-        if (data.ptt_enabled) {
-            pttKey = data.ptt_key || 'v'
-            registerPTTShortcut()
-        } else {
-            unregisterPTTShortcut()
-        }
     }
 })
 
@@ -505,91 +459,4 @@ ipcMain.on('log-message', (event, logData) => {
     }
 })
 
-// 插件健康检查
-ipcMain.handle('check-plugin-health', async (event) => {
-    const results = {}
-    const builtInDir = path.join(app.getAppPath(), 'plugins', 'built-in')
-    const axios = require('axios')
-
-    try {
-        // 只检查已启用的插件
-        let enabledPlugins = []
-        try {
-            const enabledPath = path.join(app.getAppPath(), 'plugins', 'enabled_plugins.json')
-            enabledPlugins = JSON.parse(fs.readFileSync(enabledPath, 'utf8'))
-        } catch (_) {}
-
-        for (const name of enabledPlugins) {
-            const pluginDir = path.join(builtInDir, name)
-            if (!fs.existsSync(pluginDir) || !fs.statSync(pluginDir).isDirectory()) continue
-
-            // 读取插件配置
-            let cfg = {}
-            try {
-                const cfgPath = path.join(builtInDir, name, 'plugin_config.json')
-                if (fs.existsSync(cfgPath)) {
-                    const raw = JSON.parse(fs.readFileSync(cfgPath, 'utf8'))
-                    // 解析 schema 格式
-                    for (const [key, def] of Object.entries(raw)) {
-                        if (def !== null && typeof def === 'object' && 'type' in def) {
-                            cfg[key] = def.value !== undefined ? def.value : def.default
-                        } else {
-                            cfg[key] = def
-                        }
-                    }
-                }
-            } catch (_) {}
-
-            // 根据插件类型做不同检测
-            if (name === 'memos') {
-                // 检测后端服务
-                const apiUrl = cfg.api_url || 'http://127.0.0.1:8003'
-                try {
-                    const resp = await axios.get(`${apiUrl}/health`, { timeout: 2000 })
-                    results[name] = resp.data.status === 'healthy' ? 'healthy' : 'error'
-                } catch (_) {
-                    results[name] = 'offline'
-                }
-            } else if (name === 'code-executor') {
-                // 检测 Python 是否存在
-                const pythonPath = path.join(pluginDir, '..', '..', '..', 'venv', 'Scripts', 'python.exe')
-                results[name] = fs.existsSync(pythonPath) ? 'ok' : 'offline'
-            } else {
-                // screenshot、context-compressor 等无外部依赖的插件
-                results[name] = 'ok'
-            }
-        }
-    } catch (_) {}
-
-    return results
-})
-
-// 截屏 - 使用 Electron 内置 desktopCapturer
-ipcMain.handle('take-screenshot', async (event) => {
-    const { nativeImage } = require('electron')
-    const sources = await desktopCapturer.getSources({
-        types: ['screen'],
-        thumbnailSize: { width: 1920, height: 1080 }
-    })
-    if (!sources || sources.length === 0) {
-        throw new Error('无法获取屏幕源')
-    }
-    // 获取光标所在屏幕
-    const cursorPoint = screen.getCursorScreenPoint()
-    const currentDisplay = screen.getDisplayNearestPoint(cursorPoint)
-    // 找到匹配的屏幕源
-    let source = sources[0]
-    for (const s of sources) {
-        if (s.display_id && String(s.display_id) === String(currentDisplay.id)) {
-            source = s
-            break
-        }
-    }
-    const thumbnail = source.thumbnail
-    if (thumbnail.isEmpty()) {
-        throw new Error('截图缩略图为空')
-    }
-    // 转换为 JPEG base64
-    const jpgBuffer = thumbnail.toJPEG(85)
-    return jpgBuffer.toString('base64')
-})
+// 截屏 IPC 已废弃（旧 DLC 插件体系，前端无调用，2026-10-05 清理）

@@ -295,3 +295,12 @@ SSE 事件协议（当前完整）：`token` / `reasoning` / `tool_call_chunk`�
 - **对话卡死根因（新）**：langgraph `GraphRecursionError: Recursion limit of 30`——模型对"示例数据"天气结果陷入循环（记忆知道是 demo，坚持要真实数据，反复 reasoning/尝试）→ 30 轮超限抛错 → SSE 流中断（ERR_INCOMPLETE_CHUNKED_ENCODING）→ 前端无回复。**修复**：糯米 agents.config_json `max_iters: 30 → 60`（runtime_limits 映射 max_iters → recursion_limit）。验证：模型 weather_query(示例) → 判断不可信 → 调 web_fetch(wttr.in 真实数据) → 完整回答，不再卡死
 - **验证**：对话完成 + 卡片 DOM 完整（☁️ 苏州·当前天气 24°C 多云(示例数据) humidity 65% wind 东南风3级）+ 来源徽标 + 默认展开；截图 weather-card-demo.png（OCR 弱但 DOM 证实）
 - **遗留**：截图/OCR 对白底卡片识别弱（视觉正常）；harness 默认 recursion_limit 30 对循环敏感——max_iters 提高是当前方案，极端循环仍可能超限（可再提）
+
+## 壳死代码清理（2026-10-05，用户指出 music-player 非插件后全量核查）
+
+- **背景**：插件化咨询时误将壳内 music-player.js 列为"可抽插件"，用户纠正后全量核查——这些是 VRM 3D 化改造后未清干净的旧 2D/Windows 时代遗留，**不是插件（无 plugin.yaml/setup(ctx)/工具注册），且无任何调用入口**
+- **删除文件/目录**：`js/services/music-player.js`（仅被 vrm-model-setup 构造挂 global，播放方法零调用）、`js/asr-client.js`（全壳无 require）、`js/live/`（LiveStreamModule/auto-chat 无外部引用）、`plugins-dlc/`（旧 MemOS 体系，untracked，main.js 检测的是 plugins/built-in 而非它）、壳根 Windows 启动脚本 `启动.bat/启动.vbs/2.ASR.bat`（untracked，引用不存在的 full-hub/GPT-SoVITS）
+- **引用清理**：`vrm-model-setup.js`（删 MusicPlayer require/构造/返回值字段 + 签名去 asrEnabled 参数）、`app.js`（删 `config?.asr?.enabled` 传参——asrEnabled 参数函数体内未使用；删 voiceChat API_URL/KEY/MODEL 同步死段——sendToLLM 已空、auto-chat 已删）、`main.js`（删 PTT 快捷键管理+4 处注册/注销点——renderer 无 'ptt-key-down' 监听；删 check-plugin-health IPC——前端无调用且检测的 plugins/built-in 目录不存在；删 take-screenshot IPC——前端无调用；electron import 删 Menu/globalShortcut/desktopCapturer 死引用）、`events.js`（删 4 个 ASR 事件定义——无 emit/on）、`config.json`（删 asr 配置段——清理后无代码读取）
+- **保留**：`vmc-sender.js`（VRM 模型真实使用）、`voiceChat` 空壳对象（vrm-model-setup 仍调 setModel）
+- **验证**：node --check 4 个改动 JS 全过；config.json JSON 合法；全项目残留扫描（musicPlayer/asr/ptt/check-plugin-health/take-screenshot/plugins-dlc/globalShortcut 等关键词）0 命中；重启壳——VRM 模型/动画/VMC/表情加载正常，糯米启动完成，无报错
+- **经验**：壳内 js/services、js/live 是旧 2D/Windows 时代资产区，清理前必须 grep 调用入口（有 require 不等于活着，要看播放/启动方法是否被触发）

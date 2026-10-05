@@ -226,7 +226,6 @@ async function main() {
                 const result = await VRMModelSetup.initialize(
                     modelCtrl, config,
                     config?.tts?.enabled !== false,
-                    config?.asr?.enabled !== false,
                     tts, global.voiceChat
                 )
 
@@ -366,13 +365,6 @@ async function main() {
                 if (bertEnabled !== (oldConfig?.bert?.enabled || false)) {
                     log('BERT: ' + (bertEnabled ? '启用' : '禁用'))
                     logToTerminal('info', 'BERT: ' + (bertEnabled ? '已启用' : '已禁用'))
-                }
-
-                // 同步 voiceChat API 信息（插件 callLLM 使用）
-                if (global.voiceChat) {
-                    global.voiceChat.API_URL = config?.llm?.api_url || ''
-                    global.voiceChat.API_KEY = config?.llm?.api_key || ''
-                    global.voiceChat.MODEL = config?.llm?.model || ''
                 }
 
             } catch (e) {
