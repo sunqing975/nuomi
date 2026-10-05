@@ -16,11 +16,16 @@ export default function AvatarModelsPage() {
   const [importingVrm, setImportingVrm] = useState(false);
   const [importingFbx, setImportingFbx] = useState(false);
   const [previewing, setPreviewing] = useState<string | null>(null);
+  const [actions, setActions] = useState<{ name: string; label_zh?: string }[]>([]);
 
   const load = useCallback(async () => {
     const d = await get<AvatarModelsResponse>('/avatar/models');
     setModels(d.models);
     setActive(d.active);
+    try {
+      const a = await get<{ actions: { name: string; label_zh?: string }[] }>('/avatar/animations');
+      setActions(a.actions);
+    } catch { /* 动作清单读取失败时保持空 */ }
     try {
       const s = await get<{ enabled: boolean }>('/avatar/status');
       setAvatarEnabled(s.enabled);
@@ -187,10 +192,52 @@ export default function AvatarModelsPage() {
             所有AI 数字人共用同一套动作/表情插件（vrm-avatar）：动作来自 Mixamo 动画（.vrma），
             表情来自当前模型的 blend shape。对AI 数字人说「给我比个心」「笑一个」，
             LLM 会调用动态装配的动作/表情工具来驱动AI 数字人。切模型 / 新增动画无需重启。
-            <b> 使用中的模型支持动作/表情预览（▶），点击即在数字人窗口实播。</b>
+            <b> 使用中的模型支持表情预览（▶），点击即在数字人窗口实播。</b>
           </span>
         }
       />
+
+      <Card
+        size="small"
+        style={{ marginBottom: 16 }}
+        title={<b style={{ fontSize: 14 }}><SmileOutlined /> 动作资产（全局共享，所有 VRM 模型通用）</b>}
+      >
+        {actions.length === 0 ? (
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            暂无动作资产，可在上方「导入资产」导入 Mixamo FBX 自动转 VRMA
+          </Typography.Text>
+        ) : (
+          <div>
+            {actions.map(a => (
+              <Tag key={a.name} style={{ marginBottom: 4 }}>
+                {a.label_zh || a.name}
+                <PlayCircleOutlined
+                  style={{ marginLeft: 5, color: '#1677ff', cursor: 'pointer' }}
+                  onClick={ev => { ev.stopPropagation(); preview('action', a.name); }}
+                />
+                <Popconfirm
+                  title={`删除动作「${a.label_zh || a.name}」？`}
+                  description={a.name === 'idle'
+                    ? 'idle 是待机动画，删除后数字人退化为呼吸微晃兜底姿态'
+                    : '删除后该动作不再可调用，数字人页面自动刷新'}
+                  onConfirm={() => deleteAction(a.name)}
+                  okText="删除"
+                  cancelText="取消"
+                  okButtonProps={{ danger: true }}
+                >
+                  <DeleteOutlined
+                    style={{ marginLeft: 6, color: '#bfbfbf', cursor: 'pointer' }}
+                    onClick={ev => ev.stopPropagation()}
+                  />
+                </Popconfirm>
+              </Tag>
+            ))}
+            <Typography.Text type="secondary" style={{ display: 'block', fontSize: 12, marginTop: 6 }}>
+              动作是全局资产：导入一次，所有 VRM 模型都可调用；删除后数字人页面自动刷新。
+            </Typography.Text>
+          </div>
+        )}
+      </Card>
 
       {models.length === 0 && <Empty description="3D/ 目录下没有可用的 VRM AI 数字人形象" />}
 
@@ -279,40 +326,6 @@ export default function AvatarModelsPage() {
                     ))}
                   </div>
                 )}
-
-                <div style={{ marginBottom: 8 }}>
-                  <Typography.Text strong style={{ fontSize: 12 }}>
-                    <SmileOutlined /> 动作（{m.motions.length}）
-                  </Typography.Text>
-                  <div style={{ marginTop: 6 }}>
-                    {m.motions.map(a => (
-                      <Tag key={a} style={{ marginBottom: 4 }}>
-                        {a}
-                        {isActive && (
-                          <PlayCircleOutlined
-                            style={{ marginLeft: 5, color: '#1677ff', cursor: 'pointer' }}
-                            onClick={ev => { ev.stopPropagation(); preview('action', a); }}
-                          />
-                        )}
-                        <Popconfirm
-                          title={`删除动作「${a}」？`}
-                          description={a === 'idle'
-                            ? 'idle 是待机动画，删除后数字人退化为呼吸微晃兜底姿态'
-                            : '删除后该动作不再可调用，数字人页面自动刷新'}
-                          onConfirm={() => deleteAction(a)}
-                          okText="删除"
-                          cancelText="取消"
-                          okButtonProps={{ danger: true }}
-                        >
-                          <DeleteOutlined
-                            style={{ marginLeft: 6, color: '#bfbfbf', cursor: 'pointer' }}
-                            onClick={ev => ev.stopPropagation()}
-                          />
-                        </Popconfirm>
-                      </Tag>
-                    ))}
-                  </div>
-                </div>
               </Card>
             </Col>
           );

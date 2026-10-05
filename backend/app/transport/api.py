@@ -1216,6 +1216,14 @@ async def delete_avatar_animation(name: str) -> dict:
     return result
 
 
+@router.get("/avatar/animations")
+async def list_avatar_animations() -> dict:
+    """全局动作资产清单（所有 VRM 模型共用同一套 VRMA，资源管理独立入口）。"""
+    from app.domain.avatar.service import list_avatar_actions
+
+    return {"actions": list_avatar_actions()}
+
+
 @router.post("/avatar/preview")
 async def avatar_preview(body: AvatarPreviewBody) -> dict:
     """预览动作/表情：构造 payload 经 SSE 广播，数字人窗口立即播放（无需对话）。"""

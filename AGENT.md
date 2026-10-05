@@ -198,3 +198,9 @@ SSE 事件协议（AI 数字人前端消费）：`token` / `tool_call` / `tool_r
 - **导入/删除时页面刷新**：后端端点用 `avatar_events.publish_raw()`（新方法，原样广播不强制 type——`publish()` 会强制 type=avatar_action 覆盖自定义 type，这是关键坑）广播 `{"type":"avatar_animations_changed","reason":"import|delete","action":...}`；壳 app.js SSE 收到该 type → `location.reload()`（复用模型热切换思路）
 - **验证**：DELETE 成功/404/路径穿越拒；端到端日志「动作资产变更（delete x）→ watch 注销 → 糯米启动完成(reload)」；顺带用删除功能清掉重复资产 Sitting Laughing.vrma（与 sitting_laughing.vrma 内容一致）
 - 动作清单现 6 个：Body Block/bow/elbow_punch/idle/Praying/sitting_laughing
+
+## 动作资产 UI 重构：独立全局卡片（2026-10-05）
+
+- **问题**：删除按钮放在每个模型卡片内（动作区重复渲染），用户反馈"每个卡片都有容易误解，让人觉得资产是独立的"——实际动作（VRMA）是全局共享的
+- **重构**：①后端新增 `GET /api/avatar/animations`（全局动作清单独立入口）；②模型卡片**移除动作区**（只保留模型切换/表情/删除模型）；③新增独立卡片「动作资产（全局共享，所有 VRM 模型通用）」：动作 Tag + ▶预览 + 🗑Popconfirm 删除，文案明确"导入一次所有模型可调用、删除后数字人页面刷新"
+- 前端已 build（12:26），后端已重启
