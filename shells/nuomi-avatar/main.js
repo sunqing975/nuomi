@@ -114,6 +114,14 @@ function createControlPanel() {
 let avatarWindow = null
 let controlPanel = null
 
+// 动作资产导入/删除后，控制面板窗口跟随刷新（数字人渲染进程收到 SSE 后经 IPC 通知）
+ipcMain.on('reload-control-panel', () => {
+    if (controlPanel && !controlPanel.isDestroyed()) {
+        controlPanel.reload()
+        console.log('控制面板已刷新（动作资产变更）')
+    }
+})
+
 // PTT 全局快捷键管理
 let pttKey = 'v'
 function registerPTTShortcut() {

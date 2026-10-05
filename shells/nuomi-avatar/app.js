@@ -559,8 +559,10 @@ async function subscribePetEvents() {
                 } else if (ev.type === 'avatar_status') {
                     playStatusExpression(ev.status)
                 } else if (ev.type === 'avatar_animations_changed') {
-                    // 动作资产导入/删除（后端广播）：刷新页面让新动作可播、注销已删动作、播放器状态干净
+                    // 动作资产导入/删除（后端广播）：刷新页面让新动作可播、注销已删动作、播放器状态干净；
+                    // 同时通知主进程刷新控制面板窗口（桌面端控制台跟随更新）
                     log(`动作资产变更（${ev.reason || 'update'} ${ev.action || ''}），刷新数字人页面`)
+                    ipcRenderer.send('reload-control-panel')
                     setTimeout(() => window.location.reload(), 400)
                 }
             }

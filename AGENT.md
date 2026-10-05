@@ -204,3 +204,9 @@ SSE 事件协议（AI 数字人前端消费）：`token` / `tool_call` / `tool_r
 - **问题**：删除按钮放在每个模型卡片内（动作区重复渲染），用户反馈"每个卡片都有容易误解，让人觉得资产是独立的"——实际动作（VRMA）是全局共享的
 - **重构**：①后端新增 `GET /api/avatar/animations`（全局动作清单独立入口）；②模型卡片**移除动作区**（只保留模型切换/表情/删除模型）；③新增独立卡片「动作资产（全局共享，所有 VRM 模型通用）」：动作 Tag + ▶预览 + 🗑Popconfirm 删除，文案明确"导入一次所有模型可调用、删除后数字人页面刷新"
 - 前端已 build（12:26），后端已重启
+
+## 控制面板窗口自动刷新（2026-10-05）
+
+- **问题**：壳有两个窗口——数字人窗口（纯 3D 模型）+ 控制面板窗口（BrowserWindow 加载 /console/ 控制台）。用户反馈"桌面端看不到动作资产卡片"——控制面板窗口不自动刷新（Electron 缓存旧 JS bundle），浏览器强刷后能看到但桌面端看不到
+- **修复**：①主进程 `ipcMain.on('reload-control-panel')` → `controlPanel.reload()`；②数字人渲染进程收到 `avatar_animations_changed` SSE 时 `ipcRenderer.send('reload-control-panel')`——动作资产导入/删除时控制面板窗口自动跟随刷新
+- **验证**：DELETE panel_probe 端到端日志「动作资产变更 → 控制面板已刷新（动作资产变更）」
