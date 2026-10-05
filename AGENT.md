@@ -28,25 +28,27 @@
 ## 架构（v0.13）
 
 ```
-transport/   FastAPI 路由：/api/health、POST /api/chat（SSE 流式）
-domain/      （待建）专家/会话/能力领域服务
+transport/   FastAPI 路由：/api/health、/api/chat、/api/agents/{id}/chat（SSE 流式）、
+             /api/avatar/*、/api/plugins/*、/api/settings/* 等
+domain/      ✅ 已建成：agents/plugins/avatar/chat 等领域服务（原"待建"已过时）
 infra/
   harness/   适配层：config.py（→ProviderConfig/HarnessAgentConfig）、
-             manager.py（HarnessManager 单例）、chat.py（ChatRequest→事件流）
-  storage/   （待建）SQLite（agents/threads/messages，对齐 Octop schema）
+             manager.py（HarnessManager 单例）、chat.py（ChatRequest→事件流）、
+             runtime_limits.py（agents.config_json → ChatRequest）
+  storage/   ✅ 已建成：SQLite（agents/threads/thread_messages 投影表，对齐 Octop schema）
 ```
 
-SSE 事件协议（AI 数字人前端消费）：`token` / `tool_call` / `tool_result` / `usage` / `done`（answer=完整回复）。
+SSE 事件协议（当前完整）：`token` / `reasoning` / `tool_call_chunk`（带 plugin_id）/ `tool_result`（带 plugin_id）/ `done`；另由事件层（event_bus）发布 `conversation.started / conversation.completed`。
 
 ## 当前状态（R1-R3 已完成）
 
 - R1 清理旧代码 ✅（commit `87baddf`）
 - R2 新 backend 骨架 ✅：app/{main,config,transport/api,infra/harness/{config,manager,chat}}，ruff+mypy 全绿
 - R3 最小对话 API ✅：`POST /api/chat` SSE 流式验证通过（token 流 + done；糯米人设生效）
-- 工具调用：插件未接入（M5），模型无工具时诚实回答
-- **AI 数字人开关（2026-10-04）**：控制台「AI 数字人」页开关 → `GET|PUT /api/avatar/status` → 壳 config.json `ui.avatar_enabled` → 壳 watch 创建/销毁AI 数字人窗口（关闭=完全停止窗口释放资源，壳进程与后端对话不受影响；启动时按开关决定是否创建）。**开关联动模型插件**：关闭→停用全部模型插件（LLM 工具集不再有动作工具），开启→恢复激活当前选中模型的插件（互斥）；AI 数字人关闭时切模型仅换形象不激活插件（返回 activated_plugin=null）
+- ~~工具调用：插件未接入（M5），模型无工具时诚实回答~~ **已过时**：M5 插件已完成（插件市场/三层能力/聊天卡片均落地），工具调用正常
+- **AI 数字人开关（2026-10-04）**：控制台「AI 数字人」页开关 → `GET|PUT /api/avatar/status` → 壳 config.json `ui.avatar_enabled` → 壳 watch 创建/销毁AI 数字人窗口（关闭=完全停止窗口释放资源，壳进程与后端对话不受影响；启动时按开关决定是否创建）。~~开关联动模型插件：关闭→停用全部模型插件（LLM 工具集不再有动作工具），开启→恢复激活当前选中模型的插件（互斥）~~ **已过时（2026-10-04 方案 B）**：改为启停只绑定共享插件 vrm-avatar（见"方案 B 实施完成"）
 - **AI 数字人=LLM 直接遥控身体（2026-10-04，M7 核心）**：不是预编程自动动画，是**把身体能力暴露成工具让 LLM 在对话中主动调用**。参考项目：claw-sama（Tauri+VRM，分部位触摸+情绪系统）、mitscherlich/live2d-mcp（pixi-live2d-display+工具表，跟我们栈一样）、clawatar（VRM WebSocket JSON 命令，set_expression 带 weight、speak+action+expression 原子绑定）。
-  - **语义动作清单**：每模型目录放 `actions.json`（`{"actions": {"wave": {"motion": "main_1", "expressions": [], "label_zh": "挥手"}, ...}}`），后端 `generate_model_plugin` 有 manifest 时按语义名生成工具（wave/dance/nod...），无 manifest fallback 到按 motion group 名注册。aidang 已配 13 个语义动作。
+  - ~~**语义动作清单**：每模型目录放 `actions.json`（...），后端 `generate_model_plugin` 有 manifest 时按语义名生成工具（wave/dance/nod...），无 manifest fallback 到按 motion group 名注册。aidang 已配 13 个语义动作~~ **已过时（2026-10-04 方案 B + 2026-10-05 删内置动作）**：单共享插件 vrm-avatar + 动态工具（do_action/set_expression），动作只以 VRMA 文件为准、表情以 VRM 模型 blend shape 为准
   - **事件协议**：SSE `/api/avatar/events` 推送 `{type:"avatar_action", motion:"main_1", expressions:[], label:"挥手"}`——后端 `_resolve_avatar_action(tool_name)` 根据当前模型 manifest 反查完整 payload，壳不再瞎猜 motion/expression。旧 `tool_call {name, kind}` 协议已废。
   - **表情自动恢复**：壳 `playAvatarExpression` 播表情后 5 秒自动 `model.expression()` 重置（pixi 不传参=清所有表情参数），连续表情刷新定时器。修复了之前表情卡死的 bug。
   - **instructions.md 自动注入（业务层创新，octop 不支持）**：插件生成时自动写 `instructions.md`（列出所有动作+使用原则）；chat API 检测到AI 数字人插件启用时，读 `plugins/<model_id>/instructions.md` 拼到 system_prompt 后面。**不污染专家人设**——人格在 DB/persona 文件，身体说明跟着插件走，关AI 数字人就不注入，换模型自动换动作清单。
@@ -60,7 +62,7 @@ SSE 事件协议（AI 数字人前端消费）：`token` / `tool_call` / `tool_r
 - **模型默认自动（2026-10-04）**：对话框「模型」Select 首项新增「自动（默认）」（value 哨兵 `auto`，前端 Chat.tsx `MODEL_AUTO`），默认选中；选中「自动」时请求体 `model=null`，由后端按 agent 默认模型解析（`stream_chat` model=None → 默认模型）；用户显式选择具体模型才覆盖，移除模型 chip 回到「自动」。`ChatStreamOptions.model` 类型放开为 `string | null`。替代原「模型必选」语义（必选校验已删）
 - **形态与遗留清理（2026-10-04，用户拍板）**：默认形态 = **AI 数字人壳 shells/nuomi-avatar**（Electron，`npm start`，经 config.json `llm.api_url` → 后端 :8000 `/api/v1` OpenAI 兼容端点对话）；**web 控制台只是调试形态**（:5173，vite 代理 /api → :8000）。Makefile 重写：`make start` 启动AI 数字人壳（替换已失效的 tauri desktop 目标，`desktop/` 目录 v0.13 已删）、`make web` 调试、stop/status/logs 同步改为AI 数字人壳；tauri 遗留（README desktop/ 引用、docs/demo-script tauri build 检查项、.logs/desktop.log）已清理，docs/desktop-data-architecture.md 加废弃标注（NUOMI_HOME/SQLite 决策仍有效，以 AGENT.md 为准）。AI 数字人壳重启 = 杀 Electron 进程后 `shells/nuomi-avatar && npm start`
 - **连接器 env 支持（2026-10-04）**：ConnectorBody 增 `env: dict[str,str]`（键名校验 `^[A-Za-z_][A-Za-z0-9_]*$`，非法 400，空键过滤）；spec 透传 harness——octop-harness `aload_mcp_tools` 原生合并 stdio env（SDK 默认子集 + spec env，PROTECTED_ENV_KEYS 不覆盖），**sse/http 传输不注入 env**；前端连接器表单加 key-value 环境变量编辑（Form.List，卡片仅显示键名不显示值）；测试 `tests/test_connectors_api.py`（API CRUD + `load_mcp_tools` 集成验证 env 注入子进程），pytest 26 项全过 + ruff/mypy 干净；端到端实测：对话调 `read_env` 返回连接器 env 配置值 ✓
-- 后续：M3 Agent 生命周期 → M4 会话 → M5 插件 → M6 技能/连接器/知识库 → M7 AI 数字人前端 → M8 产品体验
+- 后续：~~M3 Agent 生命周期 → M4 会话 → M5 插件 → M6 技能/连接器/知识库 → M7 AI 数字人前端 → M8 产品体验~~ **全部完成（2026-10-05）**，见路线图勾选；后续新功能一律插件化开发（2026-10-05 用户拍板）
 
 ## 环境事实（重要）
 
@@ -69,7 +71,7 @@ SSE 事件协议（AI 数字人前端消费）：`token` / `tool_call` / `tool_r
 - **会话状态**：`nuomi-state.json`（threads/thread_id/agent_id，顶层即 nuomi.*；2026-10-04 起从壳 config.json 迁出）；壳 config.json 仅存 ui.* 表现层偏好（ui.model/ui.model_path/ui.avatar_enabled AI 数字人开关 2026-10-04 加入）
 - **会话模型（2026-10-04 简化）**：会话=真实对话线程；**无 default AI 数字人线程、无模型专属会话**——AI 数字人是纯表现层（订阅 /api/avatar/events 拦截对话 tool_call 播放动作），切模型只换形象+插件工具集、**不换会话**（旧"一个AI 数字人一个会话"已废）
 - **状态文件即用即清（2026-10-04 起强制）**：`nuomi-state.json` 等数据文件的字段一旦不再被代码读写，**当场删除**，不留兼容字段（例：threads[].model_id 已删）。禁止"先留着以后再说"——死数据会误导后续读写，直接成为屎山源头
-- **后端启动**：`cd backend && nohup .venv/bin/python -m uvicorn app.main:app --port 8000 > /tmp/nuomi-backend.log 2>&1 &`
+- **后端启动**：**壳已自动拉起（ensureBackend，make start 一条命令）**；手动启动（排查/单独跑后端用）：`cd backend && nohup .venv/bin/python -m uvicorn app.main:app --port 8000 > /tmp/nuomi-backend.log 2>&1 &`（壳拉起时 stdout 丢弃，查后端日志需手动起后端）
 - **venv**：`backend/.venv`（uv 管理，无 pip；装包用 `uv pip install --python .venv/bin/python <pkg>`）
 - **harness 验证基线**：`backend/.venv/bin/python backend/probe_harness.py`（harness 独立运行 + DeepSeek 对话 + Octop 插件 what-to-eat 加载）
 - **harness 关键 API**：`HarnessAgent(cfg)`、`ChatRequest(messages, thread_id, ...)`、`agent.stream(request)` 返回事件 dict（type 为 `AgentEventType` StrEnum，import 自 `octop_harness.protocols.langgraph`）；`ProviderConfig(id, base_url, api_key, protocol="openai", models=[ModelConfig(id, name)])`；`default_model` 用 `"provider/model"` 复合串；`init_workspace(ws, language="zh", include_md_files=..., include_skills=...)` 建工作区布局（skills/_builtin_skills 目录缺失会 warning，无害）。
@@ -80,13 +82,13 @@ SSE 事件协议（AI 数字人前端消费）：`token` / `tool_call` / `tool_r
 
 - [x] M3 Agent 生命周期（2026-10-05 完成）：agents 表（对齐 Octop schema：agent_id/name/default_model/system_prompt/enabled/config_json/last_state...）+ 多专家实例管理（CRUD/start/stop/status + HarnessManager 单例 + 专家工作区）；**运行时参数接线（本次补全）**：agents.config_json 的 max_iters/temperature/top_p/max_tokens/max_input_length → ChatRequest 注入（`infra/harness/runtime_limits.py`，对齐 Octop runtime_limits：max_iters→recursion_limit、temperature 等→configurable[model_settings]（harness 默认 ModelSettingsMiddleware 消费）、max_input_length→configurable[max_input_tokens]；非法值过滤、per-turn 显式值优先）；PATCH /agents/{id} 支持 config_json；DELETE 级联清理专家工作区（对齐 Octop：rmtree 失败不阻断）
 - [x] M4 会话通道（2026-10-05 完成）：**threads 表落库**（thread_id/agent_id/title/last_active/created_at/pinned/model_ref，对齐 Octop ThreadRow 单用户裁剪）+ **thread_messages 投影表**（seq/message_id/role/message_json/created_at，langchain wire 格式）+ **thread_history_projection 状态表**（pending/ready）；会话列表权威从 nuomi-state.json 迁到 SQLite（幂等迁移 + 迁移后清理旧 threads 字段；state 文件只留 thread_id + agent_id）；消息权威仍在 octop checkpointer——投影 = 历史加速层（**首次读历史全量 backfill → ready，之后每轮对话增量 append**，对齐 Octop dashboard projection 语义）；chat_history 端点投影优先读表（不依赖 harness 运行时实例），pending 时 backfill；删会话级联清 threads+投影+checkpointer；openai_compat（AI 数字人壳）同样接线
-- M5 插件接入：harness 插件目录（plugin.yaml）+ 前端 zip 导入（工作区 plugins/）；旧 nuomi-avatar plugins//skills/ 资产已删（2026-10-04）；旧 service-* 概念废弃（harness 原生替代）
-- M6 技能/连接器/知识库：skills_dir 接入 + 连接器（MCP 协议）配置 + 知识库工具（调研完成，决策见上：本地 ONNX 嵌入 + OCR + 显式指定才注入；**2026-10-04 语义修正：知识库与技能/连接器同维度，不选=[]=不加载，无「默认打开」一说（default_open 列已 DROP 迁移），显式指定才注入**；实现进度 2026-10-04：嵌入服务（多源下载+fastembed 推理+就绪检查）、存储层（repo/parse/chunk/index.sqlite/service/jobs 状态机）、API 路由（knowledge_api.py：能力/模型/CRUD/文档 17 端点）、前端页（#knowledge 三区块 + 3 Modal）、检索工具 search_knowledge（tools.py）+ 引用标记协议（citations.py，`<!--octop-kb-citations:[...]-->` 沿用 Octop）+ 跨库检索（retrieve.py，k=8/6000 字符预算）+ 对话注入（default_open.py 显式指定才注入 + hint.py 中间件无库隐藏工具 + harness config/chat 接线 + ChatBody.knowledge_base_ids）+ Chat 引用展示（parseKnowledgeCitations.ts + KnowledgeCitations 组件）+ 对话框四选择器（技能/连接器/知识库/模型必选，消息必填）；技能选择器三分组（已启用的技能/内置技能/已启用的技能包，包级整包勾选=包内技能 slug 全进白名单，_available_skill_keys 补内置技能名）；知识库级联删除（delete_base 同事务清 knowledge_documents 行 + rmtree 目录）+ 库级启停（enabled 列迁移/停用库对话侧不可选/显式指定 400，对齐插件）+ 前端知识库页列表/详情双视图（点卡片进详情、返回回列表，详情内可删除库并自动回列表；loadDocs reqId 竞态保护 + loadBases 校正 stale 选中，根治删除后详情不同步/404）；pytest 24 项全过 + ruff/mypy 干净；真实环境验证：curl 显式 ids 触发 search_knowledge + 引用标记完整 + 模型引用回答，无 ids 不注入（0 次工具调用），白名单 [apple-notes+therapy-board] 200/未知技能 400，浏览器实测引用 Tag 渲染 + 知识库选择器 + 技能三分组 + 模型必选发送禁用；剩余：OCR（RapidOCR+扫描 PDF，用户叫停暂缓）**）
-- M7 AI 数字人前端：nuomi-avatar 二次开发（形象/情绪/字幕/TTS）+ 控制面板
-- M8 产品体验：人格/情绪协议、工具执行可视化（"干活中"动画）
-- **待办（2026-10-04 用户拍板暂缓）**：专家级默认绑定（对齐 octop agents 表 `skill_package_ids`/`knowledge_base_ids`/`mcp_servers` 三列）：nuomi agents 表加绑定列 + 对话时默认注入（per-turn 可覆盖，知识库仍保持显式指定才注入）+ 导入器读取 octop agent 记录的绑定字段；另：octop manifest `prompt_files` 声明的非标准文件（如 IDENTITY.md/HEARTBEAT.md，现已复制资产但不注入）内容合并进注入或 system_prompt
-- **待办（2026-10-04 用户拍板，稍后开工）——AI 数字人 3D 化 + 动态工具（方案 B）**：用户决定：① **物理删 2D**（壳 Live2D 适配器/pixi 依赖/ModelScanner 2D 分支、后端 list_models 2D 扫描、前端AI 数字人页 2D tab；models/2D 的 aidang/cat/hiyori 资产直接删）；② **表情单工具** `set_expression(expression: enum)`，enum 由当前激活 VRM 模型的 blend shape 动态注入（替代现 set_expression_* 每表情一工具）；③ **直接方案 B（装配时动态）**：插件只留固定入口，工具 JSON Schema 在对话装配时动态构造——动作 enum 来自扫描 `assets/animations/*.vrma`，表情 enum 来自 Python 解析当前激活 VRM 模型 GLB（glTF JSON chunk `extensions.VRM.blendShapeMaster`，无需 three）——**改动点在项目源码 `PluginService.tools()`（backend/app/domain/plugins/service.py:126），在 `build_plugin_tools`（octop_harness.plugins 基础库，不动）返回结果上追加/替换动态AI 数字人工具**；切模型/新增 FBX 零重启。前置：后端加 VRM 表情枚举函数（Python 解析 GLB）+ 动作清单查询函数
-- **待办（2026-10-04 方案 B 架构定稿，不动基础库）**：**只保留一个共享 VRM 模型插件**（固定 id，如 vrm-avatar，不再每模型一个插件），其启用/停用**只绑定AI 数字人开关**（avatar_enabled：开=启用、关=停用）；**删除模型插件互斥逻辑**（switch_avatar_model 不再遍历 set_enabled 全停→启当前，只保留切模型写 config + 释放 shell agent）；动作/表情的**中文元数据**（label_zh/emotions）用共享来源——表情 label 内置表（VRM 标准 preset）+ 动作清单文件（assets/animations 旁或 plugins/vrm-avatar/actions.json，由 enrich 维护）；`load_avatar_instructions` 改为读固定插件 id；`enrich_model`/`generate_model_plugin` 不再按模型生成插件（改维护共享元数据）；通用插件启停端点补自动 release（路径 A：启停/导入/删除时 manager.close() 或 release 受影响 agent——参考技能端点 710/897 做法）；**对话时 tools 虽每次重算（api.py:394）但 get_agent 缓存命中会忽略 plugin_tools（manager.py:61-71）——动态工具需配套"清单版本变化自动 release"钩子**
+- [x] M5 插件接入 ✅（2026-10-05 完成）：插件市场机制（registry + zip 安装 + 启停 + 配置读写）+ **插件三层能力**（工具注册 / 事件订阅发布 / 聊天卡片 UI）；插件市场并入「插件」页（不占独立菜单）；harness 插件目录（plugin.yaml）+ 前端 zip 导入（工作区 plugins/）；weather-octop 验证插件
+- [x] M6 技能/连接器/知识库 ✅（2026-10-05 完成，OCR 暂缓）：**2026-10-04 语义修正：知识库与技能/连接器同维度，不选=[]=不加载，无「默认打开」一说（default_open 列已 DROP 迁移），显式指定才注入**；实现进度 2026-10-04：嵌入服务（多源下载+fastembed 推理+就绪检查）、存储层（repo/parse/chunk/index.sqlite/service/jobs 状态机）、API 路由（knowledge_api.py：能力/模型/CRUD/文档 17 端点）、前端页（#knowledge 三区块 + 3 Modal）、检索工具 search_knowledge（tools.py）+ 引用标记协议（citations.py，`<!--octop-kb-citations:[...]-->` 沿用 Octop）+ 跨库检索（retrieve.py，k=8/6000 字符预算）+ 对话注入（default_open.py 显式指定才注入 + hint.py 中间件无库隐藏工具 + harness config/chat 接线 + ChatBody.knowledge_base_ids）+ Chat 引用展示（parseKnowledgeCitations.ts + KnowledgeCitations 组件）+ 对话框四选择器（技能/连接器/知识库/模型必选，消息必填）；技能选择器三分组（已启用的技能/内置技能/已启用的技能包，包级整包勾选=包内技能 slug 全进白名单，_available_skill_keys 补内置技能名）；知识库级联删除（delete_base 同事务清 knowledge_documents 行 + rmtree 目录）+ 库级启停（enabled 列迁移/停用库对话侧不可选/显式指定 400，对齐插件）+ 前端知识库页列表/详情双视图（点卡片进详情、返回回列表，详情内可删除库并自动回列表；loadDocs reqId 竞态保护 + loadBases 校正 stale 选中，根治删除后详情不同步/404）；pytest 24 项全过 + ruff/mypy 干净；真实环境验证：curl 显式 ids 触发 search_knowledge + 引用标记完整 + 模型引用回答，无 ids 不注入（0 次工具调用），白名单 [apple-notes+therapy-board] 200/未知技能 400，浏览器实测引用 Tag 渲染 + 知识库选择器 + 技能三分组 + 模型必选发送禁用；剩余：OCR（RapidOCR+扫描 PDF，用户叫停暂缓）**）
+- [x] M7 AI 数字人前端 ✅（2026-10-05 完成）：nuomi-avatar 二次开发（VRM 3D / 情绪 / 字幕 / TTS）+ 控制面板（模型/动作资产管理、预览、热切换）
+- [x] M8 产品体验 ✅（2026-10-05 完成）：工具执行可视化（thinking→working→idle 状态表情）+ 聊天卡片（octop 对齐）
+- **待办（2026-10-04 用户拍板暂缓，仍待办）**：专家级默认绑定（对齐 octop agents 表 `skill_package_ids`/`knowledge_base_ids`/`mcp_servers` 三列）：nuomi agents 表加绑定列 + 对话时默认注入（per-turn 可覆盖，知识库仍保持显式指定才注入）+ 导入器读取 octop agent 记录的绑定字段；另：octop manifest `prompt_files` 声明的非标准文件（如 IDENTITY.md/HEARTBEAT.md，现已复制资产但不注入）内容合并进注入或 system_prompt
+- ~~**待办（2026-10-04 用户拍板，稍后开工）——AI 数字人 3D 化 + 动态工具（方案 B）**~~ **已实施完成（见"方案 B 实施完成"章节）**：物理删 2D、表情单工具、动态工具装配（do_action/set_expression）
+- ~~**待办（2026-10-04 方案 B 架构定稿，不动基础库）**~~ **已实施完成**：单共享插件 vrm-avatar（删模型插件互斥）、动作/表情中文元数据共享来源、清单版本变化自动 release
 
 ## 教训（保留，跨版本有效）
 
@@ -107,7 +109,7 @@ SSE 事件协议（AI 数字人前端消费）：`token` / `tool_call` / `tool_r
 - **壳侧**：`vrm-model-adapter.js` 实现 motion() 骨骼动画（手写关键帧+easing）+ expression() blend shape 控制 + AnimationMixer 支持 .vrma 文件
 - **SSE 广播**：`_resolve_avatar_action` 改成读 `plugins/<model_id>/actions.json`（VRM 模型 list_models() 里 actions={}）
 - **插件互斥 bug 修复**：切到无插件模型时所有模型插件全禁用（之前只在新模型有插件时才互斥）
-- **当前局限**：手写骨骼动画不自然（硬编码角度，无膝盖/手腕细节）
+- **当前局限**：~~手写骨骼动画不自然（硬编码角度，无膝盖/手腕细节）~~ **已过时**：手写动画已删（2026-10-05"动作清单只以 VRMA 为准"），只播 VRMA 文件
 - **Mixamo FBX → VRMA 转换链路已走通（2026-10-04）**：
   - 工具链：`shells/nuomi-avatar/tools/fbx2vrma/`（npm `fbx2vrma-converter` 1.0.2 + FBX2glTF 0.9.7 darwin-x64 二进制）。**arm64 机器无原生 FBX2glTF**（官方仅 darwin-x64），需 Rosetta 2（`softwareupdate --install-rosetta --agree-to-license` 已装）；npm install 用 `--ignore-scripts`（其 setup.sh postinstall 会失败）
   - 命令：`node node_modules/fbx2vrma-converter/fbx2vrma-converter.js -i <in.fbx> -o <out.vrma>`——自动 Mixamo→VRM humanoid 骨骼映射（mixamorig:* → hips/spine/chest...），默认 30fps
@@ -148,7 +150,7 @@ SSE 事件协议（AI 数字人前端消费）：`token` / `tool_call` / `tool_r
   - 端到端实测：POST /avatar/preview action=wave_hand → 壳日志 `AI 数字人动作: 挥手打招呼 / [VRM动作] wave_hand` ✓；expression=angry → `AI 数字人表情: angry` ✓；导入 VRM（test_import_vrm 导入→清单出现→DELETE 清理）✓；导入 Body Block.fbx → 转换 → watch 注册 → 预览播放 `[VRM动画] 播放 Body Block` ✓
 - **动作清单口径**：`/api/avatar/models` 的 models[].actions 仍恒 {}（list_models 硬编码），动作清单权威在 list_avatar_actions()（全局扫描 18 内置 + assets/animations/*.vrma）；预览按钮直接调 list_avatar_actions 覆盖的动作名。**已定论（2026-10-05）**：models[].actions 填**全局 VRMA 动作清单**（list_models 注释明确"所有模型共用，放文件即出现、删即消失"）——per-model vs 全局已决策为全局
 - **遗留**：~~表情观感幅度（用户搁置）~~ → **已废弃（2026-10-05 用户拍板）**；动作名含空格（如 "Body Block"）可作 enum 值但较丑，后续可规范化（fbx stem 空格→下划线）→ **用户确认保持现状**；本轮已 git commit
-- **遗留（2026-10-05 更新）**：VRMA_01~07（VRoid 官方免费动画）未导入 → **已废弃**（用户拍板"模型资产补全不需要做了，已抛弃"）；动作名空格规范化仍待办
+- **遗留（2026-10-05 更新）**：VRMA_01~07（VRoid 官方免费动画）未导入 → **已废弃**（用户拍板"模型资产补全不需要做了，已抛弃"）；~~动作名空格规范化仍待办~~ → **已定论（2026-10-05）**：保持现状（Mixamo 原名，enum 合法可播）
 
 ## 删内置动作 + idle 待机动画（2026-10-05）
 
@@ -172,7 +174,7 @@ SSE 事件协议（AI 数字人前端消费）：`token` / `tool_call` / `tool_r
 - 链路（前端→API→SSE→壳→setValue→_expressionMap['happy']）全部正确；**问题 100% 在模型资产**——任何表情预览/对话触发都不会有视觉变化
 - 顺带确认 three-vrm v3 语义：`VRMExpression.name`=`VRMExpression_happy`（包装名）、`_expressionMap` 键=`expressionName`（'happy'），壳 `_exprByLower` 索引与 `_resolveExpression` 大小写匹配均正确
 - **新增检测**：后端 `vrm_has_expression_data(model_path)` 解析 GLB 检查任一 group binds 非空（VRM1.0 查 morphTargetBinds）；`list_models` 返回 `expressions_have_data` 字段；前端模型卡片在无数据时显示警告"⚠ 该模型无表情变形数据…"并隐藏表情预览按钮（已 build，控制台刷新可见）
-- **结论/建议**：更换带表情的 VRM（多数 VRoid Studio 导出模型带表情）即可正常预览；当前模型仅适用于动作演示
+- **结论/建议**：~~更换带表情的 VRM 即可正常预览；当前模型仅适用于动作演示~~ **已过时（2026-10-05 用户已导入新模型 868274793854709131，angry 等表情 binds=1，表情预览已生效）**：多数 VRoid Studio 导出模型带表情
 
 ## 模型热切换修复（2026-10-05）
 
@@ -238,4 +240,58 @@ SSE 事件协议（AI 数字人前端消费）：`token` / `tool_call` / `tool_r
 
 - **已核实完成**：对话上下文保留（M4 投影含工具步骤）；模型插件工具语义（description 已含动作清单+中文标签）；models[].actions 已定论（全局 VRMA 清单）
 - **用户拍板**：模型资产补全废弃（cat 动作/VRMA_01~07 不补）；AI 数字人模型升级废弃（已全 3D）；动作名空格保持现状（Mixamo 原名，enum 合法可播）；人设约束完成（改系统提示词后不再是小猫，尖括号标签自然消失）；bundle code-split 不做（本地加载收益低）
-- **轨迹抽屉**：增强废弃——简版保持现状，后续轨迹能力集成 **Langfuse**（octop_harness 原生封装 `LangfuseTracer`：LangfuseConfig(public_key/host/secret_key) → set_config + agent.set_langfuse_callbacks 即可出完整 trace；可 docker 自托管，数据不出本地；待办）
+- **轨迹抽屉**：~~增强废弃——简版保持现状，后续轨迹能力集成 Langfuse（待办）~~ **Langfuse 已集成（2026-10-05）**：SDK 安装 + 后端配置持久化（工作区 langfuse.json，`GET|PUT /settings/langfuse`）+ 设置页 Langfuse 配置 UI + 对话轨迹上报验证通过（本地部署 localhost:3000，docker compose，数据不出本地）；**遗留 bug（未修）**：设置页 Secret Key 已保存但「测试连接」仍提示未输入（用户暂停时记录）
+
+## 插件三层能力 + 事件层落地（2026-10-05）
+
+- **插件能力模型对齐 dsh（DeepSeek Harness / Cordis「一切皆插件」）**：三层 = ① 工具注册（octop 原生，`ctx.tool(name, fn, description, config_fields)`）② 事件订阅/发布（薄 EventBus，框架定事件名，插件 `event_bus.on(...)` 报名）③ 前端页面/面板/主题（规划中；面板=聊天卡片去 octop ui/ 调研，主题低优先）
+- **事件层已落地**：`backend/app/infra/events.py`——`Events` 枚举（conversation.started / conversation.completed）+ `EventBus.on/emit`（订阅者异常隔离）+ 全局单例 `event_bus`；`chat.py` 对话开始/完成后 emit；**TTS 自动播报改为插件订阅 `conversation.completed`**（合成→avatar/events 广播→壳播放，对话流不再产 tts 帧）。**用户否决过复杂方案**：事件注册表 + yaml subscribes 声明 + 安装校验（要极简对齐 Cordis）；无特权核心，订阅随插件卸载回滚
+- **前端导航决策**：插件市场不占独立菜单——**并入「插件」页顶部按钮（Modal 内嵌 MarketPage）**；后续新功能一律插件化开发
+- **设置页动态配置 tab**：只渲染 `enabled=true` 的插件（禁用后对应前端配置页销毁，已修：`Settings.tsx pluginTabs` 加 `if (!p.enabled) continue`）
+- **save_config 修复**：secret 复用旧值时改读磁盘明文（原用 get_config 脱敏展示值回写，导致 config.json 存 `sk-t***-123` 污染）
+- **规则：每次改动代码/配置后，壳（nuomi-avatar Electron 应用）也要一并重启验证**（前端 build 后同样重启壳，不只在浏览器刷新）
+
+## AI 数字人语音播报（TTS）— Kokoro-FastAPI 本地部署（已验证 2026-10-05）
+
+- **方案**：本地部署 [remsky/Kokoro-FastAPI](https://github.com/remsky/Kokoro-FastAPI)（OpenAI 兼容 `/v1/audio/speech` 端点），nuomi 插件 HTTP 调用；声音只走本机，不依赖云端 TTS
+- **部署步骤（macOS / UV 本地路线，Docker 非必需）**：
+  1. `git clone https://github.com/remsky/Kokoro-FastAPI.git && cd Kokoro-FastAPI`
+  2. `uv pip install -e ".[cpu]"`（依赖；如用 GPU：`[gpu]`，mac 可用 `./start-gpu_mac.sh` 走 MPS）
+  3. 下载模型：`uv run --no-sync python docker/scripts/download_model.py --output api/src/models/v1_0`（默认走 HuggingFace，国内网络慢——用 hf-mirror.com 镜像下载 `kokoro-v1_0.pth` 到同目录即可，sha256 需与脚本 EXPECTED_SHA256 一致：`496dba118d1a58f5f3db2efc88dbdc216e0483fc89fe6e47ee1f2c53f18ad1e4`）
+  4. **必改**：`api/src/core/config.py` 的 `model_dir/voices_dir` 默认是 `/app/...`（仅 Docker 挂载有效）→ 本地跑改为 `Path(__file__).resolve().parents[1] / "models"`（即 api/src/models）、`... / "voices" / "v1_0"`
+  5. 启动：`uv run uvicorn api.src.main:app --host 127.0.0.1 --port 8880`（**勿带 reload**——带 reload 会在 8880 残留僵尸进程，需 pkill 后无 reload 重启）
+- **验证**：`POST http://127.0.0.1:8880/v1/audio/speech` body `{"model":"kokoro","input":"文本","voice":"zf_xiaobei","response_format":"mp3"}` → HTTP 200 ~5s 返回 mp3；中文音色 `zf_xiaobei` 实测可用
+- **nuomi 侧接线**（控制台 设置 → AI 数字人语音播报 插件配置）：api_url=`http://127.0.0.1:8880/v1/audio/speech`、api_key=任意占位（本地无鉴权）、model=kokoro、voice=zf_xiaobei、sample_rate=24000；对话结束自动播报走插件订阅 `conversation.completed` 事件（合成→avatar/events 广播→壳播放）
+- **现状**：~~本机部署在 `/Users/superman/projects/code/kokoro-fastapi`，8880 常驻运行~~ **已停止（2026-10-05 测试结束）**：kokoro-fastapi 进程已停、TTS 插件已禁用；后续要用再按上面步骤重装拉起（部署步骤保留，别人看到可直接复用）
+
+## 插件第三层 UI（聊天卡片）+ M8 工具执行可视化（2026-10-05，端到端验证通过）
+
+- **聊天卡片协议对齐 octop ui/**：插件 `ui/manifest.json` 声明 `{"ui": {"tool": "<工具名>", "render": "<文件>"}}`，`ui/index.js` 为 ES module `export default { render(ctx) => HTML }`（ctx 含 result/args）。工具结果命中声明 → 前端动态加载 render 渲染成聊天卡片；未命中保持文本折叠
+- **后端**：`GET /api/plugins/{id}/ui-manifest`（读 ui/manifest.json，无则 404）+ `GET /api/plugins/{id}/ui/{file}`（serve ui/ 目录，正则白名单 `[A-Za-z0-9._-]+` 防路径穿越）；均走 `market.plugin_dir`（工作区 plugins/）
+- **前端（Chat.tsx）**：模块级 `pluginUiRegistry`（tool→{pluginId,render}，ChatPage mount 时 `loadPluginUiRegistry()` 拉取 enabled 插件 manifest）+ `PluginToolCard`（`import(/* @vite-ignore */ '/api/plugins/<id>/ui/<render>')` 运行时动态加载 → `render({result,args})` → 渲染，最小防护移 `<script>`；SegmentView tool_result 命中 registry 时展开显示卡片
+- **M8 工具执行可视化补全**：原 working 状态只在动作工具触发——`_publish_actions` 改为**任何 tool_call 都 `publish_status("working")`**、tool_result → `publish_status("idle")` 恢复；壳 `playStatusExpression` 已有（thinking→Surprised / working→Angry / idle 重置，显式表情让位）。**端到端验证**：对话调 weather_query → 壳日志「AI 数字人状态: thinking → working → idle」+ 控制台工具结果渲染为卡片（weather-card div）
+- **验证载体**：weather-octop 测试插件（weather_query 返回示例数据 + ui/ 声明）——octop 生态插件直接可用，兼容验证 ✓
+- **安全边界**：卡片 HTML 由本地自装插件产生（与 octop 同信任模型），仅移 `<script>`；插件渲染器负责转义外部数据
+
+## 同名工具去重 + 来源徽标 + 卡片默认展开（2026-10-05，用户反馈修复）
+
+- **背景**：两个天气插件（weather 遗留测试 + weather-octop）都注册 weather_query——octop `build_plugin_tools` 同名不去重，两个 StructuredTool 都进工具集，模型调用结果不可控，用户"根本不知道调用了哪一个"；且卡片默认折叠看不到
+- **修复**：① 删遗留 weather 插件（与 weather-octop 功能重复，市场外资产）；② `plugin_service.tools()` 同名去重（dict 键覆盖保留最后注册者）+ 新增 `tool_owners()`（name→plugin_id，遍历 PluginRegistry().all_tools()，与去重顺序一致）；③ api.py `_publish_actions` 对 tool_call/tool_result 内部帧附加 plugin_id（`_TOOL_OWNERS` 模块级缓存，agents/{id}/chat 端点每次对话开头刷新）；④ `stream_octop_sse` 对外帧透传（tool_call_chunk.plugin_id + tool_result.messages[].plugin_id）；⑤ 前端 ChatEvent/Segment 加 plugin_id，折叠头显示来源插件 Tag，**有聊天卡片的工具结果默认展开**（useState 初始值=hasCard）
+- **验证**：curl 对话帧 `"plugin_id": "weather-octop"`；浏览器折叠头「⚙ 调用 weather_query [weather-octop]」+ 卡片默认展开显示天气内容；历史会话无 plugin_id 不显示徽标（可接受，投影未存来源）
+- **遗留**：中文工具名经 _sanitize_tool 改名 tool_{n} 后 tool_owners 映射 miss（无徽标）——本项目工具名均英文，暂不处理
+
+## 对话卡死排查修复（2026-10-05）
+
+- **现象**：POST /api/agents/{id}/chat 挂起无输出（90s 无 token），health 秒回、DeepSeek API 直连正常、换 agent（工作狂）正常
+- **定位**：糯米 agent 的 `default` 线程卡死，新 thread 与浏览器会话线程（`{agent}:{uuid}`）均正常 → 根因 = 该线程残留**半路 checkpoint**（对话流中断——curl `| grep | head` 提前关管道触发 SIGPIPE 断开 SSE——时写入的不完整状态），恢复时卡住
+- **修复**：清理 `agent-workspaces/6a3b128b89e9/memory.sqlite` 中 thread_id='default' 的 checkpoints（191 条）+ writes（256 条），对话即恢复（done 正常）；壳+后端重启验证
+- **经验**：① 排查对话卡死顺序：health → provider API 直连 → 换 agent → 换 thread → 查 memory.sqlite checkpoint；② 避免用 `curl | grep | head` 提前断流测试对话（会写半路 checkpoint）；③ 用户真实会话是 `{agent}:{uuid}` 格式线程，default 仅为 curl 测试残留
+- **遗留（待办）**：harness（PyPI 包，勿改源码）流中断可能写半路 checkpoint 导致该线程下次恢复卡死——建议业务层加容错：对话首帧超时（如 90s）自动清该线程 checkpoints/writes 后重试一次
+
+## 聊天卡片样式对齐 Octop + 对话循环卡死修复（2026-10-05，用户反馈"看不到卡片"）
+
+- **octop 调研**（github.com/TencentCloud/Octop）：toolRenderers 系统（dashboard/src/plugins/toolRenderers/）——工具输出解析 octop_ui envelope → 按 renderer 匹配组件；内置 BuiltinOctopUiFallback 硬编码卡片样式（白底/圆角10/1px #d0d5dd 边框/padding 12x14/maxWidth 420/轻阴影/标题+工具名+键值对）；默认渲染 DefaultToolRenderer（折叠工具块+参数/结果段）；插件 demo-ui-card（工具返回 octop_ui JSON，前端按 renderer 渲染，host.patchResult 做 L2 刷新）
+- **改造**：① 前端 PluginToolCard 容器对齐 octop builtin cardStyle（toolCardStyle：白底/圆角10/边框 #d0d5dd/maxWidth 480/阴影/13px）+ render ctx 传 data（JSON.parse result）/textFallback；② render 失败或空时兜底显示原始结果文本（保留卡片框，不再空白/null）；③ weather-octop 示例插件升级：main.py 返回结构化 JSON（city/temperature/description/condition_emoji/humidity/wind），ui/index.js 渲染真卡片（☁️ 大图标+城市·当前天气+温度大字+描述+键值表，值 escape 防注入）
+- **对话卡死根因（新）**：langgraph `GraphRecursionError: Recursion limit of 30`——模型对"示例数据"天气结果陷入循环（记忆知道是 demo，坚持要真实数据，反复 reasoning/尝试）→ 30 轮超限抛错 → SSE 流中断（ERR_INCOMPLETE_CHUNKED_ENCODING）→ 前端无回复。**修复**：糯米 agents.config_json `max_iters: 30 → 60`（runtime_limits 映射 max_iters → recursion_limit）。验证：模型 weather_query(示例) → 判断不可信 → 调 web_fetch(wttr.in 真实数据) → 完整回答，不再卡死
+- **验证**：对话完成 + 卡片 DOM 完整（☁️ 苏州·当前天气 24°C 多云(示例数据) humidity 65% wind 东南风3级）+ 来源徽标 + 默认展开；截图 weather-card-demo.png（OCR 弱但 DOM 证实）
+- **遗留**：截图/OCR 对白底卡片识别弱（视觉正常）；harness 默认 recursion_limit 30 对循环敏感——max_iters 提高是当前方案，极端循环仍可能超限（可再提）
