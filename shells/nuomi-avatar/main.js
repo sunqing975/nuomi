@@ -30,13 +30,17 @@ function ensureBackend() {
         const venvPython = path.join(backendDir, '.venv', 'bin', 'python')
         const python = fs.existsSync(venvPython) ? venvPython : 'python3'
         const port = new URL(origin).port || '8000'
+        // 后端日志写 .logs/backend.log（文件 fd，非 pipe）：
+        // ① uvicorn 访问日志不刷壳日志；② 壳退出后 pipe 断开不再 SIGPIPE 误杀常驻后端
+        const backendLog = path.join(__dirname, '..', '..', '.logs', 'backend.log')
+        try { fs.mkdirSync(path.dirname(backendLog), { recursive: true }) } catch (e) {}
+        const logFd = fs.openSync(backendLog, 'a')
         const child = spawn(
             python,
             ['-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', port],
-            { cwd: backendDir, stdio: ['ignore', 'ignore', 'pipe'], env: process.env }
+            { cwd: backendDir, stdio: ['ignore', logFd, logFd], env: process.env, detached: true }
         )
-        // 启动错误（端口占用/依赖缺失等）打到壳日志；uvicorn 访问日志丢弃防刷屏
-        child.stderr.on('data', (d) => console.log('[backend] ' + d.toString().trim()))
+        child.unref() // 脱离壳进程组：壳退出后后端保持常驻
         child.on('error', (err) => console.error('[backend] 启动失败: ' + err.message))
         // 最多等 30s 健康检查通过（后端含依赖加载/嵌入模型就绪）
         const deadline = Date.now() + 30000

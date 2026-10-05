@@ -59,8 +59,12 @@ export default function App() {
   };
 
   return (
-    <Layout style={{ minHeight: '100vh' }}>
-      <Sider width={200} theme="light" style={{ borderRight: '1px solid #e5e7eb' }}>
+    <Layout style={{ height: '100vh' }}>
+      <Sider
+        width={200}
+        theme="light"
+        style={{ borderRight: '1px solid #e5e7eb', position: 'relative', overflow: 'auto' }}
+      >
         <div style={{ padding: '18px 20px 12px', fontSize: 16, fontWeight: 700 }}>
           <span style={{ color: '#f59e0b' }}>●</span> Nuomi
         </div>
