@@ -25,7 +25,14 @@ from app.domain.agents.service import (
     enrich_agent,
     ensure_agent_workspace,
 )
-from app.domain.chat.service import chat_sessions
+from app.domain.chat.service import (
+    PROJ_READY,
+    chat_sessions,
+    messages_to_inputs,
+    thread_message_repo,
+    thread_repo,
+    turn_to_message_inputs,
+)
 from app.domain.plugins.service import plugin_service
 from app.domain.skillpackages.service import skill_package_service
 from app.domain.skills.service import skill_service
@@ -92,9 +99,7 @@ def ensure_agent_runtime(agent_row: dict):
         agent_row["agent_id"],
         name=agent_row["name"],
         system_prompt=agent_row["system_prompt"] or "",
-        workspace_dir=ensure_agent_workspace(
-            agent_row["agent_id"], agent_row["name"]
-        ),
+        workspace_dir=ensure_agent_workspace(agent_row["agent_id"], agent_row["name"]),
         plugin_tools=plugin_service.tools(),
         skills_dir=_all_skills_dirs(),
         skills_disabled=skill_service.disabled_set(),
@@ -292,18 +297,12 @@ def _message_text(m) -> str:
     return ""
 
 
-@router.get("/agents/{agent_id}/chat/history")
-async def chat_history(agent_id: str, thread_id: str, limit: int = 100) -> list[dict]:
-    """按线程取对话历史，返回有序片段流（按真实时间顺序）。
+def _segments_from_messages(msgs: list) -> list[dict]:
+    """BaseMessage 列表 → 有序片段流（user/reasoning/tool_call/tool_result/text）。
 
-    片段类型：user / reasoning（深度思考）/ tool_call / tool_result / text。
-    前端据此还原「思考→调工具→看结果→正文」的穿插顺序，而非只拿正文。
+    前端据此还原「思考→调工具→看结果→正文」的穿插顺序；checkpointer 与
+    thread_messages 投影两种来源共用（两端产出同构 Segment）。
     """
-    agent_row = agent_service.get(agent_id)
-    if agent_row is None:
-        raise HTTPException(status_code=404, detail="Agent 不存在")
-    agent = ensure_agent_runtime(agent_row)
-    msgs = await agent.aget_history(thread_id, limit=limit)
     out: list[dict] = []
     for m in msgs:
         mtype = getattr(m, "type", "")
@@ -341,6 +340,45 @@ async def chat_history(agent_id: str, thread_id: str, limit: int = 100) -> list[
     return out
 
 
+def _wire_to_messages(wire_list: list[str]) -> list:
+    """thread_messages 投影的 message_json（langchain wire）→ BaseMessage 列表。"""
+    from langchain_core.messages import messages_from_dict
+
+    out: list = []
+    for wire in wire_list:
+        try:
+            out.extend(messages_from_dict([json.loads(wire)]))
+        except Exception:
+            continue
+    return out
+
+
+@router.get("/agents/{agent_id}/chat/history")
+async def chat_history(
+    agent_id: str, thread_id: str, limit: int = 100, offset: int = 0
+) -> list[dict]:
+    """按线程取对话历史，返回有序片段流（按真实时间顺序）。
+
+    M4：thread_messages 投影已就绪（ready）时直接读表分页——历史读取不依赖
+    harness 运行时实例；未就绪（pending，含迁移期老会话）时从 checkpointer
+    读取并全量 backfill 投影，checkpointer 始终是消息权威。
+    片段类型：user / reasoning（深度思考）/ tool_call / tool_result / text。
+    """
+    agent_row = agent_service.get(agent_id)
+    if agent_row is None:
+        raise HTTPException(status_code=404, detail="Agent 不存在")
+    if thread_message_repo.projection_status(thread_id) == PROJ_READY:
+        rows, _ = thread_message_repo.page(thread_id, limit=limit, offset=offset)
+        if rows:
+            return _segments_from_messages(_wire_to_messages([r["message_json"] for r in rows]))
+    # pending：checkpointer 权威 + 全量 backfill 投影（一次全量，之后每轮增量 append）
+    agent = ensure_agent_runtime(agent_row)
+    msgs = await agent.aget_history(thread_id, limit=100_000)
+    thread_message_repo.replace_all(thread_id, messages_to_inputs(msgs))
+    thread_message_repo.mark_projection(thread_id, PROJ_READY)
+    return _segments_from_messages(msgs[-limit:] if limit else msgs)
+
+
 @router.post("/agents/{agent_id}/chat")
 async def chat(agent_id: str, body: ChatBody, request: Request) -> StreamingResponse:
     agent_row = agent_service.get(agent_id)
@@ -375,6 +413,18 @@ async def chat(agent_id: str, body: ChatBody, request: Request) -> StreamingResp
         # 推状态：LLM 开始思考
         avatar_events.publish_status("thinking")
 
+        async def _persist_turn(turn: dict) -> None:
+            """本轮消息写入 thread_messages 投影（M4；失败不影响对话）。"""
+            if thread_repo.get(body.thread_id) is None:
+                # AI 数字人壳等直带任意 thread_id 对话时兜底登记会话
+                thread_repo.insert(body.thread_id, agent_id, title="")
+            # 仅已 backfill（ready）的投影增量 append；pending 由首次历史读取全量 backfill
+            if thread_message_repo.projection_status(body.thread_id) != PROJ_READY:
+                return
+            inputs = turn_to_message_inputs(turn)
+            if inputs:
+                thread_message_repo.append(body.thread_id, inputs)
+
         try:
             async for frame in stream_octop_sse(
                 _publish_actions(
@@ -394,6 +444,8 @@ async def chat(agent_id: str, body: ChatBody, request: Request) -> StreamingResp
                         connectors=connectors,
                         model=model,
                         knowledge_base_ids=body.knowledge_base_ids,
+                        agent_config=agent_row.get("config_json"),
+                        on_turn_complete=_persist_turn,
                     )
                 ),
                 thread_id=body.thread_id,
@@ -437,6 +489,7 @@ class AgentPatchBody(BaseModel):
     icon_url: str | None = None
     color: str | None = None
     welcome_message: str | None = None
+    config_json: dict | None = None  # M3：运行时参数（max_iters/temperature/top_p/max_tokens/max_input_length）
 
 
 class AgentImportBody(BaseModel):
@@ -487,9 +540,20 @@ async def patch_agent(agent_id: str, body: AgentPatchBody) -> dict:
 
 @router.delete("/agents/{agent_id}")
 async def delete_agent(agent_id: str) -> dict:
+    """删除 Agent：释放运行时 + 删 DB 行 + 清理专家工作区（对齐 Octop：rmtree 失败不阻断）。"""
     manager.release(agent_id)
     if not agent_service.delete(agent_id):
         raise HTTPException(status_code=404, detail="Agent 不存在")
+    from app.domain.agents.service import agent_workspace_dir
+
+    ws = agent_workspace_dir(agent_id)
+    if ws.is_dir():
+        import contextlib
+        import shutil
+
+        # 文件占用等清理失败：agent 已从 DB 删除，工作区残留不阻断
+        with contextlib.suppress(OSError):
+            shutil.rmtree(ws)
     return {"ok": True}
 
 
@@ -743,7 +807,10 @@ def _validate_providers(providers: list[dict], existing: list[dict]) -> list[dic
         if not base_url:
             raise HTTPException(status_code=400, detail=f"Provider「{pid}」缺少 base_url")
         models = [
-            {"id": str(m.get("id") or "").strip(), "name": str(m.get("name") or "").strip() or str(m.get("id") or "").strip()}
+            {
+                "id": str(m.get("id") or "").strip(),
+                "name": str(m.get("name") or "").strip() or str(m.get("id") or "").strip(),
+            }
             for m in (p.get("models") or [])
             if str(m.get("id") or "").strip()
         ]
@@ -756,7 +823,9 @@ def _validate_providers(providers: list[dict], existing: list[dict]) -> list[dic
             old = next((x for x in existing if x.get("id") == pid), None)
             api_key = (old or {}).get("api_key") or ""
         if not api_key:
-            raise HTTPException(status_code=400, detail=f"Provider「{pid}」缺少 API Key（harness 要求非空）")
+            raise HTTPException(
+                status_code=400, detail=f"Provider「{pid}」缺少 API Key（harness 要求非空）"
+            )
         out.append(
             {
                 "id": pid,
@@ -1081,7 +1150,9 @@ async def get_avatar_status() -> dict:
 
 
 class AvatarStatusBody(BaseModel):
-    enabled: bool = Field(description="AI 数字人开关：true=开（创建AI 数字人窗口），false=关（销毁窗口）")
+    enabled: bool = Field(
+        description="AI 数字人开关：true=开（创建AI 数字人窗口），false=关（销毁窗口）"
+    )
 
 
 class AvatarPreviewBody(BaseModel):
@@ -1197,7 +1268,9 @@ async def import_avatar_animation(file: UploadFile = File(...)) -> dict:
     except (FileNotFoundError, TimeoutError, RuntimeError) as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
     # 广播：壳收到后刷新页面（保证新动作可播、播放器状态干净）
-    avatar_events.publish_raw({"type": "avatar_animations_changed", "reason": "import", "action": result["action"]})
+    avatar_events.publish_raw(
+        {"type": "avatar_animations_changed", "reason": "import", "action": result["action"]}
+    )
     return result
 
 
@@ -1212,7 +1285,9 @@ async def delete_avatar_animation(name: str) -> dict:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
-    avatar_events.publish_raw({"type": "avatar_animations_changed", "reason": "delete", "action": name})
+    avatar_events.publish_raw(
+        {"type": "avatar_animations_changed", "reason": "delete", "action": name}
+    )
     return result
 
 

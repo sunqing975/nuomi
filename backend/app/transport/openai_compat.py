@@ -18,6 +18,12 @@ from pydantic import BaseModel
 
 from app.domain.agents.seed import default_system_prompt
 from app.domain.agents.service import agent_service
+from app.domain.chat.service import (
+    PROJ_READY,
+    thread_message_repo,
+    thread_repo,
+    turn_to_message_inputs,
+)
 from app.infra.harness.chat import stream_chat, stream_openai_sse
 from app.transport.api import ensure_agent_runtime
 
@@ -83,12 +89,25 @@ async def chat_completions(body: OpenAIChatBody, request: Request) -> StreamingR
 
     async def gen() -> AsyncIterator[str]:
         ensure_agent_runtime(agent)
+
+        async def _persist_turn(turn: dict) -> None:
+            """AI 数字人壳对话（thread=desktop）同样写消息投影（M4；失败不影响对话）。"""
+            if thread_repo.get("desktop") is None:
+                thread_repo.insert("desktop", agent["agent_id"], title="")
+            if thread_message_repo.projection_status("desktop") != PROJ_READY:
+                return
+            inputs = turn_to_message_inputs(turn)
+            if inputs:
+                thread_message_repo.append("desktop", inputs)
+
         events = stream_chat(
             user_text,
             "desktop",
             agent_id=agent["agent_id"],
             name=agent["name"],
             system_prompt=system_prompt,
+            agent_config=agent.get("config_json"),
+            on_turn_complete=_persist_turn,
         )
         if body.stream:
             async for frame in stream_openai_sse(

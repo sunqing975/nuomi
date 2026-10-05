@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from collections.abc import AsyncIterator
 
@@ -21,6 +22,8 @@ from octop_harness import ChatRequest
 from octop_harness.protocols.langgraph import AgentEventType
 
 from app.infra.harness.manager import manager
+
+logger = logging.getLogger(__name__)
 
 
 def _stamp_knowledge(request_kwargs: dict, *, explicit_ids: list[str] | None) -> None:
@@ -36,9 +39,7 @@ def _stamp_knowledge(request_kwargs: dict, *, explicit_ids: list[str] | None) ->
     if not load_config().enabled:
         return
     bases = [b for b in KnowledgeRepo().list_bases() if b.enabled]
-    stamp_turn_knowledge_config(
-        request_kwargs, visible_bases=bases, explicit_ids=explicit_ids
-    )
+    stamp_turn_knowledge_config(request_kwargs, visible_bases=bases, explicit_ids=explicit_ids)
 
 
 async def stream_chat(
@@ -58,6 +59,8 @@ async def stream_chat(
     connectors: list[str] | None = None,
     model: str | None = None,
     knowledge_base_ids: list[str] | None = None,
+    agent_config: dict | None = None,
+    on_turn_complete=None,
 ) -> AsyncIterator[dict]:
     """流式对话：把 harness 事件翻译成 nuomi 标准化事件。
 
@@ -99,11 +102,19 @@ async def stream_chat(
         "model": model,
     }
     _stamp_knowledge(request_kwargs, explicit_ids=knowledge_base_ids)
+    # agents.config_json 运行时参数（max_iters/temperature/top_p/max_tokens/max_input_length）
+    # 合并进 request（对齐 Octop runtime_limits；per-turn 显式值优先）
+    if agent_config:
+        from app.infra.harness.runtime_limits import apply_agent_runtime_to_stream_request
+
+        request_kwargs = apply_agent_runtime_to_stream_request(request_kwargs, agent_config)
     request = ChatRequest(**request_kwargs)
 
     text_parts: list[str] = []
+    reasoning_parts: list[str] = []
     seen_tool_results: set[tuple] = set()
     pending_tools: dict[int, dict] = {}  # index -> {id, name, args}（聚合分块）
+    tool_results: list[dict] = []  # 本轮工具结果（name/content），供 turn 投影
     async for event in agent.stream(request):
         ev_type = event.get("type")
         kind = getattr(ev_type, "value", ev_type)
@@ -113,6 +124,7 @@ async def stream_chat(
             yield {"type": "token", "content": event["content"]}
         elif kind == AgentEventType.REASONING.value and event.get("content"):
             # 深度思考（reasoner 模型）：单独事件流，不计入正文 answer
+            reasoning_parts.append(event["content"])
             yield {"type": "reasoning", "content": event["content"]}
         elif kind == AgentEventType.TOOL_CALL_CHUNK.value:
             # 聚合工具调用分块（name 首个 chunk 携带，args 分块累积）
@@ -142,6 +154,12 @@ async def stream_chat(
                     if key in seen_tool_results:
                         break  # langgraph 会对同一工具结果重复发事件，去重
                     seen_tool_results.add(key)
+                    tool_results.append(
+                        {
+                            "name": getattr(m, "name", None) or "",
+                            "content": str(content)[:500],
+                        }
+                    )
                     yield {
                         "type": "tool_result",
                         "name": getattr(m, "name", None),
@@ -160,6 +178,28 @@ async def stream_chat(
 
     answer = "".join(text_parts).strip()
     yield {"type": "done", "answer": answer}
+    # 本轮完整消息投影（M4 messages 表）：对话结束后通知上层持久化；
+    # 回调失败不阻断对话结果（投影只是历史展示加速层，checkpointer 仍是权威）。
+    if on_turn_complete is not None:
+        try:
+            await on_turn_complete(
+                {
+                    "user": messages,
+                    "answer": answer,
+                    "reasoning": "".join(reasoning_parts).strip(),
+                    "tool_calls": [
+                        {
+                            "id": slot["id"] or f"call_{idx}",
+                            "name": slot["name"],
+                            "args": slot["args"],
+                        }
+                        for idx, slot in sorted(pending_tools.items())
+                    ],
+                    "tool_results": tool_results,
+                }
+            )
+        except Exception:
+            logger.exception("turn 消息投影写入失败（不影响对话）")
 
 
 def format_sse(event: dict) -> str:

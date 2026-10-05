@@ -78,8 +78,8 @@ SSE 事件协议（AI 数字人前端消费）：`token` / `tool_call` / `tool_r
 
 ## 路线图（v0.13 之后）
 
-- M3 Agent 生命周期：agents 表（对齐 Octop schema：agent_id/name/default_model/system_prompt/enabled/config_json/last_state...）+ 多专家实例管理
-- M4 会话通道：threads/messages 表 + checkpointer 持久化 + 历史会话
+- [x] M3 Agent 生命周期（2026-10-05 完成）：agents 表（对齐 Octop schema：agent_id/name/default_model/system_prompt/enabled/config_json/last_state...）+ 多专家实例管理（CRUD/start/stop/status + HarnessManager 单例 + 专家工作区）；**运行时参数接线（本次补全）**：agents.config_json 的 max_iters/temperature/top_p/max_tokens/max_input_length → ChatRequest 注入（`infra/harness/runtime_limits.py`，对齐 Octop runtime_limits：max_iters→recursion_limit、temperature 等→configurable[model_settings]（harness 默认 ModelSettingsMiddleware 消费）、max_input_length→configurable[max_input_tokens]；非法值过滤、per-turn 显式值优先）；PATCH /agents/{id} 支持 config_json；DELETE 级联清理专家工作区（对齐 Octop：rmtree 失败不阻断）
+- [x] M4 会话通道（2026-10-05 完成）：**threads 表落库**（thread_id/agent_id/title/last_active/created_at/pinned/model_ref，对齐 Octop ThreadRow 单用户裁剪）+ **thread_messages 投影表**（seq/message_id/role/message_json/created_at，langchain wire 格式）+ **thread_history_projection 状态表**（pending/ready）；会话列表权威从 nuomi-state.json 迁到 SQLite（幂等迁移 + 迁移后清理旧 threads 字段；state 文件只留 thread_id + agent_id）；消息权威仍在 octop checkpointer——投影 = 历史加速层（**首次读历史全量 backfill → ready，之后每轮对话增量 append**，对齐 Octop dashboard projection 语义）；chat_history 端点投影优先读表（不依赖 harness 运行时实例），pending 时 backfill；删会话级联清 threads+投影+checkpointer；openai_compat（AI 数字人壳）同样接线
 - M5 插件接入：harness 插件目录（plugin.yaml）+ 前端 zip 导入（工作区 plugins/）；旧 nuomi-avatar plugins//skills/ 资产已删（2026-10-04）；旧 service-* 概念废弃（harness 原生替代）
 - M6 技能/连接器/知识库：skills_dir 接入 + 连接器（MCP 协议）配置 + 知识库工具（调研完成，决策见上：本地 ONNX 嵌入 + OCR + 显式指定才注入；**2026-10-04 语义修正：知识库与技能/连接器同维度，不选=[]=不加载，无「默认打开」一说（default_open 列已 DROP 迁移），显式指定才注入**；实现进度 2026-10-04：嵌入服务（多源下载+fastembed 推理+就绪检查）、存储层（repo/parse/chunk/index.sqlite/service/jobs 状态机）、API 路由（knowledge_api.py：能力/模型/CRUD/文档 17 端点）、前端页（#knowledge 三区块 + 3 Modal）、检索工具 search_knowledge（tools.py）+ 引用标记协议（citations.py，`<!--octop-kb-citations:[...]-->` 沿用 Octop）+ 跨库检索（retrieve.py，k=8/6000 字符预算）+ 对话注入（default_open.py 显式指定才注入 + hint.py 中间件无库隐藏工具 + harness config/chat 接线 + ChatBody.knowledge_base_ids）+ Chat 引用展示（parseKnowledgeCitations.ts + KnowledgeCitations 组件）+ 对话框四选择器（技能/连接器/知识库/模型必选，消息必填）；技能选择器三分组（已启用的技能/内置技能/已启用的技能包，包级整包勾选=包内技能 slug 全进白名单，_available_skill_keys 补内置技能名）；知识库级联删除（delete_base 同事务清 knowledge_documents 行 + rmtree 目录）+ 库级启停（enabled 列迁移/停用库对话侧不可选/显式指定 400，对齐插件）+ 前端知识库页列表/详情双视图（点卡片进详情、返回回列表，详情内可删除库并自动回列表；loadDocs reqId 竞态保护 + loadBases 校正 stale 选中，根治删除后详情不同步/404）；pytest 24 项全过 + ruff/mypy 干净；真实环境验证：curl 显式 ids 触发 search_knowledge + 引用标记完整 + 模型引用回答，无 ids 不注入（0 次工具调用），白名单 [apple-notes+therapy-board] 200/未知技能 400，浏览器实测引用 Tag 渲染 + 知识库选择器 + 技能三分组 + 模型必选发送禁用；剩余：OCR（RapidOCR+扫描 PDF，用户叫停暂缓）**）
 - M7 AI 数字人前端：nuomi-avatar 二次开发（形象/情绪/字幕/TTS）+ 控制面板
@@ -210,3 +210,20 @@ SSE 事件协议（AI 数字人前端消费）：`token` / `tool_call` / `tool_r
 - **问题**：壳有两个窗口——数字人窗口（纯 3D 模型）+ 控制面板窗口（BrowserWindow 加载 /console/ 控制台）。用户反馈"桌面端看不到动作资产卡片"——控制面板窗口不自动刷新（Electron 缓存旧 JS bundle），浏览器强刷后能看到但桌面端看不到
 - **修复**：①主进程 `ipcMain.on('reload-control-panel')` → `controlPanel.reload()`；②数字人渲染进程收到 `avatar_animations_changed` SSE 时 `ipcRenderer.send('reload-control-panel')`——动作资产导入/删除时控制面板窗口自动跟随刷新
 - **验证**：DELETE panel_probe 端到端日志「动作资产变更 → 控制面板已刷新（动作资产变更）」
+
+## M3 Agent 生命周期补全 + M4 会话存储（2026-10-05，36 tests/ruff/mypy 全绿）
+
+- **M3 补全（原 agents 表/CRUD/启停/运行时已有，本次补两块缺口）**：
+  - **运行时参数接线**：新增 `backend/app/infra/harness/runtime_limits.py`（对齐 Octop runtime_limits.py）——agents.config_json 的 `max_iters`→ChatRequest.recursion_limit、`temperature/top_p/max_tokens`→configurable[model_settings]（harness 默认挂载 ModelSettingsMiddleware 消费）、`max_input_length`→configurable[max_input_tokens]；非法值过滤（bool/越界/非数字忽略）、per-turn 显式值优先。stream_chat 增加 `agent_config` 参数注入
+  - **PATCH 支持 config_json**：AgentPatchBody 补 `config_json: dict | None`（此前 PATCH 会静默忽略该字段）
+  - **DELETE 级联清工作区**：delete_agent 释放运行时 + 删 DB 行 + rmtree agent-workspaces/<id>（对齐 Octop manager.remove；失败不阻断）
+- **M4 会话存储（threads/messages 表 + checkpointer 持久化 + 历史会话）**：
+  - **threads 表**：thread_id/agent_id/title/last_active(ms)/created_at/pinned/model_ref（对齐 Octop ThreadRow 单用户裁剪）；会话列表权威从 nuomi-state.json 迁到 SQLite（幂等迁移 `_migrate_state_threads`：旧 threads 数组全量 INSERT OR IGNORE → 成功后清理 state 文件 threads 字段；state 文件只留 thread_id + agent_id（avatar 绑定消费））
+  - **thread_messages 投影表**：seq/message_id/role/message_json/created_at（langchain `message_to_dict` wire 格式，与 Octop projection 完全一致）；**thread_history_projection 状态表**（pending/ready）标记 backfill 状态
+  - **消息权威仍是 checkpointer**（octop memory.sqlite）；投影是历史加速层——**首次读历史全量 backfill → ready，之后每轮对话增量 append**（turn 完成回调 `on_turn_complete`：user+ai(+tool) 序列化追加，仅 ready 时写；回调失败不阻断对话）
+  - **chat_history 端点改造**：投影 ready → 直接读表分页（`_segments_from_messages` 从 wire 重建 Segment，**不再依赖 harness 运行时实例**）；pending → checkpointer 读取 + 全量 backfill + mark ready；limit/offset 分页
+  - **删会话级联**：threads 行 + 消息投影 + projection 状态 + checkpointer 历史（chat_sessions.delete）
+  - **openai_compat（AI 数字人壳 thread=desktop）同样接线** agent_config + on_turn_complete
+  - **旧库兼容**：v0.13 前遗留 threads 表（id/project_id/title/agent 空壳）→ init_db `_rebuild_legacy_threads` 检测缺 thread_id 列即 DROP 重建（符合"不背历史数据"决策）
+- **端到端实测**：真实库 32 个旧会话全部迁移成功（threads 表 31+1），state 文件清理；历史 backfill 7 条 + 投影 ready；真实对话 2 轮增量 append（7→9→12）；M3 PATCH config_json 生效 + 带参数对话正常；state 文件死字段 enabled 已清（无消费方，agent_id 保留）
+- **遗留**：format-check 基线红（项目原有 12+ 文件未 ruff format，非本次引入，未扩大范围）；前端无改动（/chat/state 返回结构兼容，sessions 新增 pinned/model_ref 字段）

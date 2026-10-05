@@ -120,6 +120,44 @@ CREATE TABLE IF NOT EXISTS knowledge_documents (
 """
 
 
+# —— 会话存储（M4；单用户裁剪 Octop ThreadRow/ThreadMessageRow）——
+# threads：会话业务对象（标题/置顶/会话级模型）；消息权威仍在 octop checkpointer，
+# thread_messages 是历史投影（对话后 append + 首次读取 backfill），对齐 Octop dashboard 语义。
+
+THREADS_DDL = """
+CREATE TABLE IF NOT EXISTS threads (
+  thread_id TEXT PRIMARY KEY,
+  agent_id TEXT NOT NULL,
+  title TEXT DEFAULT '',
+  last_active INTEGER DEFAULT 0,
+  created_at INTEGER DEFAULT 0,
+  pinned INTEGER DEFAULT 0,
+  model_ref TEXT DEFAULT ''
+);
+"""
+
+THREAD_MESSAGES_DDL = """
+CREATE TABLE IF NOT EXISTS thread_messages (
+  thread_id TEXT NOT NULL,
+  seq INTEGER NOT NULL,
+  message_id TEXT DEFAULT '',
+  role TEXT NOT NULL,
+  message_json TEXT NOT NULL,
+  created_at INTEGER DEFAULT 0,
+  PRIMARY KEY (thread_id, seq)
+);
+"""
+
+THREAD_HISTORY_PROJECTION_DDL = """
+CREATE TABLE IF NOT EXISTS thread_history_projection (
+  thread_id TEXT PRIMARY KEY,
+  status TEXT NOT NULL DEFAULT 'pending',
+  updated_at INTEGER DEFAULT 0,
+  error TEXT DEFAULT ''
+);
+"""
+
+
 def db_path() -> Path:
     """统一 SQLite 文件（单一数据根）。"""
     return settings.data_root / "nuomi.db"
@@ -147,9 +185,33 @@ def init_db() -> None:
         conn.executescript(SKILL_PACKAGES_DDL)
         conn.executescript(SKILL_PACKAGE_SKILLS_DDL)
         conn.executescript(KNOWLEDGE_DDL)
+        conn.executescript(THREADS_DDL)
+        conn.executescript(THREAD_MESSAGES_DDL)
+        conn.executescript(THREAD_HISTORY_PROJECTION_DDL)
+        _rebuild_legacy_threads(conn)
         _drop_legacy_column(conn, "agents", "default_model")  # 模型不绑专家（2026-10-04 解耦）
-        _drop_legacy_column(conn, "knowledge_bases", "default_open")  # 无默认打开一说（2026-10-04 对齐 Octop：显式指定才注入）
-        _ensure_column(conn, "knowledge_bases", "enabled", "INTEGER DEFAULT 1")  # 库级启停（对齐插件）
+        _drop_legacy_column(
+            conn, "knowledge_bases", "default_open"
+        )  # 无默认打开一说（2026-10-04 对齐 Octop：显式指定才注入）
+        _ensure_column(
+            conn, "knowledge_bases", "enabled", "INTEGER DEFAULT 1"
+        )  # 库级启停（对齐插件）
+
+
+def _rebuild_legacy_threads(conn) -> None:
+    """v0.13 前遗留 threads 表（id/project_id/title/agent，无 thread_id 列）→ 重建为新结构。
+
+    旧表是推倒重来前的空壳（项目决策「不背历史数据」）；只有列结构不符
+    （缺 thread_id）且非新表时才重建，避免误删新表数据。
+    """
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(threads)").fetchall()}
+    if "thread_id" in cols:
+        return
+    with contextlib.suppress(Exception):
+        conn.execute("DROP TABLE IF EXISTS threads")
+        conn.executescript(THREADS_DDL)
+        conn.executescript(THREAD_MESSAGES_DDL)
+        conn.executescript(THREAD_HISTORY_PROJECTION_DDL)
 
 
 def _ensure_column(conn, table: str, column: str, ddl: str) -> None:

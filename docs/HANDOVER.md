@@ -1,8 +1,9 @@
 # Nuomi 交接文档（HANDOVER）
 
-> 最后更新：2026-10-05 · 分支 main · HEAD `7abd166`
+> 最后更新：2026-10-05 · 分支 main · HEAD `d7a7c45`（M3/M4 已落地）
 > 本文件面向「下一个接手的人」：先读它，再读代码。已实现的细节以代码为准（`git show <commit>` 可查）。
 > ⚠ 2026-10-05 命名变更：API 前缀已从 `/api/pet/*` 全量改名为 `/api/avatar/*`（模型/动作/表情/预览/开关），插件 `vrm-pet`→`vrm-avatar`、`shells/myspy`→`shells/nuomi-avatar`；产品概念「桌宠」→「AI 数字人」。本文 §4 历史条目保留旧名，新链路均用新名。
+> ⚠ 2026-10-05 M4：会话列表权威已从 `nuomi-state.json` 的 `threads` 数组迁至 SQLite `threads` 表（见 §2/§4）；state 文件仅存 `thread_id`（+ `agent_id`，AI 数字人绑定消费）。
 
 ---
 
@@ -64,12 +65,12 @@ cd shells/nuomi-avatar && npm start
 环境：
 - Python：uv 管理（`.venv/bin/python`，无 pip）；Node：frontend/ 与 shells/nuomi-avatar/ 各自 npm install
 - 工作区与数据根 **同一目录 `/Users/superman/Nuomi`**（2026-10-04 起单根设计；.env 设 `NUOMI_HOME=/Users/superman/Nuomi`，**无 NUOMI_WORKSPACE**，workspace=数据根）；内含 agents/plugins/{weather, aidang, cat, hiyori}/skills + models/2D + nuomi.db + memory.sqlite + nuomi-state.json
-- 会话权威配置 `/Users/superman/Nuomi/nuomi-state.json`（nuomi.*：threads/thread_id/agent_id，2026-10-04 起迁出壳 config）；壳 `shells/nuomi-avatar/config.json` 仅存表现层偏好（ui.model/ui.model_path，后端写、壳 watch 重载，无绝对业务状态）
+- 会话权威：SQLite `threads` 表（thread_id/agent_id/title/last_active/pinned/model_ref，2026-10-05 M4 落库）+ `nuomi-state.json` 仅存 current `thread_id`（+ `agent_id`，AI 数字人绑定消费；2026-10-04 起迁出壳 config）；消息权威 = 各专家 workspace 的 memory.sqlite（octop checkpointer），`thread_messages` 表为历史投影（首次读历史 backfill → ready，之后每轮对话增量 append）；壳 `shells/nuomi-avatar/config.json` 仅存表现层偏好（ui.model/ui.model_path，后端写、壳 watch 重载，无绝对业务状态）
 - .env 在仓库根，改后必须重启 uvicorn
 
 ## 4. API 清单（全部 /api 前缀，见 app/transport/api.py）
 
-**对话/会话**：`POST /agents/{id}/chat`（SSE，octop 帧，body `{messages, thread_id, skills?, connectors?, knowledge_base_ids?, model?}`——skills: None=全量技能 / [] / [name|slug...] 白名单（含内置技能与已启用技能包内技能，非法名 400）；connectors: None=默认挂载 / [] / [name...] 只挂载；knowledge_base_ids: None/[]=本轮不注入 / [ids...]=只检索这些库（未知 id 400）；model 非法 400；消息必填 min_length=1+strip 校验 422）· `GET /agents/{id}/chat/history` · `GET /chat/state` · `POST /chat/new|switch|touch` · `DELETE /chat/threads/{tid}`（删会话+检查点历史）
+**对话/会话**：`POST /agents/{id}/chat`（SSE，octop 帧，body `{messages, thread_id, skills?, connectors?, knowledge_base_ids?, model?}`——skills: None=全量技能 / [] / [name|slug...] 白名单（含内置技能与已启用技能包内技能，非法名 400）；connectors: None=默认挂载 / [] / [name...] 只挂载；knowledge_base_ids: None/[]=本轮不注入 / [ids...]=只检索这些库（未知 id 400）；model 非法 400；消息必填 min_length=1+strip 校验 422）· `GET /agents/{id}/chat/history`（M4：thread_messages 投影 ready → 读表分页（limit/offset，不依赖 harness 运行时）；pending → checkpointer 读取 + 全量 backfill 投影 + 标记 ready；返回有序 Segment[]）· `GET /chat/state` · `POST /chat/new|switch|touch` · `DELETE /chat/threads/{tid}`（删会话：threads 行 + 消息投影 + projection 状态 + 检查点历史级联）
 
 **专家/插件**：`GET|POST /agents` · `GET|PATCH|DELETE /agents/{id}` · `POST /agents/{id}/start|stop|status` · `GET /plugins` · `POST /plugins/sync` · `POST /plugins/import`（zip）· `POST /plugins/import-git`（git 仓库）· `PATCH /plugins/{id}`（启停）· `DELETE /plugins/{id}`（模型插件 400 拒绝，由AI 数字人删除级联）。**已废除**：`GET|PUT /agents/{id}/plugins`（专家-插件绑定，2026-10-04 解耦删除）
 
@@ -143,8 +144,7 @@ OpenAI 兼容：`app/transport/openai_compat.py`（`/v1/chat/completions`，mode
 
 ## 8. 遗留事项 / 下一步
 
-- [x] **对话框大改动**（主线 #6，2026-10-04 完成）：per-turn 能力注入 + 选择器/chips/工具步骤/轨迹抽屉
-- [x] **专家-插件解耦**（2026-10-04 完成）：agent_plugins 全删，插件全局启停
+- [x] **M3 Agent 生命周期补全 + M4 会话存储（2026-10-05 完成）**：①M3——agents.config_json 运行时参数接线（`infra/harness/runtime_limits.py`：max_iters→recursion_limit、temperature/top_p/max_tokens→configurable[model_settings]、max_input_length→configurable[max_input_tokens]，对齐 Octop runtime_limits；PATCH /agents/{id} 支持 config_json；DELETE 级联清专家工作区）；②M4——threads 表（会话元数据落库，state 文件旧 threads 幂等迁移 + 清理）+ thread_messages 投影表（langchain wire 格式，首次读历史 backfill→ready，之后每轮增量 append）+ chat_history 投影优先分页读取（不再依赖 harness 运行时）；删会话级联清理；openai_compat 同样接线。36 tests / ruff / mypy 全绿，真实库 32 会话迁移 + 投影端到端验证通过
 - [ ] **知识库 OCR**（RapidOCR 本地 + 扫描 PDF，用户叫停暂缓；`ocr_enabled=false` 已占位，见知识库 capability）
 - [ ] **轨迹抽屉增强**（简版已上线）：octop 完整版含 Timeline/Inspector/MetricsBar/搜索，可后续补
 - [ ] **斜杠技能注入**（/slug）：本轮按用户拍板用「工具条选择器+chips」，octop 的 /slug 文本插入可后续加
