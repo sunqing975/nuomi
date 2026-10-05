@@ -128,11 +128,35 @@ class PluginService:
         切模型 / 新增动画零重启（工具在每次对话装配时重算）。
         工具名做 slug 防御：非 ASCII 名（如中文）改名为 tool_{n}，
         中文原名拼进 description，保证 OpenAI 兼容接口不 400。
+        同名工具去重（2026-10-05）：多个插件声明同名工具时保留最后注册的——
+        octop build_plugin_tools 不去重，同名会进两个 StructuredTool 造成调用歧义。
         """
         global_enabled = {r["plugin_id"]: bool(r["enabled"]) for r in self.list_all()}
         tools = build_plugin_tools(global_plugins=global_enabled)
         tools = tools + self._avatar_dynamic_tools(global_enabled)
+        # 同名去重：dict 键覆盖保留最后注册者（与 tool_owners() 的映射一致）
+        seen: dict[str, object] = {}
+        for t in tools:
+            seen[t.name] = t
+        tools = list(seen.values())
         return [self._sanitize_tool(t, i) for i, t in enumerate(tools)]
+
+    def tool_owners(self) -> dict[str, str]:
+        """工具名 → 来源插件 id（同名工具保留最后注册者，与 tools() 去重顺序一致）。
+
+        对话流工具帧据此附加 plugin_id，前端展示来源徽标（多插件同名工具时可辨识）。
+        注意：_sanitize_tool 会把中文工具名改成 tool_{n}，中文名场景下映射会 miss（无徽标），
+        本项目工具名均为英文（slug 化），可接受。
+        """
+        from octop_harness.plugins.registry import PluginRegistry
+
+        global_enabled = {r["plugin_id"]: bool(r["enabled"]) for r in self.list_all()}
+        owners: dict[str, str] = {}
+        for reg in PluginRegistry().all_tools():
+            if global_enabled.get(reg.plugin_id) is False:
+                continue
+            owners[reg.name] = reg.plugin_id
+        return owners
 
     def _avatar_dynamic_tools(self, global_enabled: dict) -> list:
         """AI 数字人共享插件启用时，动态构造动作/表情工具（enum 随当前模型/动画实时变化）。"""

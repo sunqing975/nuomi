@@ -3,8 +3,9 @@ import {
   Avatar, Button, Card, Empty, Input, List, Modal, Popconfirm, Space, Switch, Tag,
   Typography, Upload, message,
 } from 'antd';
-import { CloudUploadOutlined, DeleteOutlined, GithubOutlined, ReloadOutlined } from '@ant-design/icons';
+import { CloudUploadOutlined, DeleteOutlined, GithubOutlined, ReloadOutlined, ShopOutlined } from '@ant-design/icons';
 import { del, get, post, patch, upload, type Plugin } from '../api';
+import MarketPage from './Market';
 
 const AVATAR_COLORS = ['#f59e0b', '#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
 
@@ -13,6 +14,7 @@ export default function PluginsPage() {
   const [loading, setLoading] = useState(false);
   const [gitOpen, setGitOpen] = useState(false);
   const [gitUrl, setGitUrl] = useState('');
+  const [marketOpen, setMarketOpen] = useState(false);
   const [gitLoading, setGitLoading] = useState(false);
 
   const load = useCallback(async () => {
@@ -120,6 +122,7 @@ export default function PluginsPage() {
   return (
     <>
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 16 }}>
+        <Button type="primary" icon={<ShopOutlined />} onClick={() => setMarketOpen(true)}>插件市场</Button>
         <Button icon={<GithubOutlined />} onClick={() => setGitOpen(true)}>从 Git 导入</Button>
         <Upload
           accept=".zip"
@@ -133,6 +136,15 @@ export default function PluginsPage() {
         </Upload>
         <Button icon={<ReloadOutlined />} onClick={sync} loading={loading}>重新扫描</Button>
       </div>
+      <Modal
+        title="插件市场"
+        open={marketOpen}
+        footer={null}
+        width={880}
+        onCancel={() => setMarketOpen(false)}
+      >
+        <MarketPage onInstalled={load} />
+      </Modal>
       <Modal
         title="从 Git 仓库导入插件"
         open={gitOpen}

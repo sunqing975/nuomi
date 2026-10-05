@@ -1,0 +1,33 @@
+{
+  "name": "nuomi 内置插件市场",
+  "homepage": "",
+  "plugins": [
+    {
+      "id": "tts",
+      "name": "AI 数字人语音播报",
+      "version": "1.0.0",
+      "author": "nuomi",
+      "description": "对话回复自动语音播报：OpenAI 兼容 TTS API（豆包 / OpenAI / 任意兼容服务），配置即用，数据经你的 API 服务合成。",
+      "kind": "tool",
+      "tags": [
+        "语音",
+        "数字人"
+      ],
+      "download": "tts.zip",
+      "installed_note": "安装后请在「设置 → AI 数字人语音播报」配置 API 并启用"
+    },
+    {
+      "id": "weather-octop",
+      "name": "天气查询",
+      "version": "1.0.0",
+      "author": "octop",
+      "kind": "tool",
+      "description": "octop 生态插件兼容性验证：含 ui/ 目录与 icon.svg",
+      "tags": [
+        "octop",
+        "示例"
+      ],
+      "download": "weather-octop.zip"
+    }
+  ]
+}

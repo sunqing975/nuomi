@@ -558,6 +558,14 @@ async function subscribePetEvents() {
                     playAvatarActionPayload(ev)
                 } else if (ev.type === 'avatar_status') {
                     playStatusExpression(ev.status)
+                } else if (ev.type === 'tts') {
+                    // 对话自动播报：播放后端合成的语音（市场 TTS 插件广播）
+                    if (!ev.audio_url) continue
+                    try {
+                        const audio = new Audio(base + ev.audio_url)
+                        audio.play().catch(e => log('语音播报播放失败: ' + e.message, 'warn'))
+                        log('语音播报: ' + ev.audio_url, 'info')
+                    } catch (e) { log('语音播报失败: ' + e.message, 'warn') }
                 } else if (ev.type === 'avatar_animations_changed') {
                     // 动作资产导入/删除（后端广播）：刷新页面让新动作可播、注销已删动作、播放器状态干净；
                     // 同时通知主进程刷新控制面板窗口（桌面端控制台跟随更新）

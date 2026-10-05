@@ -8,7 +8,7 @@ import {
 } from '@ant-design/icons';
 import {
   del, get, post, chatStream, knowledgeApi,
-  type Agent, type ChatEvent, type ChatMessage, type ConnectorServer, type KnowledgeBase, type Segment, type Skill, type SkillPackage,
+  type Agent, type ChatEvent, type ChatMessage, type ConnectorServer, type KnowledgeBase, type Plugin, type Segment, type Skill, type SkillPackage,
 } from '../api';
 import { parseKnowledgeCitations, type KnowledgeCitation } from '../utils/parseKnowledgeCitations';
 
@@ -90,8 +90,106 @@ function MarkdownText({ raw, placeholder }: { raw?: string; placeholder?: string
 }
 
 /** 单片段渲染：思考折叠块 / 工具调用卡片 / 工具结果卡片（按对话真实顺序穿插） */
+/** 插件聊天面板（第三层插件能力，对齐 octop ui/ 协议）：
+ *  manifest.json 声明 {"ui": {"tool": "工具名", "render": "index.js"}}，
+ *  index.js ES module export default { render(ctx) => HTML }。
+ *  工具结果命中声明 → 动态加载 render 渲染成聊天卡片；未命中保持文本折叠。
+ */
+interface PluginUiTarget { pluginId: string; render: string; }
+
+const pluginUiRegistry = new Map<string, PluginUiTarget>();
+let pluginUiLoaded = false;
+
+async function loadPluginUiRegistry() {
+  if (pluginUiLoaded) return;
+  pluginUiLoaded = true;
+  try {
+    const plugins = await get<Plugin[]>('/plugins');
+    for (const p of plugins) {
+      if (!p.enabled) continue;
+      let manifest: { ui?: { tool?: string; render?: string } };
+      try {
+        manifest = await get(`/plugins/${p.plugin_id}/ui-manifest`);
+      } catch {
+        continue; // 未声明聊天面板（404）
+      }
+      if (manifest?.ui?.tool && manifest.ui.render) {
+        pluginUiRegistry.set(manifest.ui.tool, { pluginId: p.plugin_id, render: manifest.ui.render });
+      }
+    }
+  } catch {
+    // 面板加载失败不影响对话
+  }
+}
+
+/** 工具结果卡片容器样式：对齐 octop builtin 卡片（白底/圆角/边框/阴影，硬编码保证可见） */
+const toolCardStyle: React.CSSProperties = {
+  marginTop: 4,
+  padding: '12px 14px',
+  borderRadius: 10,
+  border: '1px solid #d0d5dd',
+  background: '#ffffff',
+  color: '#1f2937',
+  maxWidth: 480,
+  boxShadow: '0 1px 2px rgba(16, 24, 40, 0.06)',
+  fontSize: 13,
+};
+
+/** 工具结果卡片：动态加载插件 render 模块，调 render(ctx) 产出 HTML 渲染
+ *  ctx: { result, args, data（解析后的结构化输出）, textFallback } —— 对齐 octop 渲染协议 */
+function PluginToolCard({ toolName, result, args }: { toolName: string; result: string; args?: string }) {
+  const [html, setHtml] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      let target = pluginUiRegistry.get(toolName);
+      if (!target) {
+        await loadPluginUiRegistry(); // 兜底：registry 未就绪时补一次
+        target = pluginUiRegistry.get(toolName);
+      }
+      if (!target) { setFailed(true); return; }
+      try {
+        // 运行时绝对 URL 动态加载（@vite-ignore：非构建期模块）
+        const mod = await import(/* @vite-ignore */ `/api/plugins/${target.pluginId}/ui/${target.render}`);
+        const fn = mod?.default?.render;
+        // 尝试解析结构化输出传给 renderer（对齐 octop：data / textFallback 进 ctx）
+        let data: unknown = null;
+        try { data = JSON.parse(result); } catch { /* 非 JSON 文本 */ }
+        const ctx = { result, args, data, textFallback: result };
+        const out = typeof fn === 'function' ? String(fn(ctx) ?? '') : '';
+        if (cancelled) return;
+        // 最小防护：移除 script 标签（插件为本地自装可信代码，但结果可能来自外部数据）
+        setHtml(out.replace(/<\s*script[\s\S]*?<\s*\/\s*script\s*>/gi, ''));
+      } catch {
+        if (!cancelled) setFailed(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [toolName, result, args]);
+
+  if (failed) {
+    // 兜底：渲染失败/未声明面板时保留卡片样式框 + 原始结果文本（React 文本节点自动转义）
+    return <div style={toolCardStyle}>{result}</div>;
+  }
+  if (html === null) {
+    return <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>加载插件卡片…</div>;
+  }
+  if (!html.trim()) {
+    // render 返回空：同样兜底为原始结果文本
+    return <div style={toolCardStyle}>{result}</div>;
+  }
+  return (
+    <div style={toolCardStyle} dangerouslySetInnerHTML={{ __html: html }} />
+  );
+}
+
 function SegmentView({ seg }: { seg: Segment }) {
-  const [open, setOpen] = useState(false);
+  const isTool = seg.type === 'tool_call' || seg.type === 'tool_result';
+  const hasCard = seg.type === 'tool_result' && pluginUiRegistry.has(seg.name || '');
+  // 有聊天卡片的工具结果默认展开（卡片是醒目结果，不需先点折叠）
+  const [open, setOpen] = useState(isTool && hasCard);
   if (seg.type === 'reasoning') {
     return (
       <div style={{ marginBottom: 6, fontSize: 12, color: '#8c8c8c' }}>
@@ -112,6 +210,7 @@ function SegmentView({ seg }: { seg: Segment }) {
   if (seg.type === 'tool_call' || seg.type === 'tool_result') {
     const isCall = seg.type === 'tool_call';
     const hasDetail = isCall ? !!(seg.args && seg.args !== '{}') : !!seg.content;
+    const hasCard = seg.type === 'tool_result' && pluginUiRegistry.has(seg.name || '');
     return (
       <div style={{
         marginBottom: 6, fontSize: 12, padding: '4px 8px', borderRadius: 6, maxWidth: 520,
@@ -120,10 +219,15 @@ function SegmentView({ seg }: { seg: Segment }) {
       }}>
         <a onClick={() => setOpen(v => !v)} style={{ color: isCall ? '#1677ff' : '#52c41a', fontWeight: 500, cursor: 'pointer' }}>
           {open ? '▾' : '▸'} {isCall ? '⚙ 调用' : '✓ 结果'} {seg.name || '(工具)'}
+          {seg.plugin_id && (
+            <Tag style={{ fontSize: 10, marginLeft: 6, marginRight: 0 }}>{seg.plugin_id}</Tag>
+          )}
         </a>
         {open && hasDetail && (
           <div style={{ color: '#6b7280', marginTop: 2, whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: isCall ? 80 : 120, overflow: 'auto' }}>
-            {isCall ? seg.args : (seg.name === 'search_knowledge' ? <KnowledgeCitations raw={seg.content} /> : seg.content)}
+            {hasCard
+              ? <PluginToolCard toolName={seg.name || ''} result={seg.content} args={seg.args} />
+              : (isCall ? seg.args : (seg.name === 'search_knowledge' ? <KnowledgeCitations raw={seg.content} /> : seg.content))}
           </div>
         )}
       </div>
@@ -338,6 +442,9 @@ export default function ChatPage() {
 
   useEffect(() => { loadAgents(); }, [loadAgents]);
 
+  // 插件聊天面板注册表（工具结果命中 ui/manifest 声明的渲染成卡片）
+  useEffect(() => { loadPluginUiRegistry(); }, []);
+
   // 能力清单（已启用技能 + 内置技能 + 技能包 + 连接器 + 模型 + 知识库），对话框里按 per-turn 选择
   useEffect(() => {
     Promise.all([
@@ -526,10 +633,10 @@ export default function ChatPage() {
         } else if (e.type === 'reasoning' && e.content) {
           pushSeg({ type: 'reasoning', content: e.content });
         } else if (e.type === 'tool_call') {
-          segs.push({ type: 'tool_call', name: e.name, args: e.content });
+          segs.push({ type: 'tool_call', name: e.name, args: e.content, plugin_id: e.plugin_id });
           setStreamSegments([...segs]);
         } else if (e.type === 'tool_result') {
-          segs.push({ type: 'tool_result', name: e.name, content: e.detail });
+          segs.push({ type: 'tool_result', name: e.name, content: e.detail, plugin_id: e.plugin_id });
           setStreamSegments([...segs]);
         } else if (e.type === 'done') {
           // 去掉末尾空白段；至少保留一个 text 段（哪怕空，显示占位）

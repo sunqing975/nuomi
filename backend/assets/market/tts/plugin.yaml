@@ -1,0 +1,39 @@
+id: tts
+version: 1.0.0
+name: AI 数字人语音播报
+kind: tool
+description: 对话回复自动语音播报（OpenAI 兼容 TTS API，如豆包/OpenAI/任意兼容服务），配置 API 即用；安装后在「设置」出现配置页
+entry: main.py
+settings:
+  - key: enabled
+    label: 启用语音播报
+    type: boolean
+    default: false
+  - key: auto_speak
+    label: 自动播报完整回复
+    type: boolean
+    default: true
+    hint: 对话结束后自动朗读完整回复
+  - key: api_url
+    label: TTS API 地址
+    type: text
+    placeholder: https://api.volces.com/api/v3/audio/speech
+    hint: OpenAI 兼容 /audio/speech 接口（豆包 / OpenAI / 任意兼容服务）
+  - key: api_key
+    label: API Key
+    type: secret
+    placeholder: sk-...
+  - key: model
+    label: 模型名
+    type: text
+    default: doubao-tts
+  - key: voice
+    label: 音色
+    type: text
+    default: zh_female_...
+    hint: 各服务音色 ID 不同，见服务商文档
+  - key: sample_rate
+    label: 采样率
+    type: select
+    options: ["24000", "32000", "48000"]
+    default: "24000"

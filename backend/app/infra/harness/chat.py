@@ -21,6 +21,7 @@ from collections.abc import AsyncIterator
 from octop_harness import ChatRequest
 from octop_harness.protocols.langgraph import AgentEventType
 
+from app.infra.events import Events, event_bus
 from app.infra.harness.manager import manager
 
 logger = logging.getLogger(__name__)
@@ -101,6 +102,8 @@ async def stream_chat(
         "mcp_use_default": mcp_use_default,
         "model": model,
     }
+    # 事件广播：对话开始（订阅者如会话日志在插件侧处理；异常由事件总线隔离）
+    event_bus.emit(Events.conversation_started, thread_id=thread_id, agent_id=agent_id)
     _stamp_knowledge(request_kwargs, explicit_ids=knowledge_base_ids)
     # agents.config_json 运行时参数（max_iters/temperature/top_p/max_tokens/max_input_length）
     # 合并进 request（对齐 Octop runtime_limits；per-turn 显式值优先）
@@ -180,6 +183,9 @@ async def stream_chat(
 
     answer = "".join(text_parts).strip()
     yield {"type": "done", "answer": answer}
+    # 事件广播：对话完成（订阅者如 TTS 播报 / 记忆归档 / 观测在插件侧处理，
+    # 对话流不写任何业务逻辑；订阅者异常由事件总线隔离，不阻断对话）。
+    event_bus.emit(Events.conversation_completed, thread_id=thread_id, answer=answer, agent_id=agent_id)
     # 本轮完整消息投影（M4 messages 表）：对话结束后通知上层持久化；
     # 回调失败不阻断对话结果（投影只是历史展示加速层，checkpointer 仍是权威）。
     if on_turn_complete is not None:
@@ -296,6 +302,7 @@ async def stream_octop_sse(
                     "id": ev.get("id") or f"call_{uuid.uuid4().hex[:8]}",
                     "name": ev.get("name", ""),
                     "args": ev.get("args") or "",
+                    "plugin_id": ev.get("plugin_id"),
                     "index": 0,
                     "node": "model",
                     "thread_id": thread_id,
@@ -307,7 +314,12 @@ async def stream_octop_sse(
                     "type": "tool_result",
                     "node": "tools",
                     "messages": [
-                        {"type": "tool", "name": ev.get("name"), "content": ev.get("content", "")}
+                        {
+                            "type": "tool",
+                            "name": ev.get("name"),
+                            "content": ev.get("content", ""),
+                            "plugin_id": ev.get("plugin_id"),
+                        }
                     ],
                     "thread_id": thread_id,
                 }
@@ -320,6 +332,14 @@ async def stream_octop_sse(
                         k: v for k, v in ev.items() if k in ("input_tokens", "output_tokens")
                     },
                     "node": "model",
+                    "thread_id": thread_id,
+                }
+            )
+        elif t == "tts":
+            yield format_sse(
+                {
+                    "type": "tts",
+                    "audio_url": ev.get("audio_url", ""),
                     "thread_id": thread_id,
                 }
             )

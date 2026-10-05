@@ -12,9 +12,10 @@ from __future__ import annotations
 
 import json
 import re
+import uuid
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 
 from app.config import settings
@@ -253,14 +254,28 @@ def _resolve_avatar_action(tool_name: str, args: str = "") -> dict | None:
     return {"motion": None, "expressions": [expression], "label": _expression_label(expression)}
 
 
+# 工具来源映射（name→plugin_id，每次对话装配时刷新；同名工具去重后与 tools() 一致）
+_TOOL_OWNERS: dict[str, str] = {}
+
+
 async def _publish_actions(events):
     """转发内部事件流，并把工具调用（动作/表情）广播给AI 数字人壳。"""
     async for ev in events:
         if ev.get("type") == "tool_call" and ev.get("name"):
+            owner = _TOOL_OWNERS.get(ev["name"])
+            if owner:
+                ev["plugin_id"] = owner  # 前端展示来源徽标（多插件同名工具可辨识）
             payload = _resolve_avatar_action(ev["name"], ev.get("args") or "")
             if payload:
                 avatar_events.publish(payload)
-                avatar_events.publish_status("working")
+            # 任何工具调用都广播"干活中"（M8 工具执行可视化，不限于动作工具）
+            avatar_events.publish_status("working")
+        elif ev.get("type") == "tool_result":
+            owner = _TOOL_OWNERS.get(ev.get("name") or "")
+            if owner:
+                ev["plugin_id"] = owner
+            # 工具执行完成 → 恢复默认表情（连续工具会有 working→idle 抖动，可接受）
+            avatar_events.publish_status("idle")
         yield ev
 
 
@@ -401,6 +416,8 @@ async def chat(agent_id: str, body: ChatBody, request: Request) -> StreamingResp
     ensure_agent_runtime(agent_row)
 
     async def gen():
+        global _TOOL_OWNERS
+        _TOOL_OWNERS = plugin_service.tool_owners()  # 每次对话刷新工具来源映射（插件启停即生效）
         tools = plugin_service.tools()
         # AI 数字人插件启用时，自动拼入身体使用说明（不污染专家人设）
         from app.domain.avatar.service import load_avatar_instructions
@@ -609,6 +626,45 @@ async def list_plugins() -> list[dict]:
     return plugin_service.list_all()
 
 
+@router.get("/plugins/{plugin_id}/ui-manifest")
+async def plugin_ui_manifest(plugin_id: str) -> dict:
+    """插件聊天面板声明：ui/manifest.json（tool→render 映射，octop ui/ 协议兼容）。
+
+    未声明面板（无 ui/manifest.json）返回 404，前端据此跳过文本折叠以外的渲染。
+    """
+    from pathlib import Path
+
+    from app.infra.plugins.market import plugin_dir
+
+    m = plugin_dir(plugin_id) / "ui" / "manifest.json"
+    if not m.is_file():
+        raise HTTPException(status_code=404, detail="插件未声明聊天面板（无 ui/manifest.json）")
+    try:
+        return json.loads(m.read_text(encoding="utf-8"))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="ui/manifest.json 不是合法 JSON")
+
+
+@router.get("/plugins/{plugin_id}/ui/{file_name}")
+async def plugin_ui_file(plugin_id: str, file_name: str) -> FileResponse:
+    """插件聊天面板静态文件：serve 插件 ui/ 目录内文件（白名单防路径穿越）。"""
+    from app.infra.plugins.market import plugin_dir
+
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", file_name):
+        raise HTTPException(status_code=400, detail="非法 ui 文件路径")
+    f = plugin_dir(plugin_id) / "ui" / file_name
+    if not f.is_file():
+        raise HTTPException(status_code=404, detail="ui 文件不存在")
+    media = {
+        ".js": "text/javascript; charset=utf-8",
+        ".json": "application/json",
+        ".html": "text/html; charset=utf-8",
+        ".css": "text/css; charset=utf-8",
+        ".svg": "image/svg+xml",
+    }.get(f.suffix.lower(), "application/octet-stream")
+    return FileResponse(f, media_type=media)
+
+
 @router.post("/plugins/sync")
 async def sync_plugins() -> list[dict]:
     """重新扫描工作区 plugins/ 并加载（新插件默认启用）。"""
@@ -672,6 +728,79 @@ async def delete_plugin(plugin_id: str) -> dict:
         raise HTTPException(status_code=404, detail="插件不存在")
     manager.close()  # 释放全部实例：下次对话重建，不再携带被删插件工具
     return {"ok": True}
+
+
+# ---------- 插件市场（内置 registry + 插件配置读写） ----------
+
+_UUID_RE = re.compile(r"^[0-9a-f]{32}$")  # TTS 临时音频文件名（uuid4().hex）
+
+
+@router.get("/plugins/market")
+async def market_plugins() -> dict:
+    """市场清单 + 已安装状态。"""
+    from app.infra.plugins.market import list_market
+
+    return list_market()
+
+
+class MarketInstallBody(BaseModel):
+    plugin_id: str = Field(..., min_length=1, description="市场插件 id")
+
+
+@router.post("/plugins/market/install")
+async def install_market_plugin(body: MarketInstallBody) -> dict:
+    """从内置市场安装插件（zip → 工作区 plugins/，默认启用）。"""
+    from app.infra.plugins.market import install as market_install
+
+    try:
+        plugin = market_install(body.plugin_id.strip())
+    except (ValueError, FileNotFoundError) as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    manager.close()
+    return {"ok": True, "plugin": plugin}
+
+
+@router.get("/plugins/{plugin_id}/settings")
+async def get_plugin_settings(plugin_id: str) -> dict:
+    """读插件配置（settings 声明 + 已存值；secret 脱敏展示）。"""
+    from app.infra.plugins.market import get_config
+
+    try:
+        return get_config(plugin_id)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+
+class PluginSettingsBody(BaseModel):
+    values: dict = Field(default_factory=dict)
+
+
+@router.put("/plugins/{plugin_id}/settings")
+async def put_plugin_settings(plugin_id: str, body: PluginSettingsBody) -> dict:
+    """保存插件配置（类型校验；secret 留空/脱敏串复用旧值）。"""
+    from app.infra.plugins.market import save_config
+
+    try:
+        return save_config(plugin_id, body.values or {})
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.get("/plugins/tts/audio/{name}")
+async def tts_audio(name: str) -> FileResponse:
+    """TTS 合成音频临时文件（uuid 白名单，防路径穿越）。"""
+    from app.config import settings as app_settings
+    from fastapi.responses import FileResponse
+
+    if not _UUID_RE.match(name):
+        raise HTTPException(status_code=400, detail="音频名不合法")
+    p = app_settings.workspace_path / "tmp" / "tts" / f"{name}.mp3"
+    if not p.is_file():
+        raise HTTPException(status_code=404, detail="音频不存在或已过期")
+    return FileResponse(p, media_type="audio/mpeg", filename=f"{name}.mp3")
+
 
 
 # ---------- 技能（能力域：对齐 Octop 技能概念） ----------

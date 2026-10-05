@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import {
   Button, Card, Checkbox, Form, Input, Modal, Select, Space, Switch, Table, Tabs, Tag, Typography, message,
 } from 'antd';
@@ -6,7 +6,7 @@ import {
   PlusOutlined, SaveOutlined, DeleteOutlined, EyeOutlined, EyeInvisibleOutlined, ApiOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons';
-import { get, post, put, type Provider } from '../api';
+import { get, post, put, type Provider, type Plugin } from '../api';
 
 interface EnvRow {
   key: string;
@@ -365,9 +365,10 @@ function LangfuseTab() {
   const test = async () => {
     const values = await form.validateFields(['host', 'public_key', 'secret_key']).catch(() => null);
     if (!values) return;
-    const host = String(values.host || '').trim();
-    const public_key = String(values.public_key || '').trim();
-    const secret_key = String(values.secret_key || '').trim();
+    // 留空 = 保持原值：复用已保存配置（secret 为脱敏串，后端识别 *** 后复用已存值）
+    const host = String(values.host || cfg?.host || '').trim();
+    const public_key = String(values.public_key || cfg?.public_key || '').trim();
+    const secret_key = String(values.secret_key || cfg?.secret_key || '').trim();
     if (!host || !public_key || !secret_key) {
       message.warning('填 Host / Public Key / Secret Key 后测试');
       return;
@@ -445,17 +446,143 @@ function LangfuseTab() {
   );
 }
 
+/** 插件动态配置页：schema 来自插件 plugin.yaml settings 段（market 后端读取），按类型渲染表单。 */
+function PluginConfigTab({ pluginId, pluginName }: { pluginId: string; pluginName: string }) {
+  const [form] = Form.useForm();
+  const [schema, setSchema] = useState<Array<Record<string, unknown>>>([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const cfg = await get<Record<string, unknown>>(`/plugins/${pluginId}/settings`);
+      const fields = (cfg?.__schema as Array<Record<string, unknown>>) || [];
+      setSchema(fields);
+      const init: Record<string, unknown> = {};
+      for (const f of fields) {
+        const key = String(f.key);
+        init[key] = cfg?.[key] ?? f.default ?? (f.type === 'boolean' ? false : '');
+      }
+      form.setFieldsValue(init);
+    } catch (e) {
+      message.error(`加载插件配置失败：${(e as Error).message}`);
+    } finally {
+      setLoading(false);
+    }
+  }, [pluginId, form]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const save = async () => {
+    const values = await form.validateFields().catch(() => null);
+    if (!values) return;
+    setSaving(true);
+    try {
+      await put(`/plugins/${pluginId}/settings`, { values });
+      message.success(`「${pluginName}」配置已保存`);
+      load();
+    } catch (e) {
+      message.error(`保存失败：${(e as Error).message}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <Form form={form} layout="vertical" style={{ maxWidth: 520 }} disabled={loading}>
+        {schema.map((f) => {
+          const key = String(f.key);
+          const label = String(f.label || key);
+          const hint = f.hint ? String(f.hint) : undefined;
+          const t = String(f.type);
+          let control: ReactNode;
+          if (t === 'boolean') {
+            control = <Switch />;
+          } else if (t === 'select') {
+            const options = Array.isArray(f.options) ? f.options : [];
+            control = (
+              <Select
+                options={options.map((o) => ({ value: String(o), label: String(o) }))}
+                placeholder={f.placeholder ? String(f.placeholder) : undefined}
+              />
+            );
+          } else if (t === 'secret') {
+            control = (
+              <Input.Password
+                placeholder="留空保持原值"
+                autoComplete="off"
+              />
+            );
+          } else {
+            control = <Input placeholder={f.placeholder ? String(f.placeholder) : undefined} />;
+          }
+          return (
+            <Form.Item
+              key={key}
+              name={key}
+              label={label}
+              extra={hint}
+              valuePropName={t === 'boolean' ? 'checked' : 'value'}
+            >
+              {control}
+            </Form.Item>
+          );
+        })}
+      </Form>
+      <Space style={{ marginTop: 8 }}>
+        <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={save}>
+          保存配置
+        </Button>
+      </Space>
+    </>
+  );
+}
+
 export default function SettingsPage() {
+  const [pluginTabs, setPluginTabs] = useState<Array<{ id: string; name: string }>>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const rows = await get<Array<Plugin>>('/plugins');
+        const found: Array<{ id: string; name: string }> = [];
+        for (const p of rows) {
+          // 仅渲染启用中的插件配置 tab：禁用后对应前端配置页销毁
+          if (!p.enabled) continue;
+          try {
+            const cfg = await get<Record<string, unknown>>(`/plugins/${p.plugin_id}/settings`);
+            if (Array.isArray(cfg?.__schema) && (cfg.__schema as unknown[]).length) {
+              found.push({ id: p.plugin_id, name: p.name });
+            }
+          } catch {
+            // 无配置页声明的插件（404/空 schema）跳过
+          }
+        }
+        if (!cancelled) setPluginTabs(found);
+      } catch {
+        // 插件列表加载失败不影响设置页其它 tab
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const items = [
+    { key: 'models', label: '大模型', children: <ProvidersTab /> },
+    { key: 'env', label: '环境变量', children: <EnvTab /> },
+    { key: 'langfuse', label: 'Langfuse', children: <LangfuseTab /> },
+    ...pluginTabs.map((p) => ({
+      key: `plugin_${p.id}`,
+      label: p.name,
+      children: <PluginConfigTab pluginId={p.id} pluginName={p.name} />,
+    })),
+  ];
+
   return (
     <Card size="small" title={<b style={{ fontSize: 14 }}>设置</b>}>
-      <Tabs
-        defaultActiveKey="models"
-        items={[
-          { key: 'models', label: '大模型', children: <ProvidersTab /> },
-          { key: 'env', label: '环境变量', children: <EnvTab /> },
-          { key: 'langfuse', label: 'Langfuse', children: <LangfuseTab /> },
-        ]}
-      />
+      <Tabs defaultActiveKey="models" items={items} />
     </Card>
   );
 }

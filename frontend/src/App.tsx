@@ -20,7 +20,7 @@ const { Sider, Content, Header } = Layout;
 const NAV = [
   { key: 'chat', icon: <MessageOutlined />, label: '对话', title: '对话' },
   { key: 'experts', icon: <RobotOutlined />, label: '专家', title: '专家' },
-  { key: 'plugins', icon: <ApiOutlined />, label: '插件', title: '插件' },
+  { key: 'plugins', icon: <ApiOutlined />, label: '插件', title: '插件（市场 / 已安装管理）' },
   { key: 'skills', icon: <ReadOutlined />, label: '技能', title: '技能' },
   { key: 'connectors', icon: <GlobalOutlined />, label: '连接器', title: '连接器（MCP 协议）' },
   { key: 'knowledge', icon: <BookOutlined />, label: '知识库', title: '知识库 / 文档检索' },

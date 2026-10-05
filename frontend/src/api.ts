@@ -164,12 +164,15 @@ export interface ChatEvent {
   content?: string;
   name?: string;
   detail?: string;
+  /** 工具来源插件 id（后端 _publish_actions 附加，同名工具可辨识） */
+  plugin_id?: string;
 }
 
 export interface ToolEvent {
   kind: 'tool_call' | 'tool_result';
   name?: string;
   detail?: string;
+  plugin_id?: string;
 }
 
 /** 有序片段：一次对话按真实时间顺序穿插（思考→调工具→看结果→正文） */
@@ -178,6 +181,7 @@ export interface Segment {
   content?: string;
   name?: string;
   args?: string;
+  plugin_id?: string;
 }
 
 export interface ChatMessage {
@@ -320,17 +324,18 @@ export async function chatStream(
           content?: string;
           name?: string;
           args?: string;
-          messages?: { name?: string; content?: string }[];
+          plugin_id?: string;
+          messages?: { name?: string; content?: string; plugin_id?: string }[];
         };
         if (ev.type === 'token' && ev.content) {
           onEvent({ type: 'token', content: ev.content });
         } else if (ev.type === 'reasoning' && ev.content) {
           onEvent({ type: 'reasoning', content: ev.content });
         } else if (ev.type === 'tool_call_chunk' && ev.name) {
-          onEvent({ type: 'tool_call', name: ev.name, content: ev.args });
+          onEvent({ type: 'tool_call', name: ev.name, content: ev.args, plugin_id: ev.plugin_id });
         } else if (ev.type === 'tool_result') {
           const m = ev.messages?.[0];
-          onEvent({ type: 'tool_result', name: m?.name, detail: m?.content });
+          onEvent({ type: 'tool_result', name: m?.name, detail: m?.content, plugin_id: m?.plugin_id });
         } else if (ev.type === 'done') {
           onEvent({ type: 'done' });
         }
