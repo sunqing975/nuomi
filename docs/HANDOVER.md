@@ -147,6 +147,14 @@ OpenAI 兼容：`app/transport/openai_compat.py`（`/v1/chat/completions`，mode
 ## 8. 遗留事项 / 下一步
 
 - [x] **M3 Agent 生命周期补全 + M4 会话存储（2026-10-05 完成）**：①M3——agents.config_json 运行时参数接线（`infra/harness/runtime_limits.py`：max_iters→recursion_limit、temperature/top_p/max_tokens→configurable[model_settings]、max_input_length→configurable[max_input_tokens]，对齐 Octop runtime_limits；PATCH /agents/{id} 支持 config_json；DELETE 级联清专家工作区）；②M4——threads 表（会话元数据落库，state 文件旧 threads 幂等迁移 + 清理）+ thread_messages 投影表（langchain wire 格式，首次读历史 backfill→ready，之后每轮增量 append）+ chat_history 投影优先分页读取（不再依赖 harness 运行时）；删会话级联清理；openai_compat 同样接线。36 tests / ruff / mypy 全绿，真实库 32 会话迁移 + 投影端到端验证通过
+- [x] **Langfuse 轨迹可观测性（2026-10-05 完成）**：`pip install langfuse`（4.16.0，venv 无 pip 先 ensurepip）；
+  配置存储 `{workspace}/langfuse.json`（`app/infra/harness/langfuse_store.py`，secret 明文存仓库外、GET 脱敏，对齐 providers.json 模式）；
+  API `GET/PUT /api/settings/langfuse` + `POST /api/settings/langfuse/test`（SDK auth_check 校验凭据，脱敏串回写保持原值）；
+  接线：HarnessManager 增 set_langfuse 热更新（对齐 octop set_langfuse，同步到全部已建 agent）+ get_agent 挂 callbacks，
+  chat.py 每轮 `manager.enrich_request`（metadata 注入 langfuse_user_id/session_id/agent_id）+ 结束 flush；lifespan 启动时按配置文件初始化；
+  前端设置页新增「Langfuse」tab（开关/Host/Public Key/Secret Key/测试连接/保存配置）；
+  测试 `tests/test_langfuse_api.py` 10 例（默认空/必填校验/落盘脱敏/脱敏保持原值/凭据校验 mock 不真连网），全量 46 passed，ruff/mypy 干净；
+  curl 实测：GET 默认、PUT 400 校验、test 连接拒绝 400、保存后 GET 脱敏；真实对话 16 帧 SSE 正常（未配置时全链路零影响）
 - [ ] **知识库 OCR**（RapidOCR 本地 + 扫描 PDF，用户叫停暂缓；`ocr_enabled=false` 已占位，见知识库 capability）
 - [x] **轨迹抽屉增强 → 已废弃**（2026-10-05 用户拍板）：简版抽屉（工具步骤折叠+时间线）已上线够用，不再做 octop 完整版 Timeline/Inspector/MetricsBar/搜索；**轨迹可观测性改走 Langfuse**（octop_harness 已带原生封装 `observability/langfuse.py`，待办：pip install langfuse + 配 key 即可启用）
 - [ ] **斜杠技能注入**（/slug）：本轮按用户拍板用「工具条选择器+chips」，octop 的 /slug 文本插入可后续加

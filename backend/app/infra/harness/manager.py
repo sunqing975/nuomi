@@ -13,7 +13,8 @@ import logging
 from contextlib import suppress
 from typing import TYPE_CHECKING
 
-from octop_harness import HarnessAgent
+from octop_harness import ChatRequest, HarnessAgent
+from octop_harness.observability.langfuse import LangfuseConfig, LangfuseTracer
 
 from app.config import settings
 from app.infra.harness.config import build_agent_config
@@ -32,6 +33,8 @@ class HarnessManager:
         # 首次构造时的工作区目录：缓存命中时据此发现调用方参数漂移
         # （历史上 history 端点漏传 workspace_dir，把实例建到全局根导致历史读空）。
         self._workspaces: dict[str, Path] = {}
+        # Langfuse 轨迹（观测）：启动时按工作区 langfuse.json 配置挂载，PUT /settings/langfuse 热更新
+        self._langfuse: LangfuseTracer | None = None
 
     @property
     def workspace(self) -> Path:
@@ -81,6 +84,8 @@ class HarnessManager:
             mcp_default_servers=mcp_default_servers,
         )
         self._agents[agent_id] = HarnessAgent(cfg)
+        if self._langfuse is not None:
+            self._agents[agent_id].set_langfuse_callbacks(self._langfuse.callbacks)
         self._workspaces[agent_id] = ws
         return self._agents[agent_id]
 
@@ -99,6 +104,43 @@ class HarnessManager:
         """关闭全部实例（进程退出时调用）。"""
         for agent_id in list(self._agents):
             self.release(agent_id)
+        if self._langfuse is not None:
+            self._langfuse.flush()
+            self._langfuse = None
+
+    # ------------------------------------------------------------------
+    # Langfuse 轨迹（对齐 octop HarnessAgentManager.set_langfuse 语义）
+
+    def set_langfuse(self, config: LangfuseConfig | None) -> None:
+        """热更新 Langfuse 配置并同步到全部已建实例（配置变更后即时生效）。
+
+        config 未 fully configured（enabled 或凭据缺失）时停用 tracer。
+        """
+        if config is not None and config.configured:
+            if self._langfuse is None:
+                self._langfuse = LangfuseTracer(config)
+            else:
+                self._langfuse.set_config(config)
+        elif self._langfuse is not None:
+            self._langfuse.set_config(None)
+            self._langfuse = None
+        self._sync_langfuse_to_agents()
+
+    def _sync_langfuse_to_agents(self) -> None:
+        callbacks = self._langfuse.callbacks if self._langfuse is not None else None
+        for agent in self._agents.values():
+            agent.set_langfuse_callbacks(callbacks)
+
+    def enrich_request(self, request: ChatRequest) -> ChatRequest:
+        """对话请求挂 Langfuse trace metadata（user/thread/agent）；未启用时原样返回。"""
+        if self._langfuse is not None:
+            return self._langfuse.enrich_request(request)
+        return request
+
+    def flush_langfuse(self) -> None:
+        """对话结束后冲刷 trace（启用时；失败静默，不阻断对话）。"""
+        if self._langfuse is not None:
+            self._langfuse.flush()
 
 
 manager = HarnessManager()

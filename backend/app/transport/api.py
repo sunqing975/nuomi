@@ -885,6 +885,95 @@ async def put_providers(body: ProviderBody) -> dict:
     return {"ok": True, "providers": len(providers)}
 
 
+class LangfuseBody(BaseModel):
+    """Langfuse 观测配置保存请求体（secret_key 为空串/脱敏串 = 保持原值）。"""
+
+    enabled: bool = Field(description="启用 Langfuse 轨迹")
+    host: str = Field(default="", description="Langfuse 服务地址（云或自托管）")
+    public_key: str = Field(default="", description="Langfuse Public Key")
+    secret_key: str = Field(default="", description="Langfuse Secret Key（留空保持原值）")
+
+
+class LangfuseTestBody(BaseModel):
+    """Langfuse 连接测试请求体（不落盘；secret 为脱敏串时复用已存值）。"""
+
+    host: str = Field(default="")
+    public_key: str = Field(default="")
+    secret_key: str = Field(default="")
+
+
+@router.get("/settings/langfuse")
+async def get_langfuse() -> dict:
+    """Langfuse 观测配置（secret_key 脱敏展示）。"""
+    from app.infra.harness.langfuse_store import load, mask_secret
+
+    cfg = load()
+    return {
+        "enabled": cfg["enabled"],
+        "host": cfg["host"],
+        "public_key": cfg["public_key"],
+        "secret_key": mask_secret(cfg["secret_key"]),
+    }
+
+
+@router.put("/settings/langfuse")
+async def put_langfuse(body: LangfuseBody) -> dict:
+    """保存 Langfuse 配置：写 langfuse.json + 热更新 harness tracer（即时生效）。
+
+    启用时要求凭据齐全；停用则仅存开关，保留凭据供下次启用复用。
+    """
+    from app.infra.harness.langfuse_store import load as load_langfuse_cfg
+    from app.infra.harness.langfuse_store import save as save_langfuse_cfg
+    from octop_harness.observability.langfuse import LangfuseConfig
+
+    existing = load_langfuse_cfg()
+    host = (body.host or "").strip().rstrip("/")
+    if not host:
+        raise HTTPException(status_code=400, detail="Langfuse Host 必填")
+    public_key = (body.public_key or "").strip()
+    if not public_key:
+        raise HTTPException(status_code=400, detail="Langfuse Public Key 必填")
+    secret = (body.secret_key or "").strip()
+    if not secret or "***" in secret:
+        secret = existing.get("secret_key") or ""
+    if body.enabled and not secret:
+        raise HTTPException(
+            status_code=400,
+            detail="启用 Langfuse 需要 Secret Key（当前未配置且本次未填写）",
+        )
+    cfg = save_langfuse_cfg(
+        {"enabled": bool(body.enabled), "host": host, "public_key": public_key, "secret_key": secret}
+    )
+    manager.set_langfuse(LangfuseConfig(**cfg))
+    return {"ok": True, "enabled": bool(body.enabled)}
+
+
+@router.post("/settings/langfuse/test")
+async def test_langfuse(body: LangfuseTestBody) -> dict:
+    """用给定配置校验 Langfuse 凭据（auth_check；不落盘）。"""
+    from app.infra.harness.langfuse_store import load as load_langfuse_cfg
+    from langfuse import Langfuse
+
+    host = (body.host or "").strip().rstrip("/")
+    public_key = (body.public_key or "").strip()
+    secret = (body.secret_key or "").strip()
+    if "***" in secret:
+        secret = (load_langfuse_cfg().get("secret_key") or "").strip()
+    if not host or not public_key or not secret:
+        raise HTTPException(status_code=400, detail="Host / Public Key / Secret Key 均为必填")
+    try:
+        client = Langfuse(host=host, public_key=public_key, secret_key=secret)
+        ok = bool(client.auth_check())
+        client.flush()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"连接失败：{exc}") from exc
+    if not ok:
+        raise HTTPException(
+            status_code=401, detail="Langfuse 凭据校验未通过（Public/Secret Key 或 Host 有误）"
+        )
+    return {"ok": True, "host": host}
+
+
 @router.get("/skillhub/search")
 async def skillhub_search(q: str = "", page: int = 1, page_size: int = 20) -> list[dict]:
     return skillhub.search(q, page=page, page_size=page_size)

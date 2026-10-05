@@ -57,6 +57,7 @@ async def lifespan(_: FastAPI):
     _sync_plugins()
     _sync_connectors_file()
     _resume_knowledge_index_jobs()
+    _sync_langfuse()
     yield
     manager.close()
 
@@ -76,6 +77,18 @@ def _sync_env_file() -> None:
     from app.infra.env_store import apply
 
     apply()
+
+
+def _sync_langfuse() -> None:
+    """启动时按 {workspace}/langfuse.json 配置 harness Langfuse tracer（未配置则保持停用）。"""
+    from app.infra.harness.langfuse_store import load as load_langfuse_cfg
+    from app.infra.harness.manager import manager
+    from octop_harness.observability.langfuse import LangfuseConfig
+
+    try:
+        manager.set_langfuse(LangfuseConfig(**load_langfuse_cfg()))
+    except Exception:
+        logger.exception("Langfuse 初始化失败（继续启动，观测未启用）")
 
 
 def _sync_connectors_file() -> None:

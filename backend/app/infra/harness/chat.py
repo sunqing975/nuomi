@@ -109,6 +109,8 @@ async def stream_chat(
 
         request_kwargs = apply_agent_runtime_to_stream_request(request_kwargs, agent_config)
     request = ChatRequest(**request_kwargs)
+    # Langfuse trace metadata（user/thread/agent；启用时注入，未启用原样返回）
+    request = manager.enrich_request(request)
 
     text_parts: list[str] = []
     reasoning_parts: list[str] = []
@@ -200,6 +202,8 @@ async def stream_chat(
             )
         except Exception:
             logger.exception("turn 消息投影写入失败（不影响对话）")
+    # Langfuse trace 落盘（启用时；flush 失败静默，不阻断对话结果）
+    manager.flush_langfuse()
 
 
 def format_sse(event: dict) -> str:

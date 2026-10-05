@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  Button, Card, Checkbox, Form, Input, Modal, Select, Space, Table, Tabs, Tag, Typography, message,
+  Button, Card, Checkbox, Form, Input, Modal, Select, Space, Switch, Table, Tabs, Tag, Typography, message,
 } from 'antd';
 import {
   PlusOutlined, SaveOutlined, DeleteOutlined, EyeOutlined, EyeInvisibleOutlined, ApiOutlined,
@@ -326,6 +326,125 @@ function ProvidersTab() {
   );
 }
 
+/** Langfuse 观测配置（轨迹可观测性；保存后即时生效，Secret 脱敏展示） */
+interface LangfuseCfg {
+  enabled: boolean;
+  host: string;
+  public_key: string;
+  secret_key: string;
+}
+
+function LangfuseTab() {
+  const [cfg, setCfg] = useState<LangfuseCfg | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [form] = Form.useForm();
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const r = await get<LangfuseCfg>('/settings/langfuse');
+      setCfg(r);
+      form.setFieldsValue({
+        enabled: r.enabled,
+        host: r.host,
+        public_key: r.public_key,
+        secret_key: '',
+      });
+    } catch (e) {
+      message.error(`加载 Langfuse 配置失败：${(e as Error).message}`);
+    } finally {
+      setLoading(false);
+    }
+  }, [form]);
+
+  useEffect(() => { load(); }, [load]);
+
+  /** 用表单当前值做连接测试（secret 为脱敏串时后端复用已存值） */
+  const test = async () => {
+    const values = await form.validateFields(['host', 'public_key', 'secret_key']).catch(() => null);
+    if (!values) return;
+    const host = String(values.host || '').trim();
+    const public_key = String(values.public_key || '').trim();
+    const secret_key = String(values.secret_key || '').trim();
+    if (!host || !public_key || !secret_key) {
+      message.warning('填 Host / Public Key / Secret Key 后测试');
+      return;
+    }
+    setTesting(true);
+    try {
+      await post('/settings/langfuse/test', { host, public_key, secret_key });
+      message.success('Langfuse 连接成功，凭据有效');
+    } catch (e) {
+      message.error(`测试失败：${(e as Error).message}`);
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const save = async () => {
+    const values = await form.validateFields().catch(() => null);
+    if (!values) return;
+    setSaving(true);
+    try {
+      await put('/settings/langfuse', {
+        enabled: !!values.enabled,
+        host: String(values.host || '').trim(),
+        public_key: String(values.public_key || '').trim(),
+        secret_key: String(values.secret_key || '').trim(),
+      });
+      message.success('Langfuse 配置已保存（即时生效）');
+      load();
+    } catch (e) {
+      message.error(`保存失败：${(e as Error).message}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 0 }}>
+        对话轨迹 / 工具调用可观测性（harness 原生 Langfuse 封装，trace 到 Langfuse 控制台）。
+        填入 Langfuse Cloud 或自托管的 <Typography.Text code>Host</Typography.Text> 与项目 Keys
+        （Langfuse <Typography.Text code>Settings → API Keys</Typography.Text>），保存后即时生效。
+        Secret Key 明文存于 <Typography.Text code>工作区/langfuse.json</Typography.Text>（仓库外），展示脱敏；
+        留空 = 保持原值。
+      </Typography.Paragraph>
+      <Form form={form} layout="vertical" style={{ maxWidth: 520 }} disabled={loading}>
+        <Form.Item name="enabled" label="启用 Langfuse 轨迹" valuePropName="checked">
+          <Switch />
+        </Form.Item>
+        <Form.Item name="host" label="Host" rules={[{ required: true, message: 'Host 必填' }]}>
+          <Input placeholder="https://cloud.langfuse.com" />
+        </Form.Item>
+        <Form.Item name="public_key" label="Public Key" rules={[{ required: true, message: 'Public Key 必填' }]}>
+          <Input placeholder="pk-…" autoComplete="off" />
+        </Form.Item>
+        <Form.Item
+          name="secret_key"
+          label="Secret Key"
+          extra={cfg?.secret_key ? `已配置（${cfg.secret_key}），留空 = 保持原值` : undefined}
+        >
+          <Input.Password
+            placeholder={cfg?.secret_key ? '留空保持原值' : 'sk-…'}
+            autoComplete="off"
+          />
+        </Form.Item>
+      </Form>
+      <Space style={{ marginTop: 8 }}>
+        <Button icon={<ThunderboltOutlined />} loading={testing} onClick={test}>
+          测试连接
+        </Button>
+        <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={save}>
+          保存配置
+        </Button>
+      </Space>
+    </>
+  );
+}
+
 export default function SettingsPage() {
   return (
     <Card size="small" title={<b style={{ fontSize: 14 }}>设置</b>}>
@@ -334,6 +453,7 @@ export default function SettingsPage() {
         items={[
           { key: 'models', label: '大模型', children: <ProvidersTab /> },
           { key: 'env', label: '环境变量', children: <EnvTab /> },
+          { key: 'langfuse', label: 'Langfuse', children: <LangfuseTab /> },
         ]}
       />
     </Card>

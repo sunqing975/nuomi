@@ -56,6 +56,7 @@ transport（FastAPI 路由） → domain（领域服务） → infra/harness（�
 - [x] M3-M5：Agent 生命周期 / 会话存储（threads+消息投影表）/ 插件（2026-10-05）
 - [x] M6：技能+连接器+知识库（2026-10-04；OCR 用户叫停暂缓）
 - [ ] M7-M8：AI 数字人形象层（VRM 已大量完成）+ 人格/情绪体验（TTS 待办）
+- [x] 轨迹可观测性：Langfuse 集成（harness 原生封装，设置页配置，2026-10-05）
 
 ## 许可证
 
