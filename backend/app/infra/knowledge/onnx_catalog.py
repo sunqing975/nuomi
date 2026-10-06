@@ -99,7 +99,7 @@ def list_onnx_catalog_models() -> list[dict[str, Any]]:
             info = get_onnx_model_meta(model_id)
             size_gb = info.get("size_gb")
             hf = info.get("hf_source")
-        entry: dict[str, Any] = {"id": model_id, "name": model_id, "recommended": rec}
+        entry: dict[str, Any] = {"id": model_id, "name": model_id, "recommended": rec, "supported": True}
         if size_gb is not None:
             entry["size_gb"] = size_gb
         if hf:

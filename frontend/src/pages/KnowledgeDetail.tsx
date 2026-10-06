@@ -5,7 +5,7 @@ import {
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import {
-  BookOutlined, DeleteOutlined, FileOutlined, FolderOutlined, PlusOutlined,
+  BookOutlined, DeleteOutlined, FileOutlined, FolderOutlined,
   RedoOutlined, ReloadOutlined, UploadOutlined,
 } from '@ant-design/icons';
 import {
@@ -124,8 +124,6 @@ export default function KnowledgeDetailPage({ kbId }: { kbId: string }) {
     setEditorOpen(true);
   };
 
-  const openNewDoc = () => { setEditorDoc(null); setEditorOpen(true); };
-
   const renameDoc = async () => {
     if (!kb || !docRenameTarget) return;
     const name = docRenameName.trim();
@@ -153,15 +151,6 @@ export default function KnowledgeDetailPage({ kbId }: { kbId: string }) {
       await knowledgeApi.deleteDoc(kb.id, doc.id);
       message.success(`已删除 ${doc.filename}`);
       await loadDocs(kb.id, prefix);
-    } catch (e) { message.error(`删除失败：${(e as Error).message}`); }
-  };
-
-  const deleteBase = async () => {
-    if (!kb) return;
-    try {
-      await knowledgeApi.deleteBase(kb.id);
-      message.success(`知识库「${kb.name}」已删除`);
-      window.location.hash = '#knowledge';
     } catch (e) { message.error(`删除失败：${(e as Error).message}`); }
   };
 
@@ -243,17 +232,7 @@ export default function KnowledgeDetailPage({ kbId }: { kbId: string }) {
           }
           extra={
             <Space>
-              <Popconfirm
-                title={`删除知识库「${kb.name}」？`}
-                description="将删除全部文档、索引与文件，不可恢复"
-                okText="删除"
-                cancelText="取消"
-                onConfirm={deleteBase}
-              >
-                <Button size="small" danger icon={<DeleteOutlined />}>删除知识库</Button>
-              </Popconfirm>
               <Button size="small" icon={<UploadOutlined />} onClick={() => setUploadOpen(true)}>上传</Button>
-              <Button size="small" icon={<PlusOutlined />} onClick={openNewDoc}>新建文本</Button>
               <Button size="small" icon={<ReloadOutlined />} onClick={refreshAll}>刷新</Button>
             </Space>
           }

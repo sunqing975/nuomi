@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Button, Modal, Select, Space, Switch, Tag, Tooltip, Typography, message } from 'antd';
+import { Button, Modal, Select, Space, Tag, Tooltip, Typography, message } from 'antd';
 import { DeleteOutlined, DownloadOutlined, ReloadOutlined } from '@ant-design/icons';
 import { knowledgeApi, type KnowledgeCapability } from '../api';
 
@@ -65,20 +65,6 @@ export default function KnowledgeModelsModal({ open, onClose, capability, onChan
 
   useEffect(() => () => { if (timer.current) clearInterval(timer.current); }, []);
 
-  const toggleEnabled = async (v: boolean) => {
-    if (v && capability && !capability.downloaded) {
-      message.warning('请先下载模型');
-      return;
-    }
-    try {
-      await knowledgeApi.feature({ enabled: v });
-      message.success(v ? '知识库已启用' : '知识库已停用');
-      await refresh();
-    } catch (e) {
-      message.error(`操作失败：${(e as Error).message}`);
-    }
-  };
-
   const switchModel = async (model: string) => {
     try {
       await knowledgeApi.feature({ enabled: true, model });
@@ -117,13 +103,6 @@ export default function KnowledgeModelsModal({ open, onClose, capability, onChan
       )}
       <Space direction="vertical" style={{ width: '100%' }} size="middle">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{ minWidth: 80 }}>知识库功能</span>
-          <Switch checked={capability?.enabled ?? false} onChange={toggleEnabled} />
-          <span style={{ color: 'var(--label-2)', fontSize: 13 }}>
-            {capability?.ready ? '就绪' : capability?.downloaded ? '未启用' : '模型未就绪'}
-          </span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <span style={{ minWidth: 80 }}>嵌入模型</span>
           <Select
             style={{ minWidth: 320 }}
@@ -132,6 +111,9 @@ export default function KnowledgeModelsModal({ open, onClose, capability, onChan
             onChange={switchModel}
             placeholder="选择嵌入模型"
           />
+          <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+            {capability?.ready ? '就绪' : capability?.downloaded ? '未启用' : '模型未就绪'}
+          </Typography.Text>
         </div>
         <div>
           <Typography.Text type="secondary" style={{ fontSize: 13 }}>
