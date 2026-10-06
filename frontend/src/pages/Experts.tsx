@@ -9,7 +9,7 @@ import PageLayout from '../components/PageLayout';
 
 const { TextArea } = Input;
 
-export default function ExpertsPage({ onBackend }: { onBackend?: (ok: boolean) => void }) {
+export default function ExpertsPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(false);
   const [form] = Form.useForm();
@@ -21,13 +21,12 @@ export default function ExpertsPage({ onBackend }: { onBackend?: (ok: boolean) =
     try {
       const a = await get<Agent[]>('/agents');
       setAgents(a);
-      onBackend?.(true);
     } catch {
-      onBackend?.(false);
+      // 后端状态由 App 层全局健康探测负责，页面只负责展示自己的数据
     } finally {
       setLoading(false);
     }
-  }, [onBackend]);
+  }, []);
 
   useEffect(() => { load(); }, [load]);
 

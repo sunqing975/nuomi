@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Layout, Menu, Tag, Typography } from 'antd';
 import type { ReactNode } from 'react';
 import {
@@ -70,6 +70,22 @@ export default function App() {
   const [kbDetailId, setKbDetailId] = useState<string | null>(null); // #knowledge/detail/<id> 独立详情页
   const [backendOk, setBackendOk] = useState<boolean | null>(null);
 
+  /** 全局后端健康探测：App 启动、切页、以及每 15s 轮询（原挂在专家页 load，其他页面永不更新） */
+  const probeBackend = useCallback(async () => {
+    try {
+      const res = await fetch('/api/health');
+      setBackendOk(res.ok);
+    } catch {
+      setBackendOk(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    probeBackend();
+    const t = setInterval(probeBackend, 15000);
+    return () => clearInterval(t);
+  }, [probeBackend, page]);
+
   // 与 URL hash 同步（#plugins 直达 / #knowledge/detail/<id> 详情页 / 浏览器前进后退）
   useEffect(() => {
     const applyHash = () => {
@@ -134,7 +150,7 @@ export default function App() {
         </Header>
         <Content style={{ padding: 24, overflow: 'auto' }}>
           {page === 'chat' && <ChatPage />}
-          {page === 'experts' && <ExpertsPage onBackend={setBackendOk} />}
+          {page === 'experts' && <ExpertsPage />}
           {page === 'plugins' && <PluginsPage />}
           {page === 'skills' && <SkillsPage />}
           {page === 'connectors' && <ConnectorsPage />}
