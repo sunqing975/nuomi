@@ -581,3 +581,11 @@ SSE 事件协议（当前完整）：`token` / `reasoning` / `tool_call_chunk`�
   （无框无底平铺，Linear/Claude 风格），流式块复用同常量；用户消息保留 primary 底
 - **发送清空输入框**（1e81ea9，用户 bug 反馈）：onSend 未 setInput('') → 发送时先清空
 - 今日收官：用户「今天就这样吧，把代码提交并推送一下」
+
+## 技能页按钮对齐页头 extra（2026-10-06，0f09b25）
+
+- 用户反馈（截图）：技能页「技能市场/导入」按钮位置比其他页面低
+- 根因：插件页按钮在 PageLayout extra（页头右侧、与标题同区块），技能页却放在
+  内容区第一行 flex 挤右侧
+- 改：技能页按钮 + file input 移入 PageLayout extra，删除内容区 flex 行；与插件页形态一致
+- 验证：tsc/vitest 60/build 全绿，壳重启「糯米启动完成」
