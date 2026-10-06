@@ -18,6 +18,34 @@ function checkBackendReady(origin, timeoutMs = 1500) {
     })
 }
 
+// === 本机 API token（写操作鉴权，见 backend/app/infra/local_guard.py）===
+// 主进程用 Node http 取（无 Origin/CORS 约束），缓存后经 IPC 交给渲染进程。
+// 后端进程重启会换 token，渲染进程收到 403 时会重新 invoke 拿新的。
+let apiTokenPromise = null
+function loadApiToken(origin) {
+    if (!apiTokenPromise) {
+        apiTokenPromise = new Promise((resolve) => {
+            const req = http.get(origin + '/api/session-token', { timeout: 3000 }, (res) => {
+                let body = ''
+                res.setEncoding('utf8')
+                res.on('data', (chunk) => { body += chunk })
+                res.on('end', () => {
+                    try { resolve(JSON.parse(body).token || '') } catch (e) { resolve('') }
+                })
+            })
+            req.on('timeout', () => { req.destroy(); resolve('') })
+            req.on('error', () => resolve(''))
+        })
+    }
+    return apiTokenPromise
+}
+function refreshApiToken() {
+    apiTokenPromise = null
+    return loadApiToken(backendOrigin())
+}
+ipcMain.handle('api-token', () => loadApiToken(backendOrigin()))
+ipcMain.handle('refresh-api-token', () => refreshApiToken())
+
 function ensureBackend() {
     const origin = backendOrigin()
     return checkBackendReady(origin).then(async (alive) => {
@@ -174,6 +202,30 @@ ipcMain.on('reload-control-panel', () => {
     }
 })
 
+/**
+ * 显示/隐藏控制面板（数字人窗口上双击角色触发）。
+ *
+ * 关闭控制面板不再退出整个应用（见下方 controlPanel.on('closed')）：只关面板
+ * 时数字人继续常驻，用户双击角色即可再打开；退出应用用 Cmd+Q / Ctrl+Q。
+ */
+function toggleControlPanel() {
+    if (controlPanel && !controlPanel.isDestroyed()) {
+        if (controlPanel.isVisible()) {
+            controlPanel.hide()
+        } else {
+            controlPanel.show()
+            controlPanel.focus()
+        }
+        return
+    }
+    controlPanel = createControlPanel()
+    controlPanel.on('closed', () => { controlPanel = null })
+}
+
+ipcMain.on('toggle-control-panel', () => {
+    toggleControlPanel()
+})
+
 // PTT 全局快捷键已废弃（旧 ASR 语音输入体系，renderer 无监听，2026-10-05 清理）
 
 app.whenReady().then(() => {
@@ -240,9 +292,11 @@ app.whenReady().then(() => {
         }, 200) // 防抖：等配置文件写完
     })
 
-    // 关闭控制面板时退出整个应用
+    // 关闭控制面板**不退出**应用：数字人继续常驻（用户双击角色可再打开面板，
+    // 退出走 Cmd+Q / Ctrl+Q）。原实现 app.quit() 会让"关掉控制台"= 整个桌宠消失。
     controlPanel.on('closed', () => {
-        app.quit()
+        controlPanel = null
+        console.log('控制面板已关闭（数字人继续运行，双击角色可重新打开）')
     })
 
         console.log('糯米启动完成')
@@ -253,6 +307,18 @@ app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
         app.quit()
     }
+})
+
+// macOS：Dock 图标被点击时兜底恢复窗口。
+// 关闭控制面板已不再退出应用（见上），若此时数字人开关是关的，就会出现
+// 「进程活着但一个窗口都没有」——点 Dock 若无反应，用户只能 Cmd+Q。
+app.on('activate', () => {
+    if (!controlPanel || controlPanel.isDestroyed()) {
+        controlPanel = createControlPanel()
+        controlPanel.on('closed', () => { controlPanel = null })
+        return
+    }
+    controlPanel.show()
 })
 
 ipcMain.on('set-ignore-mouse-events', (event, { ignore, options }) => {

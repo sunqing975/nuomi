@@ -318,6 +318,15 @@ class VRMInteractionController {
             }
         });
 
+        // 双击角色 = 显示/隐藏控制面板。
+        // 关闭控制面板不再退出应用，所以必须留一个「再打开」的入口：面板是设置/
+        // 模型/插件的唯一 UI，没有它用户就只能靠改文件。
+        canvas.addEventListener('dblclick', (e) => {
+            if (model.isPointOverModel(e.clientX, e.clientY)) {
+                ipcRenderer.send('toggle-control-panel');
+            }
+        });
+
         canvas.addEventListener('mouseout', () => {
             if (!this.isDragging) {
                 ipcRenderer.send('set-ignore-mouse-events', {

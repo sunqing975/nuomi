@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
+import DOMPurify from 'dompurify';
 import {
   Button, Drawer, Empty, Input, Popconfirm, Popover, Select, Space, Switch, Tag, Typography, message,
 } from 'antd';
 import {
-  ApiOutlined, BookOutlined, CloseOutlined, DeleteOutlined, HistoryOutlined, PlusOutlined, SendOutlined, RobotOutlined, ThunderboltOutlined, UserOutlined,
+  ApiOutlined, BookOutlined, CloseOutlined, DeleteOutlined, HistoryOutlined, PlusOutlined, SendOutlined, StopOutlined, RobotOutlined, ThunderboltOutlined, UserOutlined,
 } from '@ant-design/icons';
 import {
   del, get, post, chatStream, knowledgeApi,
@@ -160,8 +161,24 @@ function PluginToolCard({ toolName, result, args }: { toolName: string; result: 
         const ctx = { result, args, data, textFallback: result };
         const out = typeof fn === 'function' ? String(fn(ctx) ?? '') : '';
         if (cancelled) return;
-        // 最小防护：移除 script 标签（插件为本地自装可信代码，但结果可能来自外部数据）
-        setHtml(out.replace(/<\s*script[\s\S]*?<\s*\/\s*script\s*>/gi, ''));
+        // XSS 防护：插件 renderer 产出 HTML，而它插值的数据来自 tool 结果（可能是
+        // LLM 读进来的外部网页/文档）。原先只正则剥 <script>，<img onerror> /
+        // <svg onload> / <iframe src=javascript:> 全部绕过 —— 与后端同源，注入即可读
+        // /api/settings/env（明文密钥）或调插件导入接口（实测 8 种 payload 全部绕过）。
+        // 改用 DOMPurify 白名单净化。
+        // 注意：DOMPurify 在 DOM 不受支持时会**静默原样返回**（不报错），所以必须显式
+        // 检查 isSupported —— 否则等于没消毒。不支持时降级为纯文本渲染。
+        if (!DOMPurify.isSupported) {
+          setFailed(true);
+          return;
+        }
+        setHtml(
+          DOMPurify.sanitize(out, {
+            FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form', 'link', 'base'],
+            FORBID_ATTR: ['srcdoc', 'formaction'],
+            ALLOW_DATA_ATTR: false,
+          }),
+        );
       } catch {
         if (!cancelled) setFailed(true);
       }
@@ -226,7 +243,7 @@ function SegmentView({ seg }: { seg: Segment }) {
         {open && hasDetail && (
           <div style={{ color: '#6b7280', marginTop: 2, whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: isCall ? 80 : 120, overflow: 'auto' }}>
             {hasCard
-              ? <PluginToolCard toolName={seg.name || ''} result={seg.content} args={seg.args} />
+              ? <PluginToolCard toolName={seg.name || ''} result={seg.content ?? ''} args={seg.args} />
               : (isCall ? seg.args : (seg.name === 'search_knowledge' ? <KnowledgeCitations raw={seg.content} /> : seg.content))}
           </div>
         )}
@@ -418,6 +435,11 @@ export default function ChatPage() {
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [streamSegments, setStreamSegments] = useState<Segment[]>([]);
+  // 流被中断（无 done 帧）时保留待重试的那一轮
+  const [interrupted, setInterrupted] = useState<{ text: string; threadId: string } | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  /** 卸载标记：卸载触发的 abort 不该给已销毁的页面弹提示/写状态 */
+  const unmountedRef = useRef(false);
   // 能力选择（per-turn 注入：技能白名单 / 连接器挂载 / 模型）
   const [skills, setSkills] = useState<Skill[]>([]);
   const [builtinSkills, setBuiltinSkills] = useState<Skill[]>([]);
@@ -593,17 +615,39 @@ export default function ChatPage() {
     setSelectedKnowledgeBaseIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   };
 
-  const send = async () => {
-    const text = input.trim();
+  /** 停止生成：中断流式请求（后端同时收到断连，停止这一轮）。 */
+  const stop = () => {
+    abortRef.current?.abort();
+  };
+
+  // 卸载（切页/切专家）时中止在途请求 —— 否则切到「设置」页 LLM 继续跑完，token 照扣。
+  // 用标记区分「用户点停止」与「组件卸载」，后者不弹 toast。
+  useEffect(() => () => {
+    unmountedRef.current = true;
+    abortRef.current?.abort();
+  }, []);
+
+  /** 发送一轮对话；override 用于「重试」（不读输入框）。 */
+  const send = async (override?: string, overrideThread?: string) => {
+    const text = (override ?? input).trim();
     if (!text || sending || !agentId) return;
-    const tid = activeThread;
+    // 重试要发回**原来那轮**的会话（用户可能已经切走了）
+    const tid = overrideThread ?? activeThread;
     if (!tid) return;
+    setInterrupted(null);
     const userMsg: ChatMessage = { role: 'user', segments: [{ type: 'text', content: text }] };
     const next = [...messages, userMsg];
     setMessages(next);
     setInput('');
     setSending(true);
     setStreamSegments([]);
+    // 取消支持：用户点「停止生成」或组件卸载时 abort（后端断连即停止，不再跑完白烧 token）
+    const controller = new AbortController();
+    abortRef.current = controller;
+    let gotDone = false;
+    let gotError = false;
+    let streamError = '';
+    let stopped = false;
     // 流式片段按真实到达顺序累积：相邻同类合并（思考累积思考、正文累积正文）
     const segs: Segment[] = [];
     const pushSeg = (s: Segment) => {
@@ -639,6 +683,7 @@ export default function ChatPage() {
           segs.push({ type: 'tool_result', name: e.name, content: e.detail, plugin_id: e.plugin_id });
           setStreamSegments([...segs]);
         } else if (e.type === 'done') {
+          gotDone = true;
           // 去掉末尾空白段；至少保留一个 text 段（哪怕空，显示占位）
           if (!segs.some(s => s.type === 'text')) segs.push({ type: 'text', content: '' });
           const finalMsg: ChatMessage = { role: 'assistant', segments: segs };
@@ -647,13 +692,44 @@ export default function ChatPage() {
           // 标题/时间更新（后端 touch，仅「新会话」会替换标题）
           post('/chat/touch', { agent_id: agentId, thread_id: tid, title: text.slice(0, 20) }).catch(() => {});
           refreshState().catch(() => {});
+        } else if (e.type === 'error') {
+          // 后端补发的终止帧 = 终态。置 gotError 以免 finally 再报一次
+          // 「未收到完成帧」（那句还与本事实相反：帧其实收到了）。
+          gotError = true;
+          streamError = e.content || '未知错误';
         }
-      }, opts);
+      }, opts, controller.signal);
     } catch (err) {
-      message.error(`对话失败：${(err as Error).message}`);
-      setStreamSegments([]);
+      if ((err as Error).name === 'AbortError') {
+        stopped = true;
+      } else {
+        message.error(`对话失败：${(err as Error).message}`);
+      }
     } finally {
-      setSending(false);
+      // 没有 done 也没有 error：连接被中断。已生成的片段必须落成消息，
+      // 否则半截回复停在流式气泡里、刷新即消失（原实现只清 streamSegments）。
+      if (!gotDone && !gotError) {
+        if (segs.length) {
+          if (!segs.some(s => s.type === 'text')) segs.push({ type: 'text', content: '' });
+          setMessages([...next, { role: 'assistant', segments: segs }]);
+        }
+        setStreamSegments([]);
+        if (unmountedRef.current) {
+          // 卸载触发的 abort（切页/切专家）：不要给已经不在的页面弹提示
+        } else if (stopped) {
+          message.info('已停止生成');
+        } else {
+          setInterrupted({ text, threadId: tid });
+        }
+      } else if (gotError) {
+        setStreamSegments([]);
+        if (!unmountedRef.current) {
+          message.error(`生成失败：${streamError}`);
+          setInterrupted({ text, threadId: tid });
+        }
+      }
+      abortRef.current = null;
+      if (!unmountedRef.current) setSending(false);
     }
   };
 
@@ -829,23 +905,41 @@ export default function ChatPage() {
               />
             </Space>
           </div>
+          {interrupted && !sending && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6,
+              padding: '6px 10px', background: '#fffbe6', border: '1px solid #ffe58f',
+              borderRadius: 6, fontSize: 12, color: '#874d00',
+            }}>
+              <span>上一轮回复被中断（未收到完成帧）。</span>
+              <a onClick={() => send(interrupted.text, interrupted.threadId)} style={{ color: '#1677ff' }}>重试</a>
+              <a onClick={() => setInterrupted(null)} style={{ color: '#8c8c8c' }}>忽略</a>
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
             <Input.TextArea
               value={input}
               onChange={e => setInput(e.target.value)}
-              onPressEnter={e => { if (!e.shiftKey) { e.preventDefault(); send(); } }}
+              onPressEnter={e => {
+                // 中文输入法候选词确认也会发 Enter：合成态必须放行，否则半句话被发出去
+                if ((e.nativeEvent as KeyboardEvent).isComposing) return;
+                if (!e.shiftKey) { e.preventDefault(); send(); }
+              }}
               placeholder="输入消息，Enter 发送"
               autoSize={{ minRows: 1, maxRows: 6 }}
               disabled={sending || !agentId}
               style={{ flex: 1 }}
             />
-            <Button
-              type="primary"
-              icon={<SendOutlined />}
-              onClick={send}
-              loading={sending}
-              disabled={!agentId || !input.trim()}
-            >发送</Button>
+            {sending ? (
+              <Button danger icon={<StopOutlined />} onClick={stop}>停止</Button>
+            ) : (
+              <Button
+                type="primary"
+                icon={<SendOutlined />}
+                onClick={() => send()}
+                disabled={!agentId || !input.trim()}
+              >发送</Button>
+            )}
           </div>
         </div>
       </div>

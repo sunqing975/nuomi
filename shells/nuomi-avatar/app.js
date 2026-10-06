@@ -572,6 +572,45 @@ async function subscribePetEvents() {
 }
 
 // 流式 LLM 调用 - 逐块返回文本
+// === 本机 API token（写操作鉴权，见 backend/app/infra/local_guard.py）===
+// 由主进程经 IPC 下发（主进程用 Node http 取，无 CORS 约束）。
+// 后端进程重启会换 token → 403 时刷新一次并重试，避免"重启后端后数字人不再回话"。
+//
+// ⚠️ 现状说明（2026-10-06 核实）：壳**目前只发一个后端请求** —— `GET /api/avatar/events`
+// （SSE，读操作，不需要 token）。下面 postJsonWithToken 唯一的使用者 callLLMStream
+// 是**死代码**（全仓无调用点，index.html 也没有输入控件），说明数字人窗口现在是纯
+// **表现层**：对话在控制台发生，壳只订阅事件播动作/表情/语音。
+// 这套 token 接线是**预防性的**：一旦恢复壳内对话（或外部 OpenAI 兼容客户端接入
+// /api/v1/chat/completions），POST 会被守卫拦下 403，届时必须带这个头。
+let apiToken = ''
+async function ensureApiToken(force = false) {
+    if (apiToken && !force) return apiToken
+    try {
+        apiToken = await ipcRenderer.invoke(force ? 'refresh-api-token' : 'api-token') || ''
+    } catch (e) {
+        apiToken = ''
+    }
+    return apiToken
+}
+
+/** POST JSON 到后端：自动带 X-Nuomi-Token，403（token 轮换）时刷新重试一次。 */
+async function postJsonWithToken(url, payload, extraHeaders = {}) {
+    const send = async (token) => fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            ...extraHeaders,
+            ...(token ? { 'X-Nuomi-Token': token } : {})
+        },
+        body: JSON.stringify(payload)
+    })
+    const res = await send(await ensureApiToken())
+    if (res.status !== 403) return res
+    const refreshed = await ensureApiToken(true)
+    log('写操作被拒（token 可能已轮换），已刷新 token 重试', 'warn')
+    return send(refreshed)
+}
+
 async function callLLMStream(messages, tools = null, onChunk = null) {
     const url = config.llm.api_url + '/chat/completions'
     const key = config.llm.api_key
@@ -581,11 +620,7 @@ async function callLLMStream(messages, tools = null, onChunk = null) {
 
     log('LLM流式请求: ' + url + ' 消息数: ' + messages.length)
 
-    const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
-        body: JSON.stringify(body)
-    })
+    const response = await postJsonWithToken(url, body, { 'Authorization': 'Bearer ' + key })
 
     log('LLM流式响应状态: ' + response.status)
 
@@ -619,6 +654,14 @@ async function callLLMStream(messages, tools = null, onChunk = null) {
                 const jsonStr = trimmed.startsWith('data: ') ? trimmed.slice(6) : trimmed.slice(5)
                 try {
                     const chunk = JSON.parse(jsonStr)
+
+                    // 后端补发的错误终止帧（只有 error.message、没有 choices）：
+                    // 不处理会被下面的 `if (!choice) continue` 静默丢弃，
+                    // 用户看到的是"数字人突然不回话了，没有任何原因"。
+                    if (chunk.error) {
+                        throw new Error(chunk.error.message || '未知错误')
+                    }
+
                     const choice = chunk.choices?.[0]
 
                     if (!choice) continue

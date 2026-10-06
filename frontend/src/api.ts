@@ -1,11 +1,49 @@
 /** NuomiAPI：控制台唯一 API 出口（相对 /api，dev 走 vite proxy，build 后同源） */
+
+/**
+ * 本机 API token（`/api/*` 写操作鉴权，见 backend/app/infra/local_guard.py）。
+ * 同源 GET 获取一次后缓存；跨站页面拿不到（守卫中间件拒绝非本机 Origin + CORS 限制响应）。
+ */
+let tokenPromise: Promise<string> | null = null;
+
+function apiToken(): Promise<string> {
+  if (!tokenPromise) {
+    tokenPromise = fetch('/api/session-token')
+      .then(res => (res.ok ? res.json() : { token: '' }))
+      .then((data: { token?: string }) => data.token || '')
+      .catch(() => '');
+  }
+  return tokenPromise;
+}
+
+async function authHeaders(): Promise<Record<string, string>> {
+  const token = await apiToken();
+  return token ? { 'X-Nuomi-Token': token } : {};
+}
+
+/**
+ * 带 token 的 fetch：403 视为 token 轮换（后端进程重启会换 token），清缓存重取后重试一次。
+ * 没有这层，后端重启后控制台的所有写操作都会一直 403，只能刷新页面才能恢复。
+ */
+async function authedFetch(path: string, init: RequestInit): Promise<Response> {
+  const res = await fetch(path, init);
+  if (res.status !== 403) return res;
+  tokenPromise = null;
+  const headers = {
+    ...(init.headers as Record<string, string> | undefined),
+    ...(await authHeaders()),
+  };
+  return fetch(path, { ...init, headers });
+}
+
 export async function api<T = unknown>(method: string, path: string, body?: unknown): Promise<T> {
-  const opts: RequestInit = { method, headers: {} };
+  const headers: Record<string, string> = { ...(await authHeaders()) };
+  const opts: RequestInit = { method, headers };
   if (body !== undefined) {
-    opts.headers = { 'Content-Type': 'application/json' };
+    headers['Content-Type'] = 'application/json';
     opts.body = JSON.stringify(body);
   }
-  const res = await fetch('/api' + path, opts);
+  const res = await authedFetch('/api' + path, opts);
   if (!res.ok) {
     let detail = res.statusText;
     try {
@@ -28,7 +66,11 @@ export const del = <T>(p: string) => api<T>('DELETE', p);
 export async function upload<T = unknown>(path: string, file: File): Promise<T> {
   const fd = new FormData();
   fd.append('file', file);
-  const res = await fetch('/api' + path, { method: 'POST', body: fd });
+  const res = await authedFetch('/api' + path, {
+    method: 'POST',
+    headers: { ...(await authHeaders()) },
+    body: fd,
+  });
   if (!res.ok) {
     let detail = res.statusText;
     try {
@@ -128,6 +170,8 @@ export interface AvatarModel {
   path: string;
   motions: string[];
   expressions: string[];
+  /** 该 VRM 是否真的带表情变形数据（binds 非空）；后端 list_models 提供 */
+  expressions_have_data?: boolean;
   builtin: boolean;
 }
 
@@ -160,7 +204,8 @@ export interface ProvidersResponse {
 // ---------- 对话（octop 原生事件帧 SSE） ----------
 
 export interface ChatEvent {
-  type: 'token' | 'reasoning' | 'tool_call' | 'tool_result' | 'done';
+  /** error：后端流中途失败时补发的终止帧（没有它只会看到截断流） */
+  type: 'token' | 'reasoning' | 'tool_call' | 'tool_result' | 'done' | 'error';
   content?: string;
   name?: string;
   detail?: string;
@@ -285,18 +330,25 @@ export const knowledgeApi = {
   fileUrl: (kbId: string, docId: string) => `/api/knowledge-bases/${kbId}/documents/${docId}/file`,
 };
 
-/** 调用专家对话 SSE 流（octop 原生事件帧），逐事件回调（token 累积由调用方处理）。 */
+/**
+ * 调用专家对话 SSE 流（octop 原生事件帧），逐事件回调（token 累积由调用方处理）。
+ *
+ * ``signal``：用户点「停止生成」或组件卸载时 abort —— 中止后 fetch reader 抛
+ * ``AbortError``，后端也会因断连提前结束（不再继续跑完这一轮白烧 token）。
+ */
 export async function chatStream(
   agentId: string,
   messages: string,
   threadId: string,
   onEvent: (e: ChatEvent) => void,
   opts?: ChatStreamOptions,
+  signal?: AbortSignal,
 ): Promise<void> {
-  const res = await fetch(`/api/agents/${agentId}/chat`, {
+  const res = await authedFetch(`/api/agents/${agentId}/chat`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { ...(await authHeaders()), 'Content-Type': 'application/json' },
     body: JSON.stringify({ messages, thread_id: threadId, ...opts }),
+    signal,
   });
   if (!res.ok) {
     let detail = res.statusText;
@@ -318,10 +370,11 @@ export async function chatStream(
       const payload = t.slice(5).trim();
       if (!payload) continue;
       try {
-        // octop 原生事件帧：token / tool_call_chunk / tool_result / done
+        // octop 原生事件帧：token / tool_call_chunk / tool_result / done / error
         const ev = JSON.parse(payload) as {
           type?: string;
           content?: string;
+          message?: string;
           name?: string;
           args?: string;
           plugin_id?: string;
@@ -336,6 +389,8 @@ export async function chatStream(
         } else if (ev.type === 'tool_result') {
           const m = ev.messages?.[0];
           onEvent({ type: 'tool_result', name: m?.name, detail: m?.content, plugin_id: m?.plugin_id });
+        } else if (ev.type === 'error') {
+          onEvent({ type: 'error', content: ev.message });
         } else if (ev.type === 'done') {
           onEvent({ type: 'done' });
         }
