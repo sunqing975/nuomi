@@ -145,9 +145,6 @@ export default function App() {
           onClick={e => switchPage(e.key)}
           style={{ borderInlineEnd: 'none' }}
         />
-        <div style={{ position: 'absolute', bottom: 16, left: 20, fontSize: 12, color: 'var(--label-3)' }}>
-          表现层可插拔 · 协议标准化
-        </div>
       </Sider>
       <Layout>
         <Header
