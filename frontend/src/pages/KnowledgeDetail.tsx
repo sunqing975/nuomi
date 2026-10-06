@@ -165,8 +165,6 @@ export default function KnowledgeDetailPage({ kbId }: { kbId: string }) {
     } catch (e) { message.error(`删除失败：${(e as Error).message}`); }
   };
 
-  const backToList = () => { window.location.hash = '#knowledge'; };
-
   // —— 文档表格 ——
   const columns: ColumnsType<KnowledgeDocument> = [
     {
@@ -224,9 +222,7 @@ export default function KnowledgeDetailPage({ kbId }: { kbId: string }) {
   if (missing) {
     return (
       <Card style={{ maxWidth: 1080 }}>
-        <Empty description="知识库不存在或已被删除">
-          <Button type="primary" onClick={backToList}>返回列表</Button>
-        </Empty>
+        <Empty description="知识库不存在或已被删除" />
       </Card>
     );
   }
@@ -237,7 +233,6 @@ export default function KnowledgeDetailPage({ kbId }: { kbId: string }) {
         <Card
           title={
             <Space>
-              <Button size="small" type="text" onClick={backToList}>← 返回列表</Button>
               <BookOutlined style={{ color: 'var(--link)' }} />
               <span>{kb.name}</span>
               {!kb.enabled && <Tag color="default">已停用</Tag>}

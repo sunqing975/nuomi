@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Avatar, Button, Card, Dropdown, Input, Modal, Popconfirm, Select, Space, Switch,
+  Avatar, Button, Card, Dropdown, Input, Modal, Popconfirm, Space, Switch,
   Tag, Typography, message,
 } from 'antd';
 import {
@@ -121,9 +121,6 @@ export default function SkillsPage() {
     ref: Skill | SkillPackage | null;
   }
 
-  const [kindFilter, setKindFilter] = useState<'all' | InstalledKind>('all');
-  const [installedQuery, setInstalledQuery] = useState('');
-
   const installedItems = useMemo(() => {
     const items: InstalledItem[] = [
       ...builtins.map(s => ({
@@ -139,11 +136,8 @@ export default function SkillsPage() {
         enabled: p.enabled, skill_count: p.skill_count, icon_url: p.icon_url, ref: p,
       })),
     ];
-    const q = installedQuery.trim().toLowerCase();
-    return items.filter(it =>
-      (kindFilter === 'all' || it.kind === kindFilter) &&
-      (!q || it.name.toLowerCase().includes(q) || (it.description || '').toLowerCase().includes(q)));
-  }, [builtins, skills, packages, kindFilter, installedQuery]);
+    return items;
+  }, [builtins, skills, packages]);
 
   const renderInstalledItem = (it: InstalledItem) => {
     const desc = it.description || '—';
@@ -224,23 +218,6 @@ export default function SkillsPage() {
       description="技能 / 技能包管理：可导入本地包，安装市场的技能请到「技能市场」页"
     >
       <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-        <Select
-          value={kindFilter}
-          onChange={setKindFilter}
-          style={{ width: 120 }}
-          options={[
-            { value: 'all', label: '全部类型' },
-            { value: 'builtin', label: '内置' },
-            { value: 'skill', label: '技能' },
-            { value: 'package', label: '技能包' },
-          ]}
-        />
-        <Input.Search
-          placeholder="搜索名称 / 描述"
-          allowClear style={{ width: 240 }}
-          value={installedQuery}
-          onChange={e => setInstalledQuery(e.target.value)}
-        />
         <div style={{ flex: 1 }} />
         <Button type="primary" icon={<ShoppingOutlined />} onClick={() => { window.location.hash = '#skillMarket'; }}>技能市场</Button>
         <Dropdown menu={{
