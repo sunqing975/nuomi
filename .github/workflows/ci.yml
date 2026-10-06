@@ -41,7 +41,7 @@ jobs:
         run: make test
 
   frontend:
-    name: Frontend（tsc + vite build）
+    name: Frontend（vitest + tsc + vite build）
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -55,6 +55,10 @@ jobs:
       - name: Install dependencies
         working-directory: frontend
         run: npm ci
+
+      - name: Test（vitest）
+        working-directory: frontend
+        run: npm run test:run
 
       - name: Build（tsc -b && vite build）
         working-directory: frontend

@@ -28,20 +28,34 @@ export default function KnowledgeModelsModal({ open, onClose, capability, onChan
       if (r.reason === 'already_downloaded') {
         message.success('模型已就绪');
         await refresh();
+        setBusy(null); // 提前 return 必须复位，否则按钮一直 loading
         return;
       }
       if (timer.current) clearInterval(timer.current);
       let tries = 0;
-      timer.current = setInterval(async () => {
-        tries += 1;
-        const cap = await knowledgeApi.capability();
-        onChanged(cap);
-        if (cap.downloaded || !cap.downloading.includes(model) || tries > 90) {
-          if (timer.current) clearInterval(timer.current);
-          setBusy(null);
-          if (cap.downloaded) message.success('模型下载完成');
-          else message.error('模型下载失败，请重试');
-        }
+      // setInterval 的 async 回调必须自带 try/catch：轮询失败（后端重启/网络抖动）时
+      // 未捕获的 rejection 会冒泡成 unhandled rejection，而 setBusy(null) 永远不执行 →
+      // 下载按钮永久 loading。
+      timer.current = setInterval(() => {
+        void (async () => {
+          tries += 1;
+          try {
+            const cap = await knowledgeApi.capability();
+            onChanged(cap);
+            if (cap.downloaded || !cap.downloading.includes(model) || tries > 90) {
+              if (timer.current) clearInterval(timer.current);
+              timer.current = null;
+              setBusy(null);
+              if (cap.downloaded) message.success('模型下载完成');
+              else message.error('模型下载失败，请重试');
+            }
+          } catch (e) {
+            if (timer.current) clearInterval(timer.current);
+            timer.current = null;
+            setBusy(null);
+            message.error(`查询下载状态失败：${(e as Error).message}`);
+          }
+        })();
       }, 2000);
     } catch (e) {
       setBusy(null);

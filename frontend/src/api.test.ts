@@ -1,0 +1,88 @@
+import { describe, expect, it } from 'vitest';
+import { feedChatStream, type ChatEvent } from './api';
+
+/**
+ * 一次完整响应的帧序列（octop 原生事件帧）。中间刻意混入空行、非 data 行、
+ * 未知 type、非法 JSON —— 都应当被忽略且不影响后续帧。
+ */
+const BODY = [
+  'data: {"type":"reasoning","content":"先想一下"}',
+  '',
+  'data: {"type":"tool_call_chunk","name":"search_knowledge","args":"{\\"q\\":\\"糯米\\"}","plugin_id":"kb-plugin"}',
+  'event: ping',
+  'data: {"type":"tool_result","messages":[{"name":"search_knowledge","content":"命中 3 条","plugin_id":"kb-plugin"}]}',
+  'data: {"type":"token","content":"你"}',
+  'data: {"type":"token","content":"好"}',
+  'data: {"type":"unknown","content":"忽略我"}',
+  'data: {"type":"token","content": broken json',
+  'data: {"type":"error","message":"上游超时"}',
+  'data: {"type":"done"}',
+  '',
+].join('\n');
+
+const EXPECTED: ChatEvent[] = [
+  { type: 'reasoning', content: '先想一下' },
+  { type: 'tool_call', name: 'search_knowledge', content: '{"q":"糯米"}', plugin_id: 'kb-plugin' },
+  { type: 'tool_result', name: 'search_knowledge', detail: '命中 3 条', plugin_id: 'kb-plugin' },
+  { type: 'token', content: '你' },
+  { type: 'token', content: '好' },
+  { type: 'error', content: '上游超时' },
+  { type: 'done' },
+];
+
+const BYTES = new TextEncoder().encode(BODY);
+
+/** 把整段响应按 size 字节切片喂进去（模拟网络分片），返回累计事件。 */
+function feedInSlices(size: number): ChatEvent[] {
+  const decoder = new TextDecoder('utf-8');
+  let buf = '';
+  const events: ChatEvent[] = [];
+  for (let i = 0; i < BYTES.length; i += size) {
+    const parsed = feedChatStream(buf, decoder.decode(BYTES.subarray(i, i + size), { stream: true }));
+    buf = parsed.buf;
+    events.push(...parsed.events);
+  }
+  // 流结束：flush 解码器残留（本例没有，但真实链路同样要收尾）
+  const tail = feedChatStream(buf, decoder.decode());
+  events.push(...tail.events);
+  return events;
+}
+
+describe('feedChatStream · SSE 分帧', () => {
+  // size=1/2 会切在多字节中文字符（3 字节）中间，同时验证 TextDecoder 流式解码与半行缓冲
+  it.each([1, 2, 3, 5, 7, 13, 64, 4096, BYTES.length])('按 %i 字节切片喂入，事件序列一致', size => {
+    expect(feedInSlices(size)).toEqual(EXPECTED);
+  });
+
+  it('token/reasoning/tool_call/tool_result/error/done 六类都能解析出来', () => {
+    const types = new Set(feedInSlices(7).map(e => e.type));
+    expect([...types].sort()).toEqual(['done', 'error', 'reasoning', 'token', 'tool_call', 'tool_result']);
+  });
+
+  it('半行留在残留缓冲，不产生半截事件', () => {
+    const first = feedChatStream('', 'data: {"type":"token","cont');
+    expect(first.events).toEqual([]);
+    expect(first.buf).toBe('data: {"type":"token","cont');
+
+    const second = feedChatStream(first.buf, 'ent":"嗨"}\ndata: {"type":"done"}\n');
+    expect(second.events).toEqual([{ type: 'token', content: '嗨' }, { type: 'done' }]);
+    expect(second.buf).toBe('');
+  });
+
+  it('CRLF 行尾同样解析', () => {
+    expect(feedChatStream('', 'data: {"type":"token","content":"a"}\r\n').events).toEqual([
+      { type: 'token', content: 'a' },
+    ]);
+  });
+
+  it('非 data 行、空 payload、非法 JSON 全部跳过且不中断', () => {
+    const parsed = feedChatStream('', [
+      ': keep-alive',
+      'data:',
+      'data: not-json',
+      'data: {"type":"token","content":"ok"}',
+      '',
+    ].join('\n'));
+    expect(parsed.events).toEqual([{ type: 'token', content: 'ok' }]);
+  });
+});

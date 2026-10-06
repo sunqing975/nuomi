@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import DOMPurify from 'dompurify';
 import {
   Button, Drawer, Empty, Input, Popconfirm, Popover, Select, Space, Switch, Tag, Typography, message,
 } from 'antd';
@@ -12,9 +11,23 @@ import {
   type Agent, type ChatEvent, type ChatMessage, type ConnectorServer, type KnowledgeBase, type Plugin, type Segment, type Skill, type SkillPackage,
 } from '../api';
 import { parseKnowledgeCitations, type KnowledgeCitation } from '../utils/parseKnowledgeCitations';
+import { appendStreamSegment } from '../utils/streamSegments';
+import { sanitizePluginHtml } from '../utils/sanitizePluginHtml';
 
 /** 模型「自动」哨兵值：发送时不传 model（null），由后端按 agent 默认模型解析（对齐 Octop AUTO 语义） */
 const MODEL_AUTO = 'auto';
+
+/**
+ * 片段稳定 id 生成器（模块级自增，流式片段进 state 时生成）。
+ * 为什么不能用数组下标当 key：SegmentView 的折叠状态 `open` 活在组件实例里，
+ * 而流式期间相邻同类片段会合并、历史回读会整批替换 —— 下标 key 会让 React 把
+ * 上一个片段的实例复用到新片段上，折叠状态就错位了。id 跟着片段本身走才稳定。
+ */
+let segmentSeq = 0;
+function nextSegmentId(): string {
+  segmentSeq += 1;
+  return `seg-${segmentSeq}`;
+}
 
 interface SessionMeta {
   thread_id: string;
@@ -162,23 +175,17 @@ function PluginToolCard({ toolName, result, args }: { toolName: string; result: 
         const out = typeof fn === 'function' ? String(fn(ctx) ?? '') : '';
         if (cancelled) return;
         // XSS 防护：插件 renderer 产出 HTML，而它插值的数据来自 tool 结果（可能是
-        // LLM 读进来的外部网页/文档）。原先只正则剥 <script>，<img onerror> /
-        // <svg onload> / <iframe src=javascript:> 全部绕过 —— 与后端同源，注入即可读
-        // /api/settings/env（明文密钥）或调插件导入接口（实测 8 种 payload 全部绕过）。
-        // 改用 DOMPurify 白名单净化。
-        // 注意：DOMPurify 在 DOM 不受支持时会**静默原样返回**（不报错），所以必须显式
-        // 检查 isSupported —— 否则等于没消毒。不支持时降级为纯文本渲染。
-        if (!DOMPurify.isSupported) {
+        // LLM 读进来的外部网页/文档）。净化逻辑抽到 utils/sanitizePluginHtml 并单测覆盖
+        // （原先内联调用无法单测，且 <img onerror> / <svg onload> / <iframe src=javascript:>
+        // 等 8 种 payload 全部能绕过旧的「正则剥 <script>」实现 —— 与后端同源，注入即可读
+        // /api/settings/env 明文密钥）。
+        // supported=false 表示 DOM 不可用：此时 DOMPurify 会静默原样返回，必须显式降级。
+        const { html: clean, supported } = sanitizePluginHtml(out);
+        if (!supported) {
           setFailed(true);
           return;
         }
-        setHtml(
-          DOMPurify.sanitize(out, {
-            FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form', 'link', 'base'],
-            FORBID_ATTR: ['srcdoc', 'formaction'],
-            ALLOW_DATA_ATTR: false,
-          }),
-        );
+        setHtml(clean);
       } catch {
         if (!cancelled) setFailed(true);
       }
@@ -455,6 +462,24 @@ export default function ChatPage() {
   const [selectedModel, setSelectedModel] = useState<string | null>(MODEL_AUTO);
   const [trajectoryOpen, setTrajectoryOpen] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
+  /**
+   * 是否贴近底部（滚动跟随开关，滚动事件里更新）。
+   * 原实现每个 token 都 scrollTo({behavior:'smooth'})：流式期间用户一往上翻就被拉回底部，
+   * 历史根本看不了。改成只在自己贴底时才跟随，且流式增量用 'auto'（smooth 的动画会
+   * 持续打断用户滚动）。
+   */
+  const stickToBottomRef = useRef(true);
+
+  /**
+   * 清空当前会话视图（切会话/切专家/删会话）。
+   * 一并把滚动跟随复位成「跟随」：否则上个会话的上滑状态会让新会话停在中间不动，
+   * 而换会话时用户期望看到最新一条。
+   */
+  const clearView = () => {
+    stickToBottomRef.current = true;
+    setMessages([]);
+    setStreamSegments([]);
+  };
 
   const loadAgents = useCallback(async () => {
     const rows = await get<Agent[]>('/agents');
@@ -502,16 +527,18 @@ export default function ChatPage() {
     );
     const blocks: ChatMessage[] = [];
     let asst: ChatMessage | null = null;
-    for (const s of rows) {
-      if (s.type === 'user') {
+    for (let i = 0; i < rows.length; i += 1) {
+      // 历史片段用行序号（seq）作稳定 id：同一条历史每次回读拿到同一个 id，渲染不重挂
+      const seg: Segment = { ...rows[i], id: rows[i].id ?? `hist-${i}` };
+      if (seg.type === 'user') {
         asst = null;
-        blocks.push({ role: 'user', segments: [{ type: 'text', content: s.content || '' }] });
+        blocks.push({ role: 'user', segments: [{ type: 'text', content: seg.content || '', id: `hist-u-${i}` }] });
       } else {
         if (!asst) {
           asst = { role: 'assistant', segments: [] };
           blocks.push(asst);
         }
-        asst.segments.push(s);
+        asst.segments.push(seg);
       }
     }
     setMessages(blocks);
@@ -530,8 +557,7 @@ export default function ChatPage() {
         if (!alive) return;
         setSessions(st.sessions);
         setActiveThread(st.current);
-        setMessages([]);
-        setStreamSegments([]);
+        clearView();
         if (st.current) loadHistory(agentId, st.current);
       } catch (e) {
         message.error(`加载会话失败：${(e as Error).message}`);
@@ -540,9 +566,23 @@ export default function ChatPage() {
     return () => { alive = false; };
   }, [agentId, loadHistory]);
 
+  /**
+   * 是否贴近底部（滚动跟随开关）。
+   * 原实现每个 token 都 scrollTo({behavior:'smooth'})：流式期间用户一往上翻就被拉回底部，
+   * 历史根本看不了。改成只在自己贴底时才跟随，且流式增量用 'auto'（smooth 的动画会
+   * 持续打断用户滚动）。
+   */
+  const onBodyScroll = () => {
+    const el = bodyRef.current;
+    if (!el) return;
+    stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+  };
+
   useEffect(() => {
-    bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: 'smooth' });
-  }, [messages, streamSegments]);
+    const el = bodyRef.current;
+    if (!el || !stickToBottomRef.current) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: sending ? 'auto' : 'smooth' });
+  }, [messages, streamSegments, sending]);
 
   const refreshState = async () => {
     if (!agentId) return;
@@ -557,8 +597,7 @@ export default function ChatPage() {
       const st = await get<ChatState>(`/chat/state?agent_id=${agentId}`);
       setSessions(st.sessions);
       setActiveThread(st.current);
-      setMessages([]);
-      setStreamSegments([]);
+      clearView();
     } catch (e) {
       message.error(`新建会话失败：${(e as Error).message}`);
     }
@@ -569,8 +608,7 @@ export default function ChatPage() {
     try {
       await post('/chat/switch', { agent_id: agentId, thread_id: tid });
       setActiveThread(tid);
-      setMessages([]);
-      setStreamSegments([]);
+      clearView();
       loadHistory(agentId!, tid);
     } catch (e) {
       message.error(`切换会话失败：${(e as Error).message}`);
@@ -584,8 +622,7 @@ export default function ChatPage() {
       const st = await get<ChatState>(`/chat/state?agent_id=${agentId}`);
       setSessions(st.sessions);
       setActiveThread(st.current);
-      setMessages([]);
-      setStreamSegments([]);
+      clearView();
       if (st.current) loadHistory(agentId, st.current);
       message.success('会话已删除');
     } catch (e) {
@@ -635,7 +672,9 @@ export default function ChatPage() {
     const tid = overrideThread ?? activeThread;
     if (!tid) return;
     setInterrupted(null);
-    const userMsg: ChatMessage = { role: 'user', segments: [{ type: 'text', content: text }] };
+    // 用户自己发消息 = 明确的「看最新一条」意图，重新开启跟随（否则在上滑状态下发消息会看不见回显）
+    stickToBottomRef.current = true;
+    const userMsg: ChatMessage = { role: 'user', segments: [{ type: 'text', content: text, id: nextSegmentId() }] };
     const next = [...messages, userMsg];
     setMessages(next);
     setInput('');
@@ -648,16 +687,12 @@ export default function ChatPage() {
     let gotError = false;
     let streamError = '';
     let stopped = false;
-    // 流式片段按真实到达顺序累积：相邻同类合并（思考累积思考、正文累积正文）
-    const segs: Segment[] = [];
+    // 流式片段按真实到达顺序累积：相邻同类合并（思考累积思考、正文累积正文）。
+    // 合并规则抽到 utils/streamSegments（纯函数，有单测）——原地改已进 state 的对象是这里踩过的坑。
+    let segs: Segment[] = [];
     const pushSeg = (s: Segment) => {
-      const last = segs[segs.length - 1];
-      if (last && s.type === last.type && (s.type === 'text' || s.type === 'reasoning')) {
-        last.content = (last.content || '') + (s.content || '');
-      } else {
-        segs.push(s);
-      }
-      setStreamSegments([...segs]);
+      segs = appendStreamSegment(segs, s);
+      setStreamSegments(segs);
     };
     // per-turn 能力注入（对齐 Octop 对话框语义）：
     // - skills/connectors：未选 = [] = 不加载任何技能/连接器（无「默认全部」）
@@ -673,19 +708,17 @@ export default function ChatPage() {
     try {
       await chatStream(agentId, text, tid, (e: ChatEvent) => {
         if (e.type === 'token' && e.content) {
-          pushSeg({ type: 'text', content: e.content });
+          pushSeg({ id: nextSegmentId(), type: 'text', content: e.content });
         } else if (e.type === 'reasoning' && e.content) {
-          pushSeg({ type: 'reasoning', content: e.content });
+          pushSeg({ id: nextSegmentId(), type: 'reasoning', content: e.content });
         } else if (e.type === 'tool_call') {
-          segs.push({ type: 'tool_call', name: e.name, args: e.content, plugin_id: e.plugin_id });
-          setStreamSegments([...segs]);
+          pushSeg({ id: nextSegmentId(), type: 'tool_call', name: e.name, args: e.content, plugin_id: e.plugin_id });
         } else if (e.type === 'tool_result') {
-          segs.push({ type: 'tool_result', name: e.name, content: e.detail, plugin_id: e.plugin_id });
-          setStreamSegments([...segs]);
+          pushSeg({ id: nextSegmentId(), type: 'tool_result', name: e.name, content: e.detail, plugin_id: e.plugin_id });
         } else if (e.type === 'done') {
           gotDone = true;
           // 去掉末尾空白段；至少保留一个 text 段（哪怕空，显示占位）
-          if (!segs.some(s => s.type === 'text')) segs.push({ type: 'text', content: '' });
+          if (!segs.some(s => s.type === 'text')) pushSeg({ id: nextSegmentId(), type: 'text', content: '' });
           const finalMsg: ChatMessage = { role: 'assistant', segments: segs };
           setMessages([...next, finalMsg]);
           setStreamSegments([]);
@@ -710,7 +743,7 @@ export default function ChatPage() {
       // 否则半截回复停在流式气泡里、刷新即消失（原实现只清 streamSegments）。
       if (!gotDone && !gotError) {
         if (segs.length) {
-          if (!segs.some(s => s.type === 'text')) segs.push({ type: 'text', content: '' });
+          if (!segs.some(s => s.type === 'text')) pushSeg({ id: nextSegmentId(), type: 'text', content: '' });
           setMessages([...next, { role: 'assistant', segments: segs }]);
         }
         setStreamSegments([]);
@@ -808,7 +841,7 @@ export default function ChatPage() {
           </Button>
         </div>
 
-        <div ref={bodyRef} style={{ flex: 1, overflow: 'auto', paddingBottom: 12 }}>
+        <div ref={bodyRef} onScroll={onBodyScroll} style={{ flex: 1, overflow: 'auto', paddingBottom: 12 }}>
           {messages.length === 0 && streamSegments.length === 0 && (
             <Empty style={{ marginTop: 80 }} description="和专家开始对话吧（记忆按会话隔离）" />
           )}
@@ -825,18 +858,18 @@ export default function ChatPage() {
                   {m.role === 'assistant'
                     ? m.segments.map((s, j) =>
                         s.type === 'text' ? (
-                          <div key={j} style={{
+                          <div key={s.id ?? `m${i}-${j}`} style={{
                             marginBottom: 6, padding: '8px 12px', borderRadius: 10,
                             background: '#f5f5f5', color: '#333',
                           }}>
                             <MarkdownText raw={s.content} placeholder="（空回复）" />
                           </div>
                         ) : (
-                          <SegmentView key={j} seg={s} />
+                          <SegmentView key={s.id ?? `m${i}-${j}`} seg={s} />
                         ),
                       )
                     : m.segments.map((s, j) => (
-                        <div key={j} style={{
+                        <div key={s.id ?? `m${i}-${j}`} style={{
                           padding: '8px 12px', borderRadius: 10, fontSize: 14, lineHeight: 1.6,
                           background: '#f59e0b', color: '#fff', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
                         }}>
@@ -855,14 +888,14 @@ export default function ChatPage() {
               <div style={{ minWidth: 0 }}>
                 {streamSegments.map((s, j) =>
                   s.type === 'text' ? (
-                    <div key={j} style={{
+                    <div key={s.id ?? `stream-${j}`} style={{
                       marginBottom: 6, padding: '8px 12px', borderRadius: 10, background: '#f5f5f5', color: '#333',
                     }}>
                       <MarkdownText raw={s.content} />
                       <span style={{ opacity: 0.5 }}>▍</span>
                     </div>
                   ) : (
-                    <SegmentView key={j} seg={s} />
+                    <SegmentView key={s.id ?? `stream-${j}`} seg={s} />
                   ),
                 )}
                 {sending && streamSegments.every(s => s.type === 'tool_result' || s.type === 'tool_call') && (

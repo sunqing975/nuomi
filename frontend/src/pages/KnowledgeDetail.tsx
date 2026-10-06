@@ -14,12 +14,20 @@ import {
 import KnowledgeDocEditorModal from './KnowledgeDocEditorModal';
 import KnowledgeUploadModal from './KnowledgeUploadModal';
 
-const STATUS_TAG: Record<KnowledgeDocument['status'], { color: string; label: string }> = {
+// 用 Record<string, ...> 而不是 Record<KnowledgeDocument['status'], ...>：后端新增状态值时
+// 前端类型仍是旧联合，`STATUS_TAG[d.status].color` 会取到 undefined 再读 .color → TypeError
+// 渲染期抛错、整页白屏。宽化索引类型 + 下面显式兜底，未知状态降级为中性标签。
+const STATUS_TAG: Record<string, { color: string; label: string }> = {
   ready: { color: 'green', label: '就绪' },
   processing: { color: 'blue', label: '索引中…' },
   pending: { color: 'default', label: '待索引' },
   failed: { color: 'red', label: '失败' },
 };
+
+/** 未知状态的兜底展示（原样显示后端值，便于排查而不是吞掉） */
+function statusTag(status: string): { color: string; label: string } {
+  return STATUS_TAG[status] ?? { color: 'default', label: status || '未知状态' };
+}
 
 function fmtSize(n: number): string {
   if (n < 1024) return `${n}B`;
@@ -180,11 +188,15 @@ export default function KnowledgeDetailPage({ kbId }: { kbId: string }) {
     { title: '分块', width: 70, render: (_, d) => (d.is_dir ? '—' : d.chunk_count) },
     {
       title: '状态', width: 110,
-      render: (_, d) => d.is_dir ? <Tag>文件夹</Tag> : (
-        <Tooltip title={d.status === 'failed' ? d.error_message : undefined}>
-          <Tag color={STATUS_TAG[d.status].color}>{STATUS_TAG[d.status].label}</Tag>
-        </Tooltip>
-      ),
+      render: (_, d) => {
+        if (d.is_dir) return <Tag>文件夹</Tag>;
+        const meta = statusTag(d.status);
+        return (
+          <Tooltip title={d.status === 'failed' ? d.error_message : undefined}>
+            <Tag color={meta.color}>{meta.label}</Tag>
+          </Tooltip>
+        );
+      },
     },
     {
       title: '操作', width: 320,

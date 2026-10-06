@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Input, Modal, Radio, Space, Typography } from 'antd';
+import { useEffect, useRef, useState } from 'react';
+import { Input, Modal, Radio, Space, Typography, message } from 'antd';
 import { knowledgeApi, type KnowledgeDocument } from '../api';
 
 interface Props {
@@ -21,17 +21,28 @@ export default function KnowledgeDocEditorModal({ open, onClose, kbId, doc, onSa
 
   const isEdit = doc != null;
 
+  // 请求守卫：先点开 A 再点开 B 时，A 的响应可能后到。没有这层就会把 A 的内容显示在
+  // B 的编辑器里，用户一保存就把 B 写坏（写接口只认 doc.id，内容却来自 A）。
+  const loadReqRef = useRef(0);
+
   useEffect(() => {
     if (!open) return;
+    const req = ++loadReqRef.current;
+    const isCurrent = () => req === loadReqRef.current;
     if (doc) {
       setName(doc.filename.replace(/\.(md|txt)$/, ''));
       setFormat(doc.filename.endsWith('.txt') ? 'txt' : 'md');
       setContent('');
       setLoading(true);
       knowledgeApi.readContent(kbId, doc.id)
-        .then(r => setContent(r.text))
-        .catch(() => setContent(''))
-        .finally(() => setLoading(false));
+        .then(r => { if (isCurrent()) setContent(r.text); })
+        .catch((e: Error) => {
+          if (!isCurrent()) return;
+          setContent('');
+          message.error(`读取文档失败：${e.message}`);
+        })
+        // 只有最新一次请求才有权解锁编辑框，否则 A 的响应会提前把 B 的 loading 关掉
+        .finally(() => { if (isCurrent()) setLoading(false); });
     } else {
       setName('');
       setFormat('md');
@@ -50,6 +61,9 @@ export default function KnowledgeDocEditorModal({ open, onClose, kbId, doc, onSa
         : await knowledgeApi.createTextDoc(kbId, { name: n, format, content });
       onSaved(row);
       onClose();
+    } catch (e) {
+      // 原实现没有 catch：保存失败完全静默，用户以为存上了，关掉弹窗内容就没了
+      message.error(`保存失败：${(e as Error).message}`);
     } finally {
       setSaving(false);
     }
