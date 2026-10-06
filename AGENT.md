@@ -494,3 +494,12 @@ SSE 事件协议（当前完整）：`token` / `reasoning` / `tool_call_chunk`�
 - **落地**：专家卡删恒真「expert」tag（kind 恒为 expert=噪声）、「运行中」上移身份行尾（右上角），名字加溢出省略；插件页脚整条删（技术路径+行为说明，行为信息已在卡片行内「全局启停」）；技能页脚整条删（目录细节导入 Modal 已承载）、内置卡删「lang:」显示、密钥状态 tag 保留；连接器「如何接入」卡整张删（页头 description + 卡片底部「工具名带前缀」已承载）、传输方式 tag 保留；数字人「使用说明」Card 删→行为说明进页头开关 tooltip（关闭销毁窗口/停用能力，后端对话不受影响）、Alert（模型资产+用法）保留
 - **结果**：每个管理页 = 页头一句话 + 卡片区 + 必要状态 UI，无底部技术脚注
 - **验证**：tsc 过、vitest 60 全绿、build 成功、后端+壳重启「糯米启动完成」；config.json 运行时改动未提交
+
+## 专家「运行中」状态真实性修复 + 数字人页 Alert 去重（2026-10-06，commit fec1187）
+
+- **用户质疑**：「运行中」是真的吗，不会是前端状态吧；数字人「模型资产（工作区 models/3D/）」组件和页头描述重复
+- **核实结论（质疑成立）**：`last_state` 是 DB 持久化值——`/start` 写 running、`/stop` 写 stopped，**进程崩溃或后端重启后不复位**；实时状态在 manager 内存缓存（`manager.has`）。后端 `/agents/{id}/status` 早已有 `runtime` 实时字段，但列表接口一直返回旧 `last_state` → 前端显示陈旧「运行中」
+- **修复**：后端 transport 层新增 `_enrich()`（列表/单查/创建/导入统一），在 enrich 后补 `runtime: running|stopped`（domain 层不依赖 infra，P0-1 分层约束，合并放 transport）；`last_state` 保留但不再用于 UI。前端 Agent 类型加 `runtime?`，Experts 页运行中 tag 与「重启/启动实例」判断全改 runtime
+- **实测**：curl /api/agents → 糯米/工作狂 `last_state=running` 但 `runtime=stopped`（后端重启后实例已不在），修复前必然误导
+- **数字人页**：删除与页头描述重复的 Alert；独有信息已覆盖：全局共享→动作资产 Card、表情预览▶→模型卡片、语言驱动→页头 description、无需重启→导入资产行内
+- **验证**：后端 138 测试、前端 tsc/vitest 60/build 全绿、后端+壳重启 OK；config.json 运行时改动未提交
