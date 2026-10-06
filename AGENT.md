@@ -90,6 +90,58 @@ SSE 事件协议（当前完整）：`token` / `reasoning` / `tool_call_chunk`�
 - ~~**待办（2026-10-04 用户拍板，稍后开工）——AI 数字人 3D 化 + 动态工具（方案 B）**~~ **已实施完成（见"方案 B 实施完成"章节）**：物理删 2D、表情单工具、动态工具装配（do_action/set_expression）
 - ~~**待办（2026-10-04 方案 B 架构定稿，不动基础库）**~~ **已实施完成**：单共享插件 vrm-avatar（删模型插件互斥）、动作/表情中文元数据共享来源、清单版本变化自动 release
 
+## 第 1 周正确性与体验修复（2026-10-06）
+
+> 承接第 0 步（安全与门禁），本次做掉路线图 4–9 项。全部改动配套回归测试；`make check` 全绿（79 例）。
+
+- **工具调用投影丢失（第 4 项，实测根因）**：`chat.py` 的 `pending_tools` 在 **TOOL_RESULT 分支就 `clear()`**，而 turn payload 在流末尾才从 `pending_tools` 取 → 正常 ReAct 轮次 `tool_calls` 恒为 `[]`。后果不是"整轮丢"，而是**同一会话历史因写入路径不同而不一致**：首次 backfill 走 `messages_to_inputs`（args 是 dict，正常）能显示工具卡片，之后增量追加的轮次没有。修法：flush 时即归档到 `turn_tool_calls`，末尾再补一次未 flush 的分块。另有**第二半**：`turn_to_message_inputs` 把分块拼出的 args **字符串**直传 `AIMessage(tool_calls=...)`，LangChain 要求 dict，会抛 `ValidationError` 并被上层吞成一行日志（那种情况才整轮丢）；新增 `_normalize_tool_calls` 解析 + 兜底（非 JSON/非 dict/缺 name 丢弃）。回归测试 `tests/test_tool_call_projection.py`（14 例，含"旧逻辑跑同一组事件会失败"的证伪）。
+- **`start_agent` 绕过统一运行时入口（第 5 项）**：`POST /agents/{id}/start` 自行调 `manager.get_agent` 且漏传 `workspace_dir` —— 用户在「专家」页点一下「启动实例」就会把实例缓存到全局数据根（无 persona、写全局 memory.sqlite），正是 `ensure_agent_runtime` docstring 警告的那个坑（chat/history/openai_compat 都改了，唯独这里漏了）。回归测试 `tests/test_agent_runtime_entry.py` 断言三个入口都落到专家 workspace。
+- **插件卡片 XSS（第 6a 项）**：`Chat.tsx` 原先只用正则剥 `<script>`，`<img onerror>`/`<svg onload>`/`<iframe src=javascript:>` 全部绕过 —— 实测 8 种 payload **7 种绕过**（jsdom + DOMPurify 验证）。改用 DOMPurify 白名单。**踩坑**：DOMPurify 在 DOM 不受支持时**静默原样返回**（linkedom 下 `isSupported=undefined`，实测 8/8 全部放行），所以必须显式判 `DOMPurify.isSupported`，否则等于没消毒 —— 不支持时降级为纯文本渲染。
+- **`manager.close()` 不再清空 Langfuse（第 6b 项）**：`close()` 被 15 处配置类端点调用（开关插件/存 env/改 provider/切模型），顺手 `_langfuse = None` 会让轨迹观测在**本进程内永久失效且无提示**。拆出 `shutdown()` 供 lifespan 收尾用。
+- **前端流式可控（第 7a 项）**：`chatStream` 接受 `AbortSignal`；新增「停止生成」按钮；**组件卸载即 abort**（原先切到别的页 LLM 继续跑完，token 照扣）。补 `done` 缺失兜底：无 done/error 时把已累积片段落成消息 + 提示条「回复中断 / 重试」（原实现只清 `streamSegments`，半截回复随刷新消失）。修中文输入法回车即发送（`e.nativeEvent.isComposing`）。后端配套新增 `error` 终止帧（见下）。
+- **壳交互（第 7b 项）**：`controlPanel.on('closed')` 不再 `app.quit()`（原先「关掉控制台」= 整个桌宠消失），改成清引用常驻，并新增**双击角色显示/隐藏控制台**（`toggle-control-panel` IPC）作为再打开入口；退出走 Cmd+Q。
+  - ⚠️ **更正一条审计结论**：上一轮报告中「数字人窗口永久点击穿透、`set-ignore-mouse-events` 无调用方」是**错的** —— 调用方在 `js/model/vrm-model-interaction.js`（首次 grep 只覆盖了 `main.js`/`app.js`）。实际链路完整：`_setupVRMInteractivity` 的 mousemove 命中 `_screenHitBox`（每帧由骨骼投影更新）→ 悬停时 `ignore:false`。窗口初始 `ignore:true` 是**正确**设计（全屏透明窗口不穿透会吞掉整个桌面点击）。**本次未改点击穿透逻辑。**
+- **阻塞调用迁出事件循环（第 8a 项）**：全部 `asyncio.to_thread` —— git clone（`subprocess` timeout 120s）/ FBX→VRMA（node，180s）/ SkillHub 与 Provider 探测（`httpx` 15–60s）/ Langfuse `auth_check`+`flush` / zip 解包与插件落盘 / **知识库 19 处 `_guard` 改成 async**（原来同步 sqlite + 文件 IO 直跑在 async 端点，传个大 PDF 就能卡住整个后端含 SSE）/ 模型缓存删除（`rmtree` 100MB+）/ 模型目录扫描 / 每轮 `_available_skill_keys()`（实测 23–34ms，读全部 SKILL.md）。
+  - 回归测试 `test_slow_endpoint_does_not_block_health` 断言慢操作期间 `/api/health` 秒回，**已用「临时改回同步直调」验证该测试确有鉴别力**（改回即失败）。
+  - ⚠️ 我上一轮写的「长阻塞操作**全部** to_thread」**不准确**（审查指出只搬了便宜的那个）：`assert_catalog_model`（字典查表，微秒级）当初转了，而 `delete_downloaded_model`（rmtree）、`reindex_all_documents`、`status_payload`/`is_model_downloaded`（目录遍历）、`client.flush()`（网络）都还留在循环上 —— **本轮已补齐**。剩下的同步开销主要是每轮 `plugin_service.tools()`（真实工作区实测约 55ms，含读 SKILL.md 与动态工具装配），未做缓存；要优化需按内容变更失效的缓存层。
+  - ⚠️ 另一条我写错的：**「注册」不能 offload**。见下方「审查发现与修正」的 P1 竞态。
+- **SSE 终止契约（第 8b 项）**：两个对话端点（`/api/agents/{id}/chat`、`/api/v1/chat/completions`）加 `aclosing` + `except` → 断连时关闭本层 SSE 生成器，异常时补发 `error` 帧（前端 `ChatEvent` 增 `error` 类型并解析）。
+  - ⚠️ **机制说明要准确**（我上一轮写错过）：`aclose(frames)` 只把 `GeneratorExit` 抛进**本层**；两个 SSE 转换器都没有 try/finally，所以**不会同步传播到上游**。上游 LLM 流是在引用释放后由 async generator 终结器**异步**关闭的（实测 break 后同 tick 未关，让出约 10 次事件循环才关）。**效果成立（模型不会跑完），但不是「break 完立刻关」**。
+  - 另：harness 自身对 LLM 失败是优雅降级的（把错误当 token 发出来再 done），所以 error 帧是异常逸出的安全网而非常规路径。
+  - **实测提示**：harness 自身对 LLM 失败是**优雅降级**的（把 "Model call failed after 3 attempts…" 当 token 发出来再 `done`），所以 error 帧不是常规路径而是异常逸出的安全网；测试用强制抛异常验证。
+- **每轮重写插件文件（第 9a 项）**：`ensure_vrm_avatar_plugin()` 每轮对话被 `load_avatar_instructions()` 调用并无条件重写 3 个文件（还多一次 DB 查询）。改成存在即跳过；实测 mtime 不再变化、每轮从 3 次 write_text 降到 0.3–0.6ms。
+  - 取舍：内容不自动升级（改了 instructions 文案后已有安装保持旧内容，也因此不覆盖用户手改）。要强制更新删掉该文件即可。
+  - ⚠️ 我上一轮写的依据「会触发壳 fs.watch 误报动作变更」**是错的**：壳只 watch `config.json`（main.js）与 `assets/animations/`（vrm-model-setup.js），**不 watch 插件目录**。真正依据只有 IO 浪费。
+- **密钥脱敏与落盘（第 9b/9c 项）**：`GET/PUT /settings/env` 按键名判决敏（`KEY|TOKEN|SECRET|PASSWORD|PWD|CREDENTIAL`），非密钥键照常可读；PUT 收到含 `***` 的值视为「保持原值」，所以前端拿脱敏值回写不会覆盖真 key（与 providers 同语义）。新增 `infra/secret_file.py`：**原子写 + 0600**（临时文件 → fsync → chmod → `os.replace`），四个明文密钥文件（providers/env/langfuse/connectors）全部接入，读时对旧文件补 0600。原实现非原子 + 0644，写一半被杀会截断，而读侧一律静默回退默认值。
+- **顺手修**：知识库索引任务 `asyncio.create_task` 返回值被丢弃（asyncio 只持弱引用，任务可能被 GC；异常只打印 "Task exception was never retrieved"）→ 存强引用 + done-callback 消费异常并记 WARNING。实测确认修复前日志有该警告、修复后变成明确的「文档索引任务失败」告警且文档状态机不变。
+
+## 审查发现与修正（2026-10-06，独立对抗性审查后）
+
+- **P1 竞态（我引入的，已修）**：第 8a 项把 `plugin_service.sync()` 也丢进了 `asyncio.to_thread`，但 `PluginRegistry` 是进程级单例、`load_all()` 是「先 `clear()` 再逐个注册」→ 工作线程 sync 期间，事件循环上的 `plugin_service.tools()` 会读到**空注册表**。实测并发读观察到 `[0,1,2,3]`，即**该轮对话拿不到任何插件工具且无日志**。修复：**文件操作 offload、注册回到事件循环**（`_import_plugin_from_root` 只落盘返回 plugin_id；`transport/api.py` 的 `_sync_plugin_row` 在循环上 sync）。`tests/test_plugin_import.py` 用「记录两个阶段的线程名」锁死分工，并已验证把 sync 改回 to_thread 该用例立刻失败。
+- **P2 脱敏哨兵曾误伤（已修）**：`env_store.save` 原用「值含 `***`」判断「前端未改动」，会把用户**真的**改成含 `***` 的新密钥静默还原成旧值。改为**精确等于 `mask_value(旧值)`**；`_SECRET_KEY_RE` 也补了词边界锚定（原先 `MONKEY`/`KEYWORD_X`/`TOKENIZER_PATH` 会被误判成密钥）。
+- **P2 前端通知（已修）**：收到 `error` 帧后原会再叠加一条「未收到完成帧」横幅（且与事实相反）→ 已把 error 视为终态、只报一次；组件卸载触发的 abort 原会弹「已停止生成」假提示 → 用 `unmountedRef` 区分；「重试」原用 `activeThread` 而非该轮自己的 threadId → 切会话后会发错线程，已修。
+- **P2 壳忽略 error 帧（已修）**：`app.js` 只解析 `chunk.choices?.[0]`，`{"error":...}` 被 `if(!choice) continue` 丢弃 → 对话失败时用户看不到任何原因。已加处理。
+- **✅ 壳的定位（用户 2026-10-06 明确确认，勿改）**：壳**只订阅对话消息**，不做对话入口 —— 全仓唯一的 POST `callLLMStream` 是死代码，`index.html` 也没有输入控件，壳对后端的实时请求只有 `GET /api/avatar/events`（SSE 读，不需 token）。
+  - **不要把「数字人不能主动/被搭话」当缺陷**，也不要在壳里加聊天输入 —— 这是产品决策：对话发生在控制台，壳只负责形象与表现（动作/表情/语音播报）。
+  - 因此第 0 步给壳加的 token 接线是**预防性**的：恢复壳内对话、或外部 OpenAI 兼容客户端接 `/api/v1/chat/completions` 时会被守卫 403，届时必须带 `X-Nuomi-Token`（同源 `GET /api/session-token` 获取）。
+  - 启动壳时注意：**从 Electron 宿主环境（如 DSH）的终端里 `npm start` 会崩** —— 宿主导出了 `ELECTRON_RUN_AS_NODE=1`，electron 会退化成纯 Node，报 `Cannot read properties of undefined (reading 'getAppPath')`。启动前 unset 该变量即可（本文件所在会话实测踩到）。
+- **顺手修**：`app.on('activate')` 兜底（关面板不再退出后，若数字人开关为关会出现「进程活着但无窗口」，Dock 点击无反应）。
+
+## 第 0 步安全与门禁加固（2026-10-06）
+
+> 背景：三份只读审计（后端/前端/壳）交叉结论——架构分层真实落地，但**本机 API 零鉴权 + multipart 绕过 CORS 预检 + 插件隐式 pip install** 构成完整 RCE 链；且 HEAD 上门禁假绿。本次做掉「第 0 步」三项。
+
+- **本机访问守卫（新增 `backend/app/infra/local_guard.py`）**：纯 ASGI 中间件（只读请求头，不碰 body，SSE/上传不受影响），三道防线——① `Host` 白名单（127.0.0.1/localhost/::1/[::1]，挡 DNS rebinding）；② 带 `Origin` 时必须本机来源（`Origin: null` 给 `file://` 壳放行，但 `/api/session-token` 连 `null` 也拒）；③ `/api/*` 的 POST/PUT/PATCH/DELETE 必须带 `X-Nuomi-Token`（或 `Authorization: Bearer`）。token 每进程随机生成，`NUOMI_API_TOKEN` 可覆盖；同源 `GET /api/session-token` 获取。**威胁模型只覆盖「浏览器里的第三方页面」**——本机其它进程本来就能读工作区明文密钥，不以此为目标。
+- **为什么必须用 token 而不是只查 Origin**：`multipart/form-data` 属 CORS 简单请求，不触发预检，请求会真实到达；`Origin: null`（沙箱 iframe）又必须给壳放行 → 只有 token 能兜住这条路径。
+- **客户端接线**：控制台 `api.ts` 懒取 token 并缓存（`authedFetch` 在 403 时清缓存重取重试一次）；壳走主进程 Node http（无 CORS 约束）取 token → `ipcMain.handle('api-token'/'refresh-api-token')` → `app.js` 的 `postJsonWithToken`。**重试逻辑是必需的**：token 每进程轮换，后端重启后不刷新会让所有写操作一直 403。
+- **向后兼容已验证**：新 dist 对旧后端（`/api/session-token` 404）静默降级为不带 header，行为不变——所以先重启后端还是先换前端都不会互相打断。
+- **插件加载不再隐式装依赖**：`plugin_service.sync()` 改 `load_all(plugins_dir, install_deps=False)`。octop loader 原本会在插件声明 `requires`/`requirements.txt` 时自动 `pip install`，等于把安装脚本执行权交给插件作者。
+- **`main.py` 的 `logger` 未定义（ruff F821 + mypy 都报过）**：`_sync_langfuse` 的 except 分支引用未定义的 `logger` → 观测配置写错会把整个后端启动搞崩（该调用没被 try 包住）。已补 `logging.getLogger(__name__)` + lifespan 加 `_safe()` 单步兜底。
+- **harness 日志重定向（顺手修「数据根不单一」）**：harness 默认写 `~/.octop-harness/logs`，在 NUOMI_HOME 之外；隔离数据根的测试会越界写用户 HOME（无权限直接 `PermissionError`，实测就是那 2 个失败用例的**第二层**根因）。新增 `configure_harness_logging()` 用 `setup_logging({data_root}/logs/octop-harness)`，**必须在首次构造 HarnessAgent 之前调用**（`ensure_logging()` 见到已有同包 handler 就不再装默认的）。
+- **测试去网络化**：conftest 内建 `providers.json`（dummy base_url，不再依赖本机 `.env` 密钥）+ 固定 `NUOMI_API_TOKEN` + `base_url=http://127.0.0.1:8000`（过 Host 白名单）；新增 `stub_llm` fixture 替换两个 transport 模块里的 `stream_chat`——路由级用例本来只断言状态码（自述"不校验推理内容"），真实打模型让每个用例 30s+ 且真花钱。**全量 46→59 例，73s→4.5s**。
+- **门禁变成真的**：`make check = lint + format-check + typecheck + test + build + shell-check`；前端 `build` 改回 `tsc -b && vite build`（CI 步骤名一直这么写、实际只跑 vite，3 个类型错误长期潜伏）；lint/format 覆盖范围从 `app` 扩到 `app tests`；CI 新增 shell job（`node --check` 15 个脚本）。**HEAD 修复前实测**：ruff 10 错、format 15 文件、mypy 2 错、pytest 2 failed。
+- **顺手修掉的类型错误不是洁癖**：`AvatarModel` 少了 `expressions_have_data` → `AvatarModels.tsx` 里「该模型无表情变形数据」的告警**永远不显示**（真实功能失效）。
+
 ## 教训（保留，跨版本有效）
 
 - **MCP（langchain-mcp-adapters 0.3.x）**：`MultiServerMCPClient({"<s>": StdioConnection(transport="stdio", command=..., args=..., env=...)})`；**不是上下文管理器**，直接 `tools = await client.get_tools()`；StdioConnection 必须带 `transport` 键；env 不默认继承，需显式 `env=dict(os.environ)`。
