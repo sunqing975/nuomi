@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  Button, Card, Modal, Form, Input, Space, Switch, Tag, message, Popconfirm,
+  Button, Card, Modal, Form, Input, Space, Switch, Tag, Typography, message, Popconfirm,
 } from 'antd';
-import { PlusOutlined, RobotOutlined } from '@ant-design/icons';
+import { PlusOutlined, RobotOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import { get, post, patch, del, type Agent } from '../api';
 import EntityGrid from '../components/EntityGrid';
 import PageLayout from '../components/PageLayout';
@@ -68,31 +68,44 @@ export default function ExpertsPage() {
           <Card
             size="small"
             hoverable
-            styles={{ body: { display: 'flex', flexDirection: 'column', gap: 10, height: '100%' } }}
+            style={a.enabled ? { height: '100%' } : { opacity: 0.75, height: '100%' }}
+            title={
+              <Space>
+                <div style={{
+                  width: 24, height: 24, borderRadius: '50%',
+                  background: a.color || 'var(--accent)', color: 'var(--surface)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14,
+                }}>
+                  {a.icon_name === 'cat' ? '🐱' : <RobotOutlined />}
+                </div>
+                <span>{a.name}</span>
+                {a.runtime === 'running' && <Tag color="green">运行中</Tag>}
+                {!a.enabled && <Tag color="default">已停用</Tag>}
+              </Space>
+            }
+            extra={
+              <Space size={4}>
+                <Button size="small" type="text" icon={<EditOutlined />} onClick={() => { setEditing(a); form.setFieldsValue(a); setCreateOpen(true); }} />
+                <Popconfirm title={`删除「${a.name}」？`} onConfirm={async () => { await del(`/agents/${a.agent_id}`); message.success('已删除'); load(); }}>
+                  <Button size="small" type="text" danger icon={<DeleteOutlined />} />
+                </Popconfirm>
+              </Space>
+            }
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{
-                width: 40, height: 40, borderRadius: '50%',
-                background: a.color || 'var(--accent)', color: 'var(--surface)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20,
-              }}>
-                {a.icon_name === 'cat' ? '🐱' : <RobotOutlined />}
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</div>
-              </div>
-              {a.runtime === 'running' && <Tag color="green">运行中</Tag>}
+            <Typography.Paragraph type="secondary" ellipsis={{ rows: 2 }} style={{ fontSize: 13, minHeight: 40, marginBottom: 8 }}>
+              {a.description || '（暂无描述）'}
+            </Typography.Paragraph>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                {a.persona_mbti ? `MBTI · ${a.persona_mbti}` : '—'}
+              </Typography.Text>
+              <span>
+                <Switch size="small" checked={a.enabled} onChange={() => toggleEnabled(a)} />
+                <Typography.Text type="secondary" style={{ fontSize: 12, marginLeft: 6 }}>
+                  {a.enabled ? '已启用' : '已停用'}
+                </Typography.Text>
+              </span>
             </div>
-            <div style={{ color: 'var(--label-2)', fontSize: 13, minHeight: 36 }}>
-              {a.description || '暂无描述'}
-            </div>
-            <Space wrap>
-              <Switch checked={a.enabled} onChange={() => toggleEnabled(a)} checkedChildren="启用" unCheckedChildren="停用" />
-              <Button size="small" onClick={() => { setEditing(a); form.setFieldsValue(a); setCreateOpen(true); }}>编辑</Button>
-              <Popconfirm title={`删除「${a.name}」？`} onConfirm={async () => { await del(`/agents/${a.agent_id}`); message.success('已删除'); load(); }}>
-                <Button size="small" danger>删除</Button>
-              </Popconfirm>
-            </Space>
           </Card>
         )}
       />

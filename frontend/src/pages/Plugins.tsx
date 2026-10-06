@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  Avatar, Button, Card, Input, Modal, Popconfirm, Space, Switch, Tabs,
+  Avatar, Button, Card, Input, Modal, Popconfirm, Space, Switch, Tabs, Tag,
   Typography, Upload, message,
 } from 'antd';
 import { CloudUploadOutlined, DeleteOutlined, GithubOutlined, ReloadOutlined } from '@ant-design/icons';
@@ -87,34 +87,17 @@ export default function PluginsPage() {
       <Card
         size="small"
         hoverable
-        styles={{ body: { display: 'flex', flexDirection: 'column', gap: 8, height: '100%' } }}
-      >
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <Avatar size={40} style={{ backgroundColor: color, flexShrink: 0 }}>
-            {(p.name[0] || '?').toUpperCase()}
-          </Avatar>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <Typography.Text strong ellipsis style={{ display: 'block' }} title={p.name}>
-              {p.name}
-            </Typography.Text>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              {KIND_LABEL[p.kind] ?? '插件'} · v{p.version || '—'} · {p.tool_count ?? 0} 个工具
-            </Typography.Text>
-          </div>
-        </div>
-        <Typography.Paragraph
-          type="secondary" style={{ fontSize: 12, marginBottom: 0, flex: 1 }}
-          ellipsis={{ rows: 2, tooltip: p.description }}
-        >
-          {p.description || '（暂无描述）'}
-        </Typography.Paragraph>
-        <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-          <Space size={4}>
-            <Switch
-              size="small" checked={p.enabled} onChange={v => toggle(p, v)}
-              checkedChildren="启用" unCheckedChildren="停用"
-            />
+        style={p.enabled ? { height: '100%' } : { opacity: 0.75, height: '100%' }}
+        title={
+          <Space>
+            <Avatar size={24} style={{ backgroundColor: color, fontSize: 12, flexShrink: 0 }}>
+              {(p.name[0] || '?').toUpperCase()}
+            </Avatar>
+            <span>{p.name}</span>
+            {!p.enabled && <Tag color="default">已停用</Tag>}
           </Space>
+        }
+        extra={
           <Popconfirm
             title="删除插件？"
             description="将删除插件目录与全部绑定，不可恢复"
@@ -123,7 +106,22 @@ export default function PluginsPage() {
           >
             <Button size="small" type="text" danger icon={<DeleteOutlined />} />
           </Popconfirm>
-        </Space>
+        }
+      >
+        <Typography.Paragraph type="secondary" ellipsis={{ rows: 2 }} style={{ fontSize: 13, minHeight: 40, marginBottom: 8 }}>
+          {p.description || '（暂无描述）'}
+        </Typography.Paragraph>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {KIND_LABEL[p.kind] ?? '插件'} · v{p.version || '—'} · {p.tool_count ?? 0} 个工具
+          </Typography.Text>
+          <span>
+            <Switch size="small" checked={p.enabled} onChange={v => toggle(p, v)} />
+            <Typography.Text type="secondary" style={{ fontSize: 12, marginLeft: 6 }}>
+              {p.enabled ? '已启用' : '已停用'}
+            </Typography.Text>
+          </span>
+        </div>
       </Card>
     );
   };

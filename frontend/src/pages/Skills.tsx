@@ -200,6 +200,7 @@ export default function SkillsPage() {
     const miss = (it.requires_env || []).filter(v => !envVars[v] && !(v in envVars));
     const isSkill = it.kind === 'skill' && it.ref;
     const isPackage = it.kind === 'package' && it.ref;
+    const enabled = it.enabled ?? true;
     const attr =
       it.kind === 'builtin'
         ? '内置 · 随 harness 注入'
@@ -212,61 +213,59 @@ export default function SkillsPage() {
               : '技能 · 无需密钥';
     return (
       <Card
-        size="small" hoverable
-        styles={{ body: { display: 'flex', flexDirection: 'column', gap: 8, height: '100%' } }}
+        size="small"
+        hoverable
+        style={enabled ? { height: '100%' } : { opacity: 0.75, height: '100%' }}
+        title={
+          <Space>
+            {it.icon_url ? (
+              <img src={it.icon_url} alt="" width={24} height={24}
+                style={{ borderRadius: 4, objectFit: 'cover', flexShrink: 0 }} />
+            ) : (
+              <span style={{ fontSize: 16, flexShrink: 0 }}>{initialAvatarOf(it.name)}</span>
+            )}
+            <span>{it.name}</span>
+            {!enabled && <Tag color="default">已停用</Tag>}
+          </Space>
+        }
+        extra={
+          it.kind === 'builtin' ? null : (
+            <Popconfirm
+              title={isSkill ? '删除技能？' : '删除技能包？'}
+              description={isSkill ? '将删除技能目录，不可恢复' : '将删除包目录及全部技能，不可恢复'}
+              okText="删除" cancelText="取消"
+              onConfirm={() => (isSkill ? removeSkill(it.ref as Skill) : removePackage(it.ref as SkillPackage))}
+            >
+              <Button size="small" type="text" danger icon={<DeleteOutlined />} />
+            </Popconfirm>
+          )
+        }
       >
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          {it.icon_url ? (
-            <img src={it.icon_url} alt="" width={40} height={40}
-              style={{ borderRadius: 8, objectFit: 'cover', flexShrink: 0 }} />
-          ) : initialAvatarOf(it.name)}
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <Typography.Text strong ellipsis style={{ display: 'block' }} title={it.name}>
-              {it.name}
-            </Typography.Text>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>{attr}</Typography.Text>
-          </div>
-        </div>
-        <Typography.Paragraph
-          type="secondary" style={{ fontSize: 12, marginBottom: 0, flex: 1 }}
-          ellipsis={{ rows: 3, tooltip: desc }}
-        >
+        <Typography.Paragraph type="secondary" ellipsis={{ rows: 2 }} style={{ fontSize: 13, minHeight: 40, marginBottom: 8 }}>
           {desc}
         </Typography.Paragraph>
-        {it.kind === 'builtin' ? null : (
-          <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
-            <Switch size="small" checked={it.enabled}
-              checkedChildren="启用" unCheckedChildren="停用"
-              onChange={v => (isSkill ? toggleSkill(it.ref as Skill, v) : togglePackage(it.ref as SkillPackage, v))} />
-            {isSkill ? (
-              <Popconfirm
-                title="删除技能？" description="将删除技能目录，不可恢复"
-                okText="删除" cancelText="取消"
-                onConfirm={() => removeSkill(it.ref as Skill)}
-              >
-                <Button size="small" type="text" danger icon={<DeleteOutlined />} />
-              </Popconfirm>
-            ) : (
-              <Popconfirm
-                title="删除技能包？" description="将删除包目录及全部技能，不可恢复"
-                okText="删除" cancelText="取消"
-                onConfirm={() => removePackage(it.ref as SkillPackage)}
-              >
-                <Button size="small" type="text" danger icon={<DeleteOutlined />} />
-              </Popconfirm>
-            )}
-          </Space>
-        )}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>{attr}</Typography.Text>
+          {it.kind === 'builtin' ? null : (
+            <span>
+              <Switch size="small" checked={enabled}
+                onChange={v => (isSkill ? toggleSkill(it.ref as Skill, v) : togglePackage(it.ref as SkillPackage, v))} />
+              <Typography.Text type="secondary" style={{ fontSize: 12, marginLeft: 6 }}>
+                {enabled ? '已启用' : '已停用'}
+              </Typography.Text>
+            </span>
+          )}
+        </div>
       </Card>
     );
   };
 
   const AVATAR_COLORS = ['#f59e0b', '#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
 
-  const initialAvatarOf = (name: string) => {
+  const initialAvatarOf = (name: string, size = 40) => {
     const ch = (name[0] || '?').toUpperCase();
     const color = AVATAR_COLORS[(name.charCodeAt(0) || 0) % AVATAR_COLORS.length];
-    return <Avatar size={40} style={{ backgroundColor: color, flexShrink: 0 }}>{ch}</Avatar>;
+    return <Avatar size={size} style={{ backgroundColor: color, flexShrink: 0 }}>{ch}</Avatar>;
   };
 
   const renderHubItem = (item: SkillHubItem) => {
@@ -275,38 +274,31 @@ export default function SkillsPage() {
     const desc = item.summary || item.description || '—';
     return (
       <Card
-        size="small" hoverable
-        styles={{ body: { display: 'flex', flexDirection: 'column', gap: 8, height: '100%' } }}
+        size="small"
+        hoverable
+        style={{ height: '100%' }}
+        title={<Space>{item.icon_url ? (
+          <img src={item.icon_url} alt="" width={24} height={24}
+            style={{ borderRadius: 4, objectFit: 'cover', flexShrink: 0 }} />
+        ) : initialAvatarOf(name, 24)}<span>{name}</span></Space>}
+        extra={
+          item.requires_api_key && (
+            <Tag color="orange" style={{ marginInlineEnd: 0 }}
+              title="该技能需要 API Key，安装后在「设置 → 环境变量」配置">
+              需 API Key
+            </Tag>
+          )
+        }
       >
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          {item.icon_url ? (
-            <img src={item.icon_url} alt="" width={40} height={40}
-              style={{ borderRadius: 8, objectFit: 'cover', flexShrink: 0 }} />
-          ) : initialAvatarOf(name)}
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <Typography.Text strong ellipsis style={{ display: 'block' }} title={name}>
-              {name}
-            </Typography.Text>
-            <Space size={4} wrap style={{ marginTop: 2 }}>
-              {item.requires_api_key && (
-                <Tag color="orange" style={{ marginInlineEnd: 0 }}
-                  title="该技能需要 API Key，安装后在「设置 → 环境变量」配置">
-                  需 API Key
-                </Tag>
-              )}
-              {hubTab === 'skillsets' && item.skill_count != null && (
-                <Tag color="blue" style={{ marginInlineEnd: 0 }}>{item.skill_count} 技能</Tag>)}
-            </Space>
-          </div>
-        </div>
-        <Typography.Paragraph
-          type="secondary" style={{ fontSize: 12, marginBottom: 0, flex: 1 }}
-          ellipsis={{ rows: 3, tooltip: desc }}
-        >
+        <Typography.Paragraph type="secondary" ellipsis={{ rows: 2 }} style={{ fontSize: 13, minHeight: 40, marginBottom: 8 }}>
           {desc}
         </Typography.Paragraph>
-        <div style={{ marginTop: 2 }}>
-          <Button size="small" type="primary" block loading={installingNow}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {hubTab === 'skills' ? '技能' : '技能包'}
+            {hubTab === 'skillsets' && item.skill_count != null ? ` · ${item.skill_count} 个技能` : ''}
+          </Typography.Text>
+          <Button size="small" type="primary" loading={installingNow}
             icon={<DownloadOutlined />}
             onClick={() => (hubTab === 'skills' ? installSkill(item) : installPackage(item))}>
             {hubTab === 'skills' ? '安装技能' : '安装技能包'}

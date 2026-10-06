@@ -81,56 +81,41 @@ export default function MarketPage({ onInstalled }: MarketProps = {}) {
               key={item.id}
               size="small"
               hoverable
-              styles={{ body: { display: 'flex', flexDirection: 'column', gap: 8, height: '100%' } }}
-            >
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                <Avatar size={40} style={{ backgroundColor: color, flexShrink: 0 }}>
-                  {(item.name[0] || '?').toUpperCase()}
-                </Avatar>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <Typography.Text strong ellipsis style={{ display: 'block' }} title={item.name}>
-                    {item.name}
-                  </Typography.Text>
-                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                    {KIND_LABEL[item.kind] ?? '插件'} · v{item.version}
-                  </Typography.Text>
-                </div>
-              </div>
-              <Typography.Paragraph
-                type="secondary" style={{ fontSize: 12, marginBottom: 0, flex: 1 }}
-                ellipsis={{ rows: 2, tooltip: item.description }}
-              >
-                {item.description || '（暂无描述）'}
-              </Typography.Paragraph>
-              {item.tags && item.tags.length > 0 && (
-                <Space size={4} wrap>
-                  {item.tags.slice(0, 3).map(t => (
-                    <Tag key={t} style={{ marginInlineEnd: 0, fontSize: 11 }}>{t}</Tag>
-                  ))}
+              style={{ height: '100%' }}
+              title={
+                <Space>
+                  <Avatar size={24} style={{ backgroundColor: color, fontSize: 12, flexShrink: 0 }}>
+                    {(item.name[0] || '?').toUpperCase()}
+                  </Avatar>
+                  <span>{item.name}</span>
                 </Space>
-              )}
-              {item.installed_note && (
-                <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-                  {item.installed_note}
-                </Typography.Text>
-              )}
-              <div style={{ marginTop: 2 }}>
-                {item.installed
-                  ? (
-                    <Tag color="green" icon={<CheckCircleOutlined />} style={{ marginInlineEnd: 0 }}>
-                      已安装 v{item.installed_version || item.version}
-                    </Tag>
-                  )
+              }
+              extra={
+                item.installed
+                  ? <Tag color="green" icon={<CheckCircleOutlined />} style={{ marginInlineEnd: 0 }}>已安装 v{item.installed_version || item.version}</Tag>
                   : (
-                    <Button
-                      size="small" type="primary" block
+                    <Button size="small" type="primary" loading={installing === item.id}
                       icon={<DownloadOutlined />}
-                      loading={installing === item.id}
-                      onClick={() => install(item)}
-                    >
+                      onClick={() => install(item)}>
                       安装
                     </Button>
-                  )}
+                  )
+              }
+            >
+              <Typography.Paragraph type="secondary" ellipsis={{ rows: 2 }} style={{ fontSize: 13, minHeight: 40, marginBottom: 8 }}>
+                {item.description || '（暂无描述）'}
+              </Typography.Paragraph>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  {KIND_LABEL[item.kind] ?? '插件'} · v{item.version}
+                </Typography.Text>
+                {item.tags && item.tags.length > 0 && (
+                  <Space size={4} wrap>
+                    {item.tags.slice(0, 3).map(t => (
+                      <Tag key={t} style={{ marginInlineEnd: 0, fontSize: 11 }}>{t}</Tag>
+                    ))}
+                  </Space>
+                )}
               </div>
             </Card>
           );
