@@ -537,3 +537,10 @@ SSE 事件协议（当前完整）：`token` / `reasoning` / `tool_call_chunk`�
 - **用户纠正**：市场不该是页内 Tab——「插件市场」应是独立页面，否则面包屑（能力/插件）没有层级作用
 - **落地**：能力组导航新增「插件市场」「技能市场」独立项（面包屑自动生成「能力/插件市场」）；插件页/技能页恢复单页（已安装管理，导入按钮回 PageLayout extra）；新建 PluginMarketPage / SkillMarketPage（PageLayout + 市场内容，技能市场逻辑从 Skills.tsx 拆出）
 - **验证**：前端 tsc/vitest 60/build 全绿、壳重启「糯米启动完成」
+
+## 市场改为插件页按钮进入 + 面包屑可点击返回（2026-10-06，commit 2a5e0c5）
+
+- **用户二次澄清**：市场是插件页的按钮入口（不是侧栏独立导航项），点击进入独立市场页，靠面包屑返回插件页
+- **落地**：导航还原（无市场项）；市场页保留 hash 路由（#pluginMarket/#skillMarket，刷新可用、侧栏不显示）；面包屑升级为可点击序列（能力 / 插件(链接) / 插件市场(当前)），PAGE_PARENT 映射市场页上级，点击上级调 switchPage 返回；知识库详情同样可点「知识库」返回列表；插件/技能页 extra 加「插件市场」「技能市场」主按钮
+- **清理**：BREADCRUMB 常量废弃，crumbs 由 ALL_NAV/PAGE_PARENT 实时生成
+- **验证**：前端 tsc/vitest 60/build 全绿、壳重启「糯米启动完成」
