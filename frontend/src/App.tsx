@@ -22,22 +22,22 @@ const { Sider, Content, Header } = Layout;
  * 导航三分组（P0-6，2026-10-06）：对话 ｜ 能力 ｜ 系统。
  * 「记忆」不再占平级菜单 —— 它是对话的伴生视图（Chat 页「记忆」抽屉）。
  */
-interface NavLeaf { key: string; icon: ReactNode; label: string; title: string; [k: `data-${string}`]: any; }
+interface NavLeaf { key: string; icon: ReactNode; label: string; [k: `data-${string}`]: any; }
 interface NavGroup { key: string; type: 'group'; label: string; children: NavLeaf[]; }
 type NavEntry = NavLeaf | NavGroup;
 
 const NAV: NavEntry[] = [
-  { key: 'chat', icon: <MessageOutlined />, label: '对话', title: '对话' },
+  { key: 'chat', icon: <MessageOutlined />, label: '对话' },
   {
     key: 'abilities',
     type: 'group',
     label: '能力',
     children: [
-      { key: 'experts', icon: <RobotOutlined />, label: '专家', title: '专家' },
-      { key: 'plugins', icon: <ApiOutlined />, label: '插件', title: '插件（市场 / 已安装管理）' },
-      { key: 'skills', icon: <ReadOutlined />, label: '技能', title: '技能 / 技能包' },
-      { key: 'connectors', icon: <GlobalOutlined />, label: '连接器', title: '连接器（外部服务器接入）' },
-      { key: 'knowledge', icon: <BookOutlined />, label: '知识库', title: '知识库 / 文档检索' },
+      { key: 'experts', icon: <RobotOutlined />, label: '专家' },
+      { key: 'plugins', icon: <ApiOutlined />, label: '插件' },
+      { key: 'skills', icon: <ReadOutlined />, label: '技能' },
+      { key: 'connectors', icon: <GlobalOutlined />, label: '连接器' },
+      { key: 'knowledge', icon: <BookOutlined />, label: '知识库' },
     ],
   },
   {
@@ -45,12 +45,22 @@ const NAV: NavEntry[] = [
     type: 'group',
     label: '系统',
     children: [
-      { key: 'avatarModels', icon: <SmileOutlined />, label: 'AI 数字人', title: 'AI 数字人模型资产' },
-      { key: 'settings', icon: <SettingOutlined />, label: '设置', title: '设置 / 环境变量' },
-      { key: 'storage', icon: <DatabaseOutlined />, label: '存储', title: '存储 / 总览' },
+      { key: 'avatarModels', icon: <SmileOutlined />, label: 'AI 数字人' },
+      { key: 'settings', icon: <SettingOutlined />, label: '设置' },
+      { key: 'storage', icon: <DatabaseOutlined />, label: '存储' },
     ],
   },
 ];
+
+/** 面包屑：分组 / 页面（chat 为顶级，无分组）——顶栏不再重复页面主标题（主标题在 PageLayout） */
+const BREADCRUMB: Record<string, string> = {};
+for (const n of NAV) {
+  if ('children' in n) {
+    for (const c of n.children) BREADCRUMB[c.key] = `${n.label} / ${c.label}`;
+  } else {
+    BREADCRUMB[n.key] = n.label;
+  }
+}
 
 /** 扁平化导航（含 group children），供 hash 路由与标题查找 */
 const ALL_NAV: NavLeaf[] = NAV.flatMap(n => ('children' in n ? n.children : [n]));
@@ -76,7 +86,9 @@ export default function App() {
     return () => window.removeEventListener('hashchange', applyHash);
   }, []);
 
-  const title = kbDetailId ? '知识库详情' : (ALL_NAV.find(n => n.key === page)?.title ?? '');
+  const breadcrumb = kbDetailId
+    ? `${BREADCRUMB['knowledge'] ?? '知识库'} / 详情`
+    : (BREADCRUMB[page] ?? '');
 
   const switchPage = (key: string) => {
     setPage(key);
@@ -113,7 +125,9 @@ export default function App() {
             padding: '0 28px', height: 60,
           }}
         >
-          <Typography.Title level={4} style={{ margin: 0 }}>{title}</Typography.Title>
+          <Typography.Text style={{ fontSize: 14, color: 'var(--label-2)', fontWeight: 500 }}>
+            {breadcrumb}
+          </Typography.Text>
           <Tag color={backendOk === false ? 'red' : backendOk === true ? 'green' : 'default'}>
             {backendOk === false ? '后端离线' : backendOk === true ? '后端在线' : '连接中…'}
           </Tag>
