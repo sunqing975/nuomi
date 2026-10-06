@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Avatar, Button, Card, Input, Modal, Popconfirm, Select, Space, Switch,
-  Tag, Typography, Upload, message,
+  Avatar, Button, Card, Dropdown, Input, Modal, Popconfirm, Select, Space, Switch,
+  Tag, Typography, message,
 } from 'antd';
-import { CloudUploadOutlined, DeleteOutlined, GithubOutlined, ShoppingOutlined } from '@ant-design/icons';
+import {
+  CloudUploadOutlined, DeleteOutlined, DownOutlined, GithubOutlined, ShoppingOutlined,
+} from '@ant-design/icons';
 import {
   del, get, patch, post, upload, type Skill, type SkillPackage,
 } from '../api';
@@ -20,6 +22,7 @@ export default function SkillsPage() {
   const [gitOpen, setGitOpen] = useState(false);
   const [gitUrl, setGitUrl] = useState('');
   const [gitLoading, setGitLoading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -240,17 +243,26 @@ export default function SkillsPage() {
         />
         <div style={{ flex: 1 }} />
         <Button type="primary" icon={<ShoppingOutlined />} onClick={() => { window.location.hash = '#skillMarket'; }}>技能市场</Button>
-        <Button icon={<GithubOutlined />} onClick={() => setGitOpen(true)}>从 Git 导入</Button>
-        <Upload
-          accept=".zip"
-          showUploadList={false}
-          beforeUpload={(file) => {
-            importSkillZip(file);
-            return false; // 手动上传，阻止 antd 自动提交
+        <Dropdown menu={{
+          items: [
+            { key: 'git', label: '从 Git 仓库导入' },
+            { key: 'zip', label: '导入技能 zip 文件' },
+          ],
+          onClick: ({ key }: { key: string }) => {
+            if (key === 'git') setGitOpen(true);
+            else fileRef.current?.click();
+          },
+        }}>
+          <Button icon={<CloudUploadOutlined />}>导入<DownOutlined /></Button>
+        </Dropdown>
+        <input
+          ref={fileRef} type="file" accept=".zip" style={{ display: 'none' }}
+          onChange={e => {
+            const f = e.target.files?.[0];
+            if (f) importSkillZip(f);
+            e.target.value = '';
           }}
-        >
-          <Button icon={<CloudUploadOutlined />}>导入技能 zip</Button>
-        </Upload>
+        />
       </div>
       <Modal
         title="从 Git 仓库导入技能"

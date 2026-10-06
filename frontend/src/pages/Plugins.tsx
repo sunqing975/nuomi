@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Avatar, Button, Card, Input, Modal, Popconfirm, Space, Switch, Tag,
-  Typography, Upload, message,
+  Avatar, Button, Card, Dropdown, Input, Modal, Popconfirm, Space, Switch, Tag,
+  Typography, message,
 } from 'antd';
-import { CloudUploadOutlined, DeleteOutlined, GithubOutlined, ReloadOutlined, ShopOutlined } from '@ant-design/icons';
+import {
+  CloudUploadOutlined, DeleteOutlined, DownOutlined, GithubOutlined, ReloadOutlined, ShopOutlined,
+} from '@ant-design/icons';
 import { del, get, post, patch, upload, type Plugin } from '../api';
 import EntityGrid from '../components/EntityGrid';
 import PageLayout from '../components/PageLayout';
@@ -19,6 +21,7 @@ export default function PluginsPage() {
   const [gitOpen, setGitOpen] = useState(false);
   const [gitUrl, setGitUrl] = useState('');
   const [gitLoading, setGitLoading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -125,6 +128,17 @@ export default function PluginsPage() {
     );
   };
 
+  const importMenu = {
+    items: [
+      { key: 'git', label: '从 Git 仓库导入' },
+      { key: 'zip', label: '导入 zip 文件' },
+    ],
+    onClick: ({ key }: { key: string }) => {
+      if (key === 'git') setGitOpen(true);
+      else fileRef.current?.click();
+    },
+  };
+
   return (
     <PageLayout
       title="插件"
@@ -132,17 +146,17 @@ export default function PluginsPage() {
       extra={
         <>
           <Button type="primary" icon={<ShopOutlined />} onClick={() => { window.location.hash = '#pluginMarket'; }}>插件市场</Button>
-          <Button icon={<GithubOutlined />} onClick={() => setGitOpen(true)}>从 Git 导入</Button>
-          <Upload
-            accept=".zip"
-            showUploadList={false}
-            beforeUpload={(file) => {
-              importZip(file);
-              return false; // 手动上传，阻止 antd 自动提交
+          <Dropdown menu={importMenu}>
+            <Button icon={<CloudUploadOutlined />}>导入<DownOutlined /></Button>
+          </Dropdown>
+          <input
+            ref={fileRef} type="file" accept=".zip" style={{ display: 'none' }}
+            onChange={e => {
+              const f = e.target.files?.[0];
+              if (f) importZip(f);
+              e.target.value = '';
             }}
-          >
-            <Button icon={<CloudUploadOutlined />}>导入 zip</Button>
-          </Upload>
+          />
           <Button icon={<ReloadOutlined />} onClick={sync} loading={loading}>重新扫描</Button>
         </>
       }
