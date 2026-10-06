@@ -544,3 +544,10 @@ SSE 事件协议（当前完整）：`token` / `reasoning` / `tool_call_chunk`�
 - **落地**：导航还原（无市场项）；市场页保留 hash 路由（#pluginMarket/#skillMarket，刷新可用、侧栏不显示）；面包屑升级为可点击序列（能力 / 插件(链接) / 插件市场(当前)），PAGE_PARENT 映射市场页上级，点击上级调 switchPage 返回；知识库详情同样可点「知识库」返回列表；插件/技能页 extra 加「插件市场」「技能市场」主按钮
 - **清理**：BREADCRUMB 常量废弃，crumbs 由 ALL_NAV/PAGE_PARENT 实时生成
 - **验证**：前端 tsc/vitest 60/build 全绿、壳重启「糯米启动完成」
+
+## 知识库详情/模型弹窗治理 + 嵌入模型下拉空数据修复（2026-10-06，commit 68bd1f1）
+
+- **详情页**：删「删除知识库」「新建文本」按钮（用户要求，删除入口保留在列表页；编辑/上传/刷新保留）
+- **模型弹窗**：删「知识库功能」启停 Switch（用户：不需要知识库功能开关）；就绪状态并入嵌入模型行
+- **下拉空数据根因**：后端 `list_onnx_catalog_models()` 条目缺 `supported` 字段 → 前端 `presets.filter(p => p.supported)` 全过滤 → 补 `supported: True`（目录模型有 fallback 源均可下载）；实测 presets_meta 36 项 supported: true
+- **验证**：前端 tsc/vitest 60/build 全绿、后端 138 测试、壳重启「糯米启动完成」
