@@ -207,8 +207,15 @@ function ProvidersTab() {
       ),
     },
     {
-      title: 'Base URL', dataIndex: 'base_url',
-      render: (v: string) => <Typography.Text code style={{ fontSize: 12 }}>{v}</Typography.Text>,
+      title: 'Base URL', dataIndex: 'base_url', width: 280, ellipsis: true,
+      render: (v: string) => (
+        <Typography.Text
+          code style={{ fontSize: 12, display: 'block', maxWidth: '100%' }}
+          ellipsis={{ tooltip: v }}
+        >
+          {v}
+        </Typography.Text>
+      ),
     },
     {
       title: '模型', dataIndex: 'models',
