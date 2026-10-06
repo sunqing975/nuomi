@@ -457,3 +457,11 @@ SSE 事件协议（当前完整）：`token` / `reasoning` / `tool_call_chunk`�
 - **保留**：`vmc-sender.js`（VRM 模型真实使用）、`voiceChat` 空壳对象（vrm-model-setup 仍调 setModel）
 - **验证**：node --check 4 个改动 JS 全过；config.json JSON 合法；全项目残留扫描（musicPlayer/asr/ptt/check-plugin-health/take-screenshot/plugins-dlc/globalShortcut 等关键词）0 命中；重启壳——VRM 模型/动画/VMC/表情加载正常，糯米启动完成，无报错
 - **经验**：壳内 js/services、js/live 是旧 2D/Windows 时代资产区，清理前必须 grep 调用入口（有 require 不等于活着，要看播放/启动方法是否被触发）
+
+## 前端视觉优化 L1 骨架统一（2026-10-06，commit 3e67d3f，端到端验证通过）
+
+- **背景**：用户反馈"前端产品不好看、没有大厂感、自己做很粗糙"。逐页审计 9 页（Experts/Plugins/Skills/Connectors/Knowledge/AvatarModels/Settings/Storage/Chat + index.css/theme.ts/main.tsx）后定三层路径：L1 骨架统一 → L2 视觉统一 → L3 细节工艺；用户拍板"先做 L1，遇到适合抽组件就抽"
+- **L1 内容**：① 新增页头基元 `PageLayout.tsx`（props title/description/extra/wide）：标题 20px/600 + 一句话 description + 主操作右对齐，内容区默认 maxWidth 1080 居中（对齐知识库页既有宽度），wide 全宽（对话页用）；② 主色定案：品牌亮档 `accent=#f59e0b` 只做点缀（logo/选中/高亮），**新增交互深档 `primary=#d97706`**（白字对比度达标，消灭"按钮发飘"），`link` 从 #1677ff → #d97706 彻底消灭 antd 蓝残留；③ 8 页接入（Experts/Plugins/Skills/Connectors/Knowledge/AvatarModels/Settings/Storage），散落说明 Paragraph 收敛进页头 description，操作按钮统一进页头 extra；④ 顺手清理：AvatarModels 开关卡片去掉与页头重复的 Switch、Settings 去掉无意义 Card 包裹
+- **细节决策**：Skills 页导入按钮保留在"已安装" tab 工具栏（tab 内操作不上提页头）；Chat 页不动（对话主界面已有 SectionToolbar，页头式骨架不适用）；分类 Tag（蓝/紫/绿）是语义色不是主色，保留
+- **验证**：tsc 过、vitest 59 全绿（components.test 新增 PageLayout 3 条：渲染/宽度约束 wide/缺省区块）、npm run build 成功、后端 /api/health + /console/ 200、壳重启"糯米启动完成"
+- **遗留（L2 待做，等用户确认节奏）**：网格三套（Row/Col、List grid、Card 堆叠）统一；空态三种收敛；卡片语汇统一；品牌亮档点缀的应用面；L3 细节工艺（hover 反馈/间距节奏/字体层级）
