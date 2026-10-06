@@ -48,8 +48,9 @@ export default function StoragePage() {
         <Typography.Paragraph type="secondary" style={{ marginBottom: 0, fontSize: 13, lineHeight: 1.8 }}>
           任何表现层（AI 数字人壳、网页聊天、终端）只要消费{' '}
           <Typography.Text code>POST /api/agents/{'{id}'}/chat</Typography.Text> 的 SSE 事件流
-          （<Typography.Text code>token / emotion / tool_call / tool_result / done</Typography.Text>）即可接入，
-          协议见 <Typography.Text code>docs/pet-protocol.md</Typography.Text>。表现层可插拔，后端与协议不变。
+          （<Typography.Text code>token / tool_call_chunk / tool_result / usage / done</Typography.Text>，
+          失败时补 <Typography.Text code>error</Typography.Text> 终止帧）即可接入，
+          协议见 <Typography.Text code>docs/avatar-protocol.md</Typography.Text>。表现层可插拔，后端与协议不变。
         </Typography.Paragraph>
       </Card>
     </>

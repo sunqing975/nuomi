@@ -16,11 +16,11 @@ AI 数字人（表现层）与 nuomi 后端（octop 大脑）之间的对话协�
 每个 `data:` 负载就是一个 octop 帧（JSON，`data: <json>\n\n`），done 帧后流关闭（无 `[DONE]`）：
 
 ```
-data: {"type":"token","content":"你","node":"model","thread_id":"default"}
-data: {"type":"tool_call_chunk","id":"call_...","name":"TapBody","args":"{}","index":0,"node":"model","thread_id":"default"}
-data: {"type":"tool_result","node":"tools","messages":[{"type":"tool","name":"TapBody","content":"..."}],"thread_id":"default"}
-data: {"type":"usage","usage":{"input_tokens":25813,"output_tokens":15},"node":"model","thread_id":"default"}
-data: {"type":"done","conversation_mode":"craft","thread_id":"default"}
+data: {"type":"token","content":"你","node":"model","thread_id":"<会话ID>"}
+data: {"type":"tool_call_chunk","id":"call_...","name":"TapBody","args":"{}","index":0,"node":"model","thread_id":"<会话ID>"}
+data: {"type":"tool_result","node":"tools","messages":[{"type":"tool","name":"TapBody","content":"..."}],"thread_id":"<会话ID>"}
+data: {"type":"usage","usage":{"input_tokens":25813,"output_tokens":15},"node":"model","thread_id":"<会话ID>"}
+data: {"type":"done","conversation_mode":"craft","thread_id":"<会话ID>"}
 ```
 
 | 帧 | 字段 | 说明 |
