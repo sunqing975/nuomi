@@ -103,7 +103,7 @@ transport（FastAPI 路由） → domain（领域服务） → infra/harness（�
 - [x] 可移植性（`make start` 先建前端、`.env` 位置修正、LICENSE、个人路径清零，2026-10-06）
 - [x] 记忆可视化（控制台「记忆」页：我记住了什么 + 可遗忘，2026-10-06）
 - [x] 设计 token 单一来源 + 前端测试基建（vitest 44 例，2026-10-06）
-- [ ] 待办：见 [`docs/placeholder-priorities.md`](docs/placeholder-priorities.md)（优先级）与
+- [ ] 待办：见 [`docs/next-steps.md`](docs/next-steps.md)（下一步该做什么：架构/前端/产品）与
       [`docs/HANDOVER.md`](docs/HANDOVER.md) §8（状态台账，含"明确不做"）
 - 🚫 **不做分发**（2026-10-06 拍板）：无发布到其他 Mac 的计划 → 签名/公证/自动更新/首启向导不做
 
@@ -111,7 +111,7 @@ transport（FastAPI 路由） → domain（领域服务） → infra/harness（�
 
 **只有这 9 份，新增前先想清楚为什么现有文档装不下**（2026-10-06 清理了 7 份描述"已不存在架构"的文档）：
 文档一旦描述不存在的东西，就会主动误导人和 agent —— 本项目已被 `DESIGN.md`、
-`placeholder-priorities.md`、`frontend-architecture.md` 各坑过一次。
+`placeholder-priorities.md`（已删）、`frontend-architecture.md`（已删）各坑过一次。
 
 | 文档 | 作用 | 谁该看 |
 |---|---|---|
@@ -123,7 +123,7 @@ transport（FastAPI 路由） → domain（领域服务） → infra/harness（�
 | [`docs/avatar-protocol.md`](docs/avatar-protocol.md) | 数字人/表现层与后端的对话协议（octop 原生事件帧） | 做表现层/接协议时 |
 | [`docs/knowledge-base-research.md`](docs/knowledge-base-research.md) | 知识库调研（含 OCR 方案 §8） | 做 OCR 前 |
 | [`docs/knowledge-frontend-design.md`](docs/knowledge-frontend-design.md) | 知识库**API 契约**（代码注释直接引用） | 改知识库 API/页时 |
-| [`docs/placeholder-priorities.md`](docs/placeholder-priorities.md) | 待办优先级视图（P0/P1/P2 + 明确不做） | 决定下一步做什么 |
+| [`docs/next-steps.md`](docs/next-steps.md) | **下一步该做什么**：架构是否合理 / 前端界面 / 产品发展（含优先级 P0-P2 与「明确不做」） | 决定下一步做什么时 |
 
 **规矩**：①写完的**调研/设计稿**，结论吸收进 `AGENT.md`/`HANDOVER.md` 后**删掉原稿**（别留"历史参考"，
 它们会腐烂成假信息）；②文档与实现不一致时**以实现为准并当场改文档**；③写进文档前先 grep 确认

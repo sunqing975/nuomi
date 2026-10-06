@@ -186,7 +186,7 @@ SSE 事件协议（当前完整）：`token` / `reasoning` / `tool_call_chunk`�
 
 ### 文档治理
 
-- `docs/placeholder-priorities.md` **重写**：上一版是 v0.12 残留，排的 12 项里 Tauri 打包、`plugins/voice` STT、
+- 旧的 `placeholder-priorities.md` **已被 `docs/next-steps.md` 取代并删除（2026-10-06 晚）**：两份规划文档必然漂移，只留新的那一份。旧版是 v0.12 残留，排的 12 项里 Tauri 打包、`plugins/voice` STT、
   文件面板↔fs 工具、mem0、subagent、Supervisor 二层在 **v0.13 之后全部不存在**（逐项 grep 核实命中数为 0）。
   一份排着"不存在的东西"的待办表比没有更糟 → 改为按「对单机日用的实际影响」排序，并写死规矩：
   **写进待办前先 grep 确认落地点存在**。

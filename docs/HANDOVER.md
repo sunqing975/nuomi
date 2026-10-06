@@ -180,7 +180,7 @@ OpenAI 兼容：`app/transport/openai_compat.py`（`/v1/chat/completions`，mode
 ## 8. 遗留事项 / 下一步
 
 > **状态台账**：✅=已完成并验证 / ⬜=待办 / ⏸=用户叫停 / 🚫=明确不做。
-> **优先级视图**见 `docs/placeholder-priorities.md`；本表是状态权威，与实现不一致时以实现为准并当场改这里。
+> **方向与优先级**见 `docs/next-steps.md`（三轴：架构/前端/产品）；本表是状态权威，与实现不一致时以实现为准并当场改这里。
 
 ### 8.1 本轮（2026-10-06）已完成
 
