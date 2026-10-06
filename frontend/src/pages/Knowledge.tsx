@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Button, Card, Dropdown, Input, Modal, Popconfirm, Space, Switch, Tag,
   Tooltip, Typography, message,
@@ -37,6 +37,7 @@ export default function KnowledgePage() {
     catch (e) { message.error(`加载知识库失败：${(e as Error).message}`); }
   }, []);
 
+  // —— 能力状态（仅用于「管理模型」弹窗；页面不再展示状态条） ——
   useEffect(() => { void loadCapability(); void loadBases(); }, [loadCapability, loadBases]);
 
   const createBase = async () => {
@@ -82,15 +83,6 @@ export default function KnowledgePage() {
     window.location.hash = `#knowledge/detail/${kb.id}`;
   };
 
-  // —— 能力状态条 ——
-  const status = useMemo(() => {
-    if (!capability) return { color: 'default', text: '连接中…' };
-    if (!capability.deps_available) return { color: 'red', text: '依赖缺失' };
-    if (capability.ready) return { color: 'green', text: '就绪' };
-    if (!capability.downloaded) return { color: 'orange', text: '模型未下载' };
-    return { color: 'orange', text: '未启用' };
-  }, [capability]);
-
   return (
     <PageLayout
       title="知识库"
@@ -102,14 +94,7 @@ export default function KnowledgePage() {
         </>
       }
     >
-      {/* ① 能力状态条 */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', marginBottom: 16 }}>
-        <Typography.Text strong>嵌入服务</Typography.Text>
-        <Tag color={status.color}>{status.text}</Tag>
-        {capability?.downloading.length ? <Tag color="blue">下载中：{capability.downloading.join(', ')}</Tag> : null}
-      </div>
-
-      {/* ② 知识库卡片区 */}
+      {/* 知识库卡片区 */}
       <EntityGrid
         items={bases}
         minWidth={340}
