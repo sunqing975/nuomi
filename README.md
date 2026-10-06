@@ -99,7 +99,35 @@ transport（FastAPI 路由） → domain（领域服务） → infra/harness（�
 - [x] M7-M8：AI 数字人形象层（VRM 3D / 模型与动作资产管理 / 热切换）+ 工具执行可视化（2026-10-05）
 - [x] 插件三层能力：工具注册 / 事件订阅发布（EventBus）/ 聊天卡片 UI（对齐 octop，2026-10-05）
 - [x] 轨迹可观测性：Langfuse 集成（本地自托管，设置页配置，2026-10-05）
-- [ ] 待办：专家级默认绑定（skill/知识库/连接器三列）；Langfuse 设置页测试连接 bug
+- [x] 本机安全基线 + 质量门禁（守卫/脱敏/上传限流/`make check` 含前端测试，2026-10-06）
+- [x] 可移植性（`make start` 先建前端、`.env` 位置修正、LICENSE、个人路径清零，2026-10-06）
+- [x] 记忆可视化（控制台「记忆」页：我记住了什么 + 可遗忘，2026-10-06）
+- [x] 设计 token 单一来源 + 前端测试基建（vitest 44 例，2026-10-06）
+- [ ] 待办：见 [`docs/placeholder-priorities.md`](docs/placeholder-priorities.md)（优先级）与
+      [`docs/HANDOVER.md`](docs/HANDOVER.md) §8（状态台账，含"明确不做"）
+- 🚫 **不做分发**（2026-10-06 拍板）：无发布到其他 Mac 的计划 → 签名/公证/自动更新/首启向导不做
+
+## 文档
+
+**只有这 9 份，新增前先想清楚为什么现有文档装不下**（2026-10-06 清理了 7 份描述"已不存在架构"的文档）：
+文档一旦描述不存在的东西，就会主动误导人和 agent —— 本项目已被 `DESIGN.md`、
+`placeholder-priorities.md`、`frontend-architecture.md` 各坑过一次。
+
+| 文档 | 作用 | 谁该看 |
+|---|---|---|
+| [`AGENT.md`](AGENT.md) | **项目记忆**：定位/决策/架构/环境事实/路线图/每次改动的验证记录 | 所有人和 agent（改代码前先读） |
+| [`docs/HANDOVER.md`](docs/HANDOVER.md) | **交接**：启动手册、API 清单、已验证链路、**踩坑记录**、状态台账、git 历史 | 接手/排障时 |
+| [`README.md`](README.md) | 入口：技术栈、快速开始（含全新克隆）、架构一句话、路线图 | 第一次接触 |
+| [`docs/architecture-refactor-harness.md`](docs/architecture-refactor-harness.md) | v0.13 为什么用 octop-harness 当机制基础库 | 想动架构前 |
+| [`DESIGN.md`](DESIGN.md) | 前端设计方针 + token 体系（唯一定义处 `frontend/src/theme.ts`）+ 欠账 | 改界面时 |
+| [`docs/avatar-protocol.md`](docs/avatar-protocol.md) | 数字人/表现层与后端的对话协议（octop 原生事件帧） | 做表现层/接协议时 |
+| [`docs/knowledge-base-research.md`](docs/knowledge-base-research.md) | 知识库调研（含 OCR 方案 §8） | 做 OCR 前 |
+| [`docs/knowledge-frontend-design.md`](docs/knowledge-frontend-design.md) | 知识库**API 契约**（代码注释直接引用） | 改知识库 API/页时 |
+| [`docs/placeholder-priorities.md`](docs/placeholder-priorities.md) | 待办优先级视图（P0/P1/P2 + 明确不做） | 决定下一步做什么 |
+
+**规矩**：①写完的**调研/设计稿**，结论吸收进 `AGENT.md`/`HANDOVER.md` 后**删掉原稿**（别留"历史参考"，
+它们会腐烂成假信息）；②文档与实现不一致时**以实现为准并当场改文档**；③写进文档前先 grep 确认
+描述的对象还存在。
 
 ## 许可证
 

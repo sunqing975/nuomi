@@ -138,6 +138,16 @@ OpenAI 兼容：`app/transport/openai_compat.py`（`/v1/chat/completions`，mode
 - **antd5 grid 卡片等高**：grid List 渲染为 `.ant-row > div`（**无 `.ant-list-items`**，也无 `.ant-col` 类——列是原生 div + colStyle）；Row 默认 `align: top` 列不拉伸，必须 CSS `align-items: stretch`；`nuomi-grid` 类若挂在 List 容器上选择器写 `.nuomi-grid .ant-row`，若挂在 Row 自身（AI 数字人页）写 `.ant-row.nuomi-grid`——两形态都要覆盖（frontend/src/index.css `.nuomi-grid` 块已兼容）。
 - **壳加载的是 build 产物**：控制面板指向 `http://127.0.0.1:8000/console/`（后端挂 dist），**不是** 5173 vite dev；改前端验证要走 build + 强制刷新（`?v=n` nonce），5173 的 vite proxy 未配置好也不影响壳。
 - **StreamingResponse generator 内抛 HTTPException 不转 400**：fastapi 对 generator 内异常不会返回错误响应（连接直接中断）；per-turn 参数校验（skills/connectors）必须在端点函数体、`async def gen()` 之前执行（2026-10-04）。
+- **`sqlite3.Connection` 的 `with` 只提交，不关闭连接**：`with db.connect() as conn:` 看似规范，实际每次调用泄漏一个连接 + 一个 fd（全仓 50+ 处、服务整天常驻）。必须自己包 `@contextmanager`（提交/回滚/close），或用 `contextlib.closing`（2026-10-06）。
+- **octop 记忆表名前缀按专家名推导、各专家不同**：引擎按 `ns = re.sub(r"[^a-z0-9_]", "_", namespace.lower())` 生成 `{ns}_atoms`，而 namespace = **专家名** → 糯米 `__`、工作狂 `___`、小通 · 通用助手 `_________`。硬编码 `___atoms` 只对一个专家成立。读表前先从 `sqlite_master` 推导前缀（2026-10-06）。
+- **记忆引擎初始化过某个库后，外部连接再也写不进去**：`_init_schema()` 会建 FTS 触发器，触发器调用只注册在引擎连接上的 C 扩展 `hm_cjk_seg` → 裸 `sqlite3.connect()` 插入报 `no such function: hm_cjk_seg`。测试要造合成数据必须用**引擎没碰过的新工作区**（2026-10-06）。
+- **`asyncio.wait_for` 不能包在 async generator 外面做超时**：超时取消会顺着生成器内的 `await q.get()` 抛进去把它终结掉（长连接直接断）。心跳/超时必须写进生成器**内部**的 `try/except TimeoutError`（2026-10-06）。
+- **`messages_to_inputs` 要求真的 BaseMessage**：用 `type("M", (), {...})()` 之类的假对象会被它静默跳过（`message_to_dict` 抛异常被 `continue` 吃掉）→ 投影写 0 行，测试表现为"第二次读历史是空的"（2026-10-06）。
+- **分页是按"消息"分页，不是按"片段"**：一条消息可展开成 reasoning + text + tool_call 多个片段，所以 `limit=4` 可能返回 5 个片段；断言要按"页是相邻连续块"来写，别拿 `full[-4:]` 比（2026-10-06）。
+- **vitest 默认不处理 CSS**：`import css from './x.css?raw'` 返回空串（除非开 `test.css`）。要么开配置，要么把值放 TS 里（本项目 token 就是这么定的：唯一定义处 + 启动注入 CSS 变量，顺带消灭漂移）（2026-10-06）。
+- **macOS 没有 `timeout` 命令**（coreutils 的 `gtimeout` 才有）：验证 SSE 心跳用 `curl --max-time`（2026-10-06）。
+- **本会话在 DSH(Electron) 内，宿主会导出 `ELECTRON_RUN_AS_NODE=1`**：不剥离就 `npm start` 会让 Electron 退化成纯 Node 跑 main.js（`Cannot read properties of undefined (reading 'getAppPath')`）。跑壳/打包必须 strip 该变量；另外 DSH 内 Chromium 子进程沙箱可能起不来（`sandbox initialization failed`）导致 WebGL 失败（2026-10-06）。
+- **改 `db.connect` 语义前先数调用点形态**：`grep` 出 50+ 处全是 `with ... as conn:`（无裸赋值、无跨调用持有）才敢把返回值从 Connection 换成 contextmanager（2026-10-06）。
 - **per-turn 技能注入走 harness 原生**：`ChatRequest.skills`（None 全量 / [] 禁用全部 / 列表白名单，SkillFilterMiddleware 消费）+ `mcp_servers`/`mcp_use_default` 控制连接器挂载，无需自研过滤；nuomi 只做存在性校验（技能名须在「已启用工作区技能 + 内置技能 + 已启用技能包内技能」集合）。
 
 ## 7. 项目主线清单（用户需求 → 状态）
@@ -159,35 +169,58 @@ OpenAI 兼容：`app/transport/openai_compat.py`（`/v1/chat/completions`，mode
 | 11 | 会话与模型解耦 | ✅ | AI 数字人=纯表现层（拦截对话工具调用做动作）；切模型不换会话；default 线程已删；会话权威 `nuomi-state.json` |
 | 12 | AI 数字人开关 | ✅ | 控制台「AI 数字人」页开关 → `GET\|PUT /pet/status` → 壳 config `ui.avatar_enabled` → watch 创建/销毁窗口；**联动模型插件**：关闭→停用全部、开启→恢复当前选中模型、关闭时切模型不激活（见 §4/§5，2026-10-04） |
 | 13 | 管理页 UI 统一卡片化 | ✅ | 专家/技能（已安装+市场）/AI 数字人/插件/连接器五页统一等宽卡片网格 + 首字头像 + 角标 + 描述省略/tooltip + **同行严格等高**（§6 踩坑） |
+| 14 | **本机安全基线** | ✅ | 纯 ASGI 守卫（Host/Origin 允许清单 + `X-Nuomi-Token` 保护全部写 `/api`；`/api/session-token` 拒 null Origin）+ 插件导入不隐式装依赖 + 密钥脱敏（词锚定匹配，`***` 只认精确掩码）+ 原子写 0600 |
+| 15 | **质量门禁** | ✅ | `make check` = lint + format + typecheck + 后端测试 + 前端构建 + **前端测试** + 壳语法；CI 三作业（backend/frontend/shell），前端 job 已接 vitest |
+| 16 | **可移植性（换台机器能跑）** | ✅ | `make start` 先构建前端（dist 不入库，否则壳面板白屏）；`.env` 路径修正为仓库根（`config.py` 只读根 `.env`）；补 LICENSE(MIT)；代码/配置里的个人绝对路径清零（`AGENTS.md`/`docs` 历史记录除外） |
+| 17 | **记忆可视化** | ✅ | `/api/agents/{id}/memory*` + 控制台「记忆」页：断言/原话/来源会话/实体 + 人设文件查看编辑 + **软遗忘走引擎 API**（`deprecate_atom`，可审计）；表名前缀按专家名推导（**各专家不同**，见 §6） |
+| 18 | **上传限流** | ✅ | 5 处裸 `file.read()` 统一走 `read_upload`（先看 `file.size`，再分块、超限立即 413）；上限按用途区分（zip 50MB / VRM 200MB / FBX 100MB / 文档 100MB）；实测 51MB → 413 |
+| 19 | **前端测试基建 + 设计 token** | ✅ | vitest + jsdom（44 例：XSS 净化 13 / SSE 分帧 13 / 引用解析 5 / 片段合并 6 / token 结构 7）；token 唯一定义处 `frontend/src/theme.ts`（启动注入 CSS 变量，结构上不可漂移）；`DESIGN.md` 重写为**描述现实** |
+| 20 | **打包与分发** | 🚫 明确不做 | electron-builder 链可用（产出 `Nuomi.app`、图标、单实例锁、CSP 均实测），但**产物不含后端、不能独立运行**；且用户 2026-10-06 拍板不分发 → 签名/公证/自动更新/首启向导一律不做，日常一律 `make start`（详见 §8.3） |
 
 ## 8. 遗留事项 / 下一步
 
-- [x] **M3 Agent 生命周期补全 + M4 会话存储（2026-10-05 完成）**：①M3——agents.config_json 运行时参数接线（`infra/harness/runtime_limits.py`：max_iters→recursion_limit、temperature/top_p/max_tokens→configurable[model_settings]、max_input_length→configurable[max_input_tokens]，对齐 Octop runtime_limits；PATCH /agents/{id} 支持 config_json；DELETE 级联清专家工作区）；②M4——threads 表（会话元数据落库，state 文件旧 threads 幂等迁移 + 清理）+ thread_messages 投影表（langchain wire 格式，首次读历史 backfill→ready，之后每轮增量 append）+ chat_history 投影优先分页读取（不再依赖 harness 运行时）；删会话级联清理；openai_compat 同样接线。36 tests / ruff / mypy 全绿，真实库 32 会话迁移 + 投影端到端验证通过
-- [x] **Langfuse 轨迹可观测性（2026-10-05 完成）**：`pip install langfuse`（4.16.0，venv 无 pip 先 ensurepip）；
-  配置存储 `{workspace}/langfuse.json`（`app/infra/harness/langfuse_store.py`，secret 明文存仓库外、GET 脱敏，对齐 providers.json 模式）；
-  API `GET/PUT /api/settings/langfuse` + `POST /api/settings/langfuse/test`（SDK auth_check 校验凭据，脱敏串回写保持原值）；
-  接线：HarnessManager 增 set_langfuse 热更新（对齐 octop set_langfuse，同步到全部已建 agent）+ get_agent 挂 callbacks，
-  chat.py 每轮 `manager.enrich_request`（metadata 注入 langfuse_user_id/session_id/agent_id）+ 结束 flush；lifespan 启动时按配置文件初始化；
-  前端设置页新增「Langfuse」tab（开关/Host/Public Key/Secret Key/测试连接/保存配置）；
-  测试 `tests/test_langfuse_api.py` 10 例（默认空/必填校验/落盘脱敏/脱敏保持原值/凭据校验 mock 不真连网），全量 46 passed，ruff/mypy 干净；
-  curl 实测：GET 默认、PUT 400 校验、test 连接拒绝 400、保存后 GET 脱敏；真实对话 16 帧 SSE 正常（未配置时全链路零影响）
-- [ ] **知识库 OCR**（RapidOCR 本地 + 扫描 PDF，用户叫停暂缓；`ocr_enabled=false` 已占位，见知识库 capability）
-- [x] **轨迹抽屉增强 → 已废弃**（2026-10-05 用户拍板）：简版抽屉（工具步骤折叠+时间线）已上线够用，不再做 octop 完整版 Timeline/Inspector/MetricsBar/搜索；**轨迹可观测性改走 Langfuse**（octop_harness 已带原生封装 `observability/langfuse.py`，待办：pip install langfuse + 配 key 即可启用）
-- [ ] **斜杠技能注入**（/slug）：本轮按用户拍板用「工具条选择器+chips」，octop 的 /slug 文本插入可后续加
-- [x] **对话上下文保留**（2026-10-05 M4 完成）：thread_messages 投影（langchain wire）全量保存每轮 human/ai/tool 消息，chat_history 返回有序片段（user/reasoning/tool_call/tool_result/text）——工具步骤历史已持久化可见，不再"仅本次会话内存可见"
-- [x] **AI 数字人模型升级 → 已废弃**（用户 2026-10-05 拍板：已全 3D，无需升级）
-- [ ] **AI 数字人直接说话（TTS）**（用户已拍板待办）：AI 数字人现为纯动作/表情层；TTS 客户端代码（`js/tts-client.js`、`TTSStreamProcessor`）已保留未删，届时恢复"收到回复文本→TTS 播报"入口
-- [ ] **octop WS 迁移**（暂缓）：事件帧已对齐，通道仍 HTTP SSE；注意 websockets 403 坑
-- [ ] **HITL 工具审批流**（当前不启用）：octop_harness 自带 HumanInTheLoopMiddleware，未来有高风险工具再开启
-- [x] **糯米人设源头约束**（2026-10-05 用户确认完成）：改系统提示词后糯米不再是小猫人设，尖括号标签（旧人设拟声标签产物）基本不再出现；约束靠人设变更达成，无显式"禁标签"文本
-- [x] **壳启动时自动拉起 uvicorn**（2026-10-05 完成）：`ensureBackend()`（main.js）启动时 GET `/api/health` 检测后端，未就绪则 spawn `.venv/bin/python -m uvicorn`（cwd=backend、仓库根 .env 自动读入、端口取自 config.json llm.api_url；最多等 30s；stdout 丢弃防刷屏、stderr 带 `[backend]` 前缀进壳日志；uvicorn 访问日志不打印）；退出壳后端**保持常驻**（下次启动复用，不重复拉起）；`make start` 现在一条命令全自动
-- [x] **前端 bundle code-split → 已废弃**（2026-10-05 用户拍板）：本地加载 1.31MB 收益低，不做；保留 chunk>500kB 构建警告
-- [x] **动作名空格**（2026-10-05 用户确认保持现状）：动作名=文件名（Mixamo 原名如 "Body Block"），enum 值带空格在工具调用合法、实测可播，不做规范化
-- [x] **表情观感幅度 → 已废弃**（2026-10-05 用户拍板）：不同模型表情数据不同（有的 blendShape binds 有数据、有的全空），幅度调整无统一意义；保持现状（权重 setValue 1.0 / 恢复 8s）
-- [x] **模型资产补全 → 已废弃**（用户 2026-10-05 拍板抛弃）：cat（hijiki）动作缺失不再补；VRMA_01~07（VRoid 官方免费动画）不再导入；动作清单只以 `assets/animations/*.vrma` 为准（现有 6 个：Body Block/bow/elbow_punch/idle/Praying/sitting_laughing）。**背景（2026-10-05 定性）**：当前 VRM 模型 `6309260419351179234` 的 17 个 blendShapeGroup binds 全空 = 模型本身无表情变形；已导入的 `868274793854709131` binds 非空（angry=1，实测可动）——`list_models` 返回 `expressions_have_data`、前端有警告标签
-- [x] **VRMA 资源管理（2026-10-05 晚完成，7ca952b）**：`DELETE /api/avatar/animations/{name}`（简单文件名校验禁穿越、404、idle 可删待机降级呼吸微晃兜底）+ 壳 fs.watch 删除注销 + 前端动作 Tag Popconfirm 删除；**导入/删除时数字人页面自动刷新**（后端 `publish_raw` 广播 `avatar_animations_changed` → 壳 SSE → `location.reload()`——注意 `publish()` 会强制 type=avatar_action 覆盖自定义 type，须用 `publish_raw`）；端到端日志验证「动作资产变更 → watch 注销 → 启动完成」；顺带清掉重复资产 Sitting Laughing.vrma
-- [x] **模型插件工具语义**（2026-10-05 核实已基本达标）：工具 description 已含「让AI 数字人做出一个动作（身体动画）。根据对话场景选最合适的动作，可用动作：\n- name：label_zh…」完整动作清单+中文标签（plugins/service.py:156），非"只有动作名"；后续可再打磨（如按场景给推荐优先级）
-- [x] **Mixamo FBX → VRMA 转换链路**（2026-10-04 走通；**2026-10-05 闭环**）：工具链 `shells/nuomi-avatar/tools/fbx2vrma/`（fbx2vrma-converter + FBX2glTF 0.9.7；arm64 机器需 Rosetta 2；npm install 需 --ignore-scripts）；`elbow_punch.vrma`（2.25s/22 骨骼）、`sitting_laughing.vrma` 已转换入库；verify-vrma.js 用壳同款加载链验证通过（Node 需浏览器 polyfill）；壳 `loadVRMA` 已接：动作清单只扫 `assets/animations/*.vrma`（`list_avatar_actions()`），fs.watch 新导入自动注册，idle.vrma（virtual-avatar 包）循环待机
+> **状态台账**：✅=已完成并验证 / ⬜=待办 / ⏸=用户叫停 / 🚫=明确不做。
+> **优先级视图**见 `docs/placeholder-priorities.md`；本表是状态权威，与实现不一致时以实现为准并当场改这里。
+
+### 8.1 本轮（2026-10-06）已完成
+
+- [x] **第 0 步 · 安全与门禁加固**（`fe7c042`）：本机访问守卫（Host/Origin 允许清单 + 写 `/api` 需要 `X-Nuomi-Token`；null Origin 全局放行但 `/api/session-token` 拒绝）+ 插件导入不隐式装依赖 + 门禁从"装饰"变真（修掉当时 HEAD 上的 ruff 10 / format 15 文件 / mypy 2 / pytest 2）
+- [x] **第 1 周 · 正确性与体验**（`1a08c33` `2a98759`）：工具调用投影补全（TOOL_RESULT 与流结束各归档一次）+ `start_agent` 接运行时入口 + **插件注册竞态**（`to_thread(sync)` 与 `load_all()` 的 `registry.clear()` 相撞，实测出现零工具轮次）+ 阻塞调用 offload + SSE 终止契约（`aclosing` + error 帧）；前端流式可中止/重试条/IME 组合态/DOMPurify 净化 + 壳交互与控制面板生命周期
+- [x] **密钥脱敏 + Langfuse 生命周期**（`7f51c9c`）：`is_secret_key` 词锚定（原先 `"***" in value` 会静默丢弃真实密钥、未锚定正则会误伤 `MONKEY`/`TOKENIZER_PATH`）、只有精确掩码才算"保持原值"、`secret_file` 原子写 0600、`HarnessManager.shutdown()` 不再清 `_langfuse`
+- [x] **可移植性**（`9187a96`）：见 §7 #16
+- [x] **壳打包链 + 安全基线**（`6ec8f2a`）：electron-builder/图标/单实例锁（**真双进程**验证）/CSP（探针实测远端脚本与 fetch 被拒）/导航封锁/模型路径自解析（配置路径失效时向后端取激活模型并回写，打包态 config 只读则用 `--nuomi-model` 下发）。⚠️ 产物不含后端 → 只在"后端已在跑"时可用
+- [x] **记忆可视化 + 上传限流**（`8dd7fdf`）：见 §7 #17 #18
+- [x] **分发范围决策**（`950d8d5`）：见 §8.3
+- [x] **前端测试基建 + 7 项体验软点 + 设计 token**（`de72f9c` `32fad76`）：见 §7 #19。软点含：`STATUS_TAG` 无兜底（未知状态即白屏）+ 顶层 ErrorBoundary、流式片段索引 key、原地改 state、每个 token 都 `scrollTo`（用户无法上翻）、模型下载按钮永久 loading、多选上传 N 并发、编辑器静默失败+无请求守卫
+- [x] **第二批审计修复**（`a309a7d`）：
+  - **SQLite 连接从不关闭**（50+ 处 `with db.connect()` 每次漏一个 fd，服务整天常驻）→ `connect()` 改 `@contextmanager`（提交/回滚/close），调用点零改动；`knowledge/index.py` sidecar 同修。实测 200 次调用 fd 稳定
+  - `_TOOL_OWNERS` 模块级全局 → 请求局部（并发对话会互相覆盖来源映射）
+  - 工具装配：审计说 55ms/轮，**实测只有 5.6ms** → 不加缓存；改为修两处真浪费（`ensure_agent_runtime` 缓存命中时仍急切求值 `tools()`；`tools()`+`tool_owners()` 各查一次 `list_all()`）→ 省约 7.3ms/轮
+  - 数字人事件队列满**静默丢最新** → 改丢最旧 + 计数 + 限频告警；SSE 长连接加 15s 心跳注释帧
+  - 历史分页两条路径语义不一致（pending/backfill 忽略 offset 且投影为空时回落重算）→ 统一为倒序分页 + `limit/offset` 校验
+  - 顺手：`sync()` 清理"目录已消失"的残留插件行（原只 INSERT OR IGNORE，手动删目录会留幽灵条目）
+
+### 8.2 仍待办（按"对单机日用的实际影响"排序）
+
+| # | 事项 | 现状 / 为什么 | 落地要点 |
+|---|---|---|---|
+| 1 | 知识库 **OCR** | ⏸ 用户叫停（`ocr_enabled=false` 占位） | RapidOCR 本地 + 扫描 PDF；接 `knowledge/capability` |
+| 2 | **深色主题入口** | token 覆盖层已备好（`THEME_OVERRIDES.dark`，核心键有测试保证），但没接切换 | 需同时把 `main.tsx` 的 antd `algorithm` 换 `darkAlgorithm`，否则 antd 组件仍浅色；加开关 + 持久化 |
+| 3 | 装饰色板收敛 + 内联样式 | 剩 60 处裸 hex（4 处 antd `color=` prop、其余装饰标签色板）+ 278 处内联 `style` | 先收 `AVATAR_COLORS`（三份重复）到 `utils/palette.ts`，再逐页收；**别为清零做无验证的大重写** |
+| 4 | 前端**渲染级**测试 | 无 `@testing-library/react`；组件行为（滚动跟随/攒批上传/折叠）只有纯函数单测兜 | 装 RTL + 给 Chat 上传/折叠、Memory 页写交互测试 |
+| 5 | AI 数字人**直接说话（TTS）** | ⬜ 用户已拍板待办；TTS 客户端代码保留未删 | 恢复"收到回复文本 → TTS 播报"入口；注意当前是 Kokoro-FastAPI 路线 |
+| 6 | 斜杠技能注入（`/slug`） | ⬜ 本轮用"工具条选择器 + chips" | octop 的 `/slug` 文本插入 |
+| 7 | 专家级默认绑定 | ⬜ 对齐 octop agents 表 `skill_package_ids`/`knowledge_base_ids`/`mcp_servers` 三列 | 加绑定列 + 对话默认注入（per-turn 可覆盖；知识库仍显式指定才注入） |
+| 8 | `prompt_files` 注入 | ⬜ octop manifest 声明的非标准文件（IDENTITY/HEARTBEAT 等）已复制但不注入 | 内容合并进注入或 system_prompt |
+| 9 | octop WS 迁移 | ⏸ 事件帧已对齐，通道仍 HTTP SSE | 注意 python websockets 连 8088 WS 恒 403（§6） |
+| 10 | HITL 工具审批流 | ⏸ 当前不启用 | harness 自带 HumanInTheLoopMiddleware，有高风险工具再开 |
+
+### 8.3 明确不做（用户拍板，别再排）
+
+- 🚫 **分发到其他 Mac**（2026-10-06 拍板）：没有发布计划，而发布要花钱买 Apple Developer 账号 → **codesign / notarize / 自动更新 / 首启向导一律不做**。打包链保留只作本机验证（打包配置/图标/单实例锁/CSP 的真实回归）；**日常一律 `make start`**。记录见 `AGENT.md` 与 `shells/nuomi-avatar/README.md`
+- 🚫 **轨迹抽屉 octop 完整版**（2026-10-05）：简版够用，可观测性走 Langfuse
+- 🚫 **AI 数字人模型升级**（已全 3D）、**前端 bundle code-split**（本地 1.3MB 收益低）、**表情观感幅度**、**模型资产补全**（cat 缺失不补）
+- ⏸ **OCR** 与 **TTS 说话**虽在 8.2，但都是"用户拍板暂缓/待办"，不是被遗忘
 
 ## 9. 关键 git 历史
 
@@ -226,7 +259,6 @@ c5a4032  全量改名桌宠→AI数字人 + 丢弃 myspy + 3D 观感 + 导入预
 ```
 
 
-开发规范：`make lint`（ruff）/ `make typecheck`（mypy），CI 在 .github/workflows。
 6b71691  feat: 大模型配置页（providers.json CRUD）+ 模型不绑专家（default_model 列删除，对话框 per-turn 选模型）
 988b65e  docs: HANDOVER 回填（大模型配置 + 模型解耦）
 35d86d9  feat: Provider 模型探测（probe API + 勾选默认）· 对话框输入区布局优化（选择器独立行/输入框整行）
@@ -236,3 +268,26 @@ bd0401f  refactor: Provider 必须有 key（删占位，前后端校验兜底）
 fd338c1  chore: AI 数字人开关收尾——清理 pet-stopped 死代码 + 交接文档/项目记忆记录
 f7e62b4  refactor: AI 数字人页命名统一——Models → PetModels（文件/组件/路由 key）+ 页面文案去混淆
 f8e06d6  feat: AI 数字人开关联动模型插件——关闭停用全部、开启恢复当前、关闭状态切模型不激活
+
+### 2026-10-06 本轮（审计 → 第 0 步/第 1 周 → 四流并行 → 第二批修复）
+
+```
+fe7c042  feat(security): 本机访问守卫（Host/Origin/token）+ 插件不隐式装依赖 + 门禁真绿
+1a08c33  fix(correctness): 工具调用投影 + 运行时入口 + 插件注册竞态 + 阻塞调用 offload + SSE 终止契约
+2a98759  feat(ux): 前端流式可中止 + 插件卡片 XSS 净化 + 壳交互与控制面板生命周期
+7f51c9c  feat(security): 密钥脱敏 + 原子写 0600 + Langfuse 生命周期
+c927e71  docs: 记录第 0 步与第 1 周的决策/踩坑/审查修正
+9187a96  feat(portability): 换台机器能跑 —— 启动构建前端 / 修 .env 路径 / LICENSE / 清个人路径
+6ec8f2a  feat(shell): 打包分发链 + 单实例锁 + 安全基线 + 模型路径自解析
+de72f9c  test(frontend): vitest 基建 + XSS/SSE/引用/片段回归，并修 7 项体验软点
+8dd7fdf  feat(memory): 记忆可视化 + 上传限流
+32fad76  refactor(frontend): 设计 token 落地（唯一定义处 + 结构上不可漂移），DESIGN.md 改为描述现实
+950d8d5  docs: 记录「不做分发」的决策与打包产物的真实边界
+a309a7d  fix: 连接泄漏 / 请求局部状态 / 工具装配开销 / SSE 心跳与丢事件 / 历史分页一致性
+```
+
+**测试基线**：后端 46 → **136 例**，前端 0 → **44 例**；`make check` = lint + format + mypy + 后端测试 + 前端构建 + 前端测试 + 壳语法。
+
+---
+
+开发规范：`make lint`（ruff）/ `make typecheck`（mypy）/ `make frontend-test`（vitest），CI 在 `.github/workflows`。

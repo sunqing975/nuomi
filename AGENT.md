@@ -12,6 +12,14 @@
 - 业务层：nuomi 自己写——专家/会话/能力领域服务，向 Octop 领域设计靠拢（领域语言一等公民，机制语言当基础库）。
 - 形象层：**nuomi-avatar**（github.com/sitwrrr/nuomi-avatar，MIT）二次开发——Electron AI 数字人壳 + Live2D/VRM 渲染 + 情绪标签驱动表情 + 流式字幕/TTS。备选：live2d-to-agent（MCP 控制AI 数字人）、OpenPets。
 
+- **概念口径（从已删的 concepts.md 抢救出的仍成立部分，2026-10-06）**：①**不用 Octop 的 `kind`**
+  （在一个分发单元内区分 tool/skill/hook）——nuomi 按职责分目录，**目录即分类**；②**依赖只允许向内**
+  （transport → domain → infra/harness → octop-harness；`infra` 不得 import `domain`/`transport`）；
+  ③**领域语言 vs 机制语言分开**（业务文案说"连接器"，不暴露 MCP 等协议术语）。
+  已不成立、随文档删除的旧口径：概念文档自称"v0.8 唯一权威"（架构早已是 v0.13）、
+  「插件市场/zip 安装器 ❌ 不做」（实际已上线在用）、「记忆 Provider 化对齐 Hermes/Mem0」
+  （现为 octop-memory，代码里没有 `MemoryStore`/`facts` 抽象）。
+
 ## 已确定的关键决策（v0.13）
 
 - **推倒重来**：删除旧 backend/app（自研 engine 四层）、旧 frontend/（antd 界面）、Tauri 壳、sidecar、部署文件；git 历史保留（`87baddf` 起新基线）。
@@ -60,7 +68,7 @@ SSE 事件协议（当前完整）：`token` / `reasoning` / `tool_call_chunk`�
 - **Provider 模型探测（2026-10-04）**：`POST /settings/providers/probe`（body base_url/api_key，不落盘）调 OpenAI 兼容 `/models` 拉取模型列表；新增 Provider 弹窗「探测模型」按钮 → 勾选列表（默认勾选第一个作为默认模型）→ 回填；探测失败 400 带原因
 - **对话框输入区优化（2026-10-04）**：能力选择器（技能/连接器/知识库/模型）独立一行（提示文案已移除，2026-10-04 用户要求不显示），输入框独占整行 flex:1 + autoSize（1–6 行）；会话左栏 240→200、模型 Select 180→150、placeholder 缩短
 - **模型默认自动（2026-10-04）**：对话框「模型」Select 首项新增「自动（默认）」（value 哨兵 `auto`，前端 Chat.tsx `MODEL_AUTO`），默认选中；选中「自动」时请求体 `model=null`，由后端按 agent 默认模型解析（`stream_chat` model=None → 默认模型）；用户显式选择具体模型才覆盖，移除模型 chip 回到「自动」。`ChatStreamOptions.model` 类型放开为 `string | null`。替代原「模型必选」语义（必选校验已删）
-- **形态与遗留清理（2026-10-04，用户拍板）**：默认形态 = **AI 数字人壳 shells/nuomi-avatar**（Electron，`npm start`，经 config.json `llm.api_url` → 后端 :8000 `/api/v1` OpenAI 兼容端点对话）；**web 控制台只是调试形态**（:5173，vite 代理 /api → :8000）。Makefile 重写：`make start` 启动AI 数字人壳（替换已失效的 tauri desktop 目标，`desktop/` 目录 v0.13 已删）、`make web` 调试、stop/status/logs 同步改为AI 数字人壳；tauri 遗留（README desktop/ 引用、docs/demo-script tauri build 检查项、.logs/desktop.log）已清理，docs/desktop-data-architecture.md 加废弃标注（NUOMI_HOME/SQLite 决策仍有效，以 AGENT.md 为准）。AI 数字人壳重启 = 杀 Electron 进程后 `shells/nuomi-avatar && npm start`
+- **形态与遗留清理（2026-10-04，用户拍板）**：默认形态 = **AI 数字人壳 shells/nuomi-avatar**（Electron，`npm start`，经 config.json `llm.api_url` → 后端 :8000 `/api/v1` OpenAI 兼容端点对话）；**web 控制台只是调试形态**（:5173，vite 代理 /api → :8000）。Makefile 重写：`make start` 启动AI 数字人壳（替换已失效的 tauri desktop 目标，`desktop/` 目录 v0.13 已删）、`make web` 调试、stop/status/logs 同步改为AI 数字人壳；tauri 遗留（README desktop/ 引用、demo 脚本里的 tauri build 检查项、.logs/desktop.log）已清理；当时的桌面化设计文档已随本轮文档清理删除（其仍有效的决策——NUOMI_HOME 工作区、SQLite 合一、单用户、目录结构收敛——全部以本文件「环境事实」章节为准）。AI 数字人壳重启 = 杀 Electron 进程后 `shells/nuomi-avatar && npm start`
 - **连接器 env 支持（2026-10-04）**：ConnectorBody 增 `env: dict[str,str]`（键名校验 `^[A-Za-z_][A-Za-z0-9_]*$`，非法 400，空键过滤）；spec 透传 harness——octop-harness `aload_mcp_tools` 原生合并 stdio env（SDK 默认子集 + spec env，PROTECTED_ENV_KEYS 不覆盖），**sse/http 传输不注入 env**；前端连接器表单加 key-value 环境变量编辑（Form.List，卡片仅显示键名不显示值）；测试 `tests/test_connectors_api.py`（API CRUD + `load_mcp_tools` 集成验证 env 注入子进程），pytest 26 项全过 + ruff/mypy 干净；端到端实测：对话调 `read_env` 返回连接器 env 配置值 ✓
 - 后续：~~M3 Agent 生命周期 → M4 会话 → M5 插件 → M6 技能/连接器/知识库 → M7 AI 数字人前端 → M8 产品体验~~ **全部完成（2026-10-05）**，见路线图勾选；后续新功能一律插件化开发（2026-10-05 用户拍板）
 
@@ -103,7 +111,7 @@ SSE 事件协议（当前完整）：`token` / `reasoning` / `tool_call_chunk`�
   - ⚠️ **更正一条审计结论**：上一轮报告中「数字人窗口永久点击穿透、`set-ignore-mouse-events` 无调用方」是**错的** —— 调用方在 `js/model/vrm-model-interaction.js`（首次 grep 只覆盖了 `main.js`/`app.js`）。实际链路完整：`_setupVRMInteractivity` 的 mousemove 命中 `_screenHitBox`（每帧由骨骼投影更新）→ 悬停时 `ignore:false`。窗口初始 `ignore:true` 是**正确**设计（全屏透明窗口不穿透会吞掉整个桌面点击）。**本次未改点击穿透逻辑。**
 - **阻塞调用迁出事件循环（第 8a 项）**：全部 `asyncio.to_thread` —— git clone（`subprocess` timeout 120s）/ FBX→VRMA（node，180s）/ SkillHub 与 Provider 探测（`httpx` 15–60s）/ Langfuse `auth_check`+`flush` / zip 解包与插件落盘 / **知识库 19 处 `_guard` 改成 async**（原来同步 sqlite + 文件 IO 直跑在 async 端点，传个大 PDF 就能卡住整个后端含 SSE）/ 模型缓存删除（`rmtree` 100MB+）/ 模型目录扫描 / 每轮 `_available_skill_keys()`（实测 23–34ms，读全部 SKILL.md）。
   - 回归测试 `test_slow_endpoint_does_not_block_health` 断言慢操作期间 `/api/health` 秒回，**已用「临时改回同步直调」验证该测试确有鉴别力**（改回即失败）。
-  - ⚠️ 我上一轮写的「长阻塞操作**全部** to_thread」**不准确**（审查指出只搬了便宜的那个）：`assert_catalog_model`（字典查表，微秒级）当初转了，而 `delete_downloaded_model`（rmtree）、`reindex_all_documents`、`status_payload`/`is_model_downloaded`（目录遍历）、`client.flush()`（网络）都还留在循环上 —— **本轮已补齐**。剩下的同步开销主要是每轮 `plugin_service.tools()`（真实工作区实测约 55ms，含读 SKILL.md 与动态工具装配），未做缓存；要优化需按内容变更失效的缓存层。
+  - ⚠️ 我上一轮写的「长阻塞操作**全部** to_thread」**不准确**（审查指出只搬了便宜的那个）：`assert_catalog_model`（字典查表，微秒级）当初转了，而 `delete_downloaded_model`（rmtree）、`reindex_all_documents`、`status_payload`/`is_model_downloaded`（目录遍历）、`client.flush()`（网络）都还留在循环上 —— **本轮已补齐**。剩下的同步开销主要是每轮 `plugin_service.tools()`。**2026-10-06 校正：此处的「约 55ms」复现不出来** —— 真实工作区实测 **5.6ms**（`list_all` 1.6 + `tool_owners` 1.7 + VRM 表情解析 1.1）。因此**不加缓存**（为 5ms 引入「插件启停/切模型/动画增删」的失效逻辑不划算，漏失效就是工具集过期这种难查 bug）；转而修了两处无失效风险的真浪费，合计省约 7.3ms/轮，见下方「第二批审计修复」。
   - ⚠️ 另一条我写错的：**「注册」不能 offload**。见下方「审查发现与修正」的 P1 竞态。
 - **SSE 终止契约（第 8b 项）**：两个对话端点（`/api/agents/{id}/chat`、`/api/v1/chat/completions`）加 `aclosing` + `except` → 断连时关闭本层 SSE 生成器，异常时补发 `error` 帧（前端 `ChatEvent` 增 `error` 类型并解析）。
   - ⚠️ **机制说明要准确**（我上一轮写错过）：`aclose(frames)` 只把 `GeneratorExit` 抛进**本层**；两个 SSE 转换器都没有 try/finally，所以**不会同步传播到上游**。上游 LLM 流是在引用释放后由 async generator 终结器**异步**关闭的（实测 break 后同 tick 未关，让出约 10 次事件循环才关）。**效果成立（模型不会跑完），但不是「break 完立刻关」**。
@@ -114,6 +122,77 @@ SSE 事件协议（当前完整）：`token` / `reasoning` / `tool_call_chunk`�
   - ⚠️ 我上一轮写的依据「会触发壳 fs.watch 误报动作变更」**是错的**：壳只 watch `config.json`（main.js）与 `assets/animations/`（vrm-model-setup.js），**不 watch 插件目录**。真正依据只有 IO 浪费。
 - **密钥脱敏与落盘（第 9b/9c 项）**：`GET/PUT /settings/env` 按键名判决敏（`KEY|TOKEN|SECRET|PASSWORD|PWD|CREDENTIAL`），非密钥键照常可读；PUT 收到含 `***` 的值视为「保持原值」，所以前端拿脱敏值回写不会覆盖真 key（与 providers 同语义）。新增 `infra/secret_file.py`：**原子写 + 0600**（临时文件 → fsync → chmod → `os.replace`），四个明文密钥文件（providers/env/langfuse/connectors）全部接入，读时对旧文件补 0600。原实现非原子 + 0644，写一半被杀会截断，而读侧一律静默回退默认值。
 - **顺手修**：知识库索引任务 `asyncio.create_task` 返回值被丢弃（asyncio 只持弱引用，任务可能被 GC；异常只打印 "Task exception was never retrieved"）→ 存强引用 + done-callback 消费异常并记 WARNING。实测确认修复前日志有该警告、修复后变成明确的「文档索引任务失败」告警且文档状态机不变。
+
+## 四流并行交付 + 第二批修复（2026-10-06 下午）
+
+> 用户指令「这几个一起做」：提交 + 可移植性 + 打包 + 记忆可视化 + 设计 token + 零散风险。
+> 落地为 12 个 commit；测试基线 **后端 46→136 例、前端 0→44 例**；`make check` 全绿。
+
+### 交付
+
+- **可移植性**（`9187a96`）：`make start` 先构建前端（dist 不入库 → 否则全新克隆壳面板白屏）；
+  README 的 `.env` 从 `backend/` 改回**仓库根**（`config.py` 的 `REPO_ROOT=parents[2]` 只读根 `.env`，
+  而壳/uvicorn 的 cwd 都在 `backend/` → 放错位置会被静默忽略，表现为「配了 key 却提示未设置」）；
+  补 `LICENSE`(MIT)；`probe_harness.py` 的 `.env` 路径算错一级（**从来没读到过仓库根 .env**）一并修；
+  代码/配置个人绝对路径 24 处 → 0（`AGENT.md`/`docs` 历史记录故意保留）。
+- **壳打包链 + 安全基线**（`6ec8f2a`）：electron-builder（`pack` 产出 `Nuomi.app` 249MB / asar 24MB，
+  实测包内无 `tools/` 的 12MB FBX2glTF、无 `node_modules/electron`）；`npm run icon` 出 icns；
+  **单实例锁用真双进程验证**；CSP 探针实测（`file://` 读本地 VRM 与 `127.0.0.1` fetch 放行，
+  远端脚本/远端 fetch 被拒）；`will-navigate` + `setWindowOpenHandler` 导航封锁；
+  **模型路径自解析**（config 里的绝对路径失效时向后端 `/api/avatar/models` 取激活模型并回写，
+  打包态 config 只读则用 `--nuomi-model` 下发给渲染进程；都拿不到弹可读错误框而非静默白屏）。
+  实机日志确认 `已从后端解析到激活模型 → 回写 → VRM 加载成功`。
+- **记忆可视化**（`8dd7fdf`）：「记得你」是这个产品的定位，但记忆此前只有几个 `.md`、用户在控制台
+  看不到自己"被记住了什么"。新增 `/api/agents/{id}/memory*` + 控制台「记忆」页（断言/原话/来源会话/
+  实体/人设文件查看编辑）。**遗忘走引擎公开 API** `Memory.deprecate_atom`（不是删行）—— 它会原子地写
+  `deprecated_at`、实体 `atom_count` 减一、实体页标脏、追加 journal；直接 DELETE 会让实体页继续带着
+  "已被遗忘的证据"注入下一轮。真实数据实测：糯米 21 条 / 10 个对象 / 188 条原始事件。
+  - ⚠️ **差点上线的坑**：记忆表前缀按**专家名**推导且各不相同（糯米 `__`、工作狂 `___`、
+    小通 · 通用助手 `_________`）→ 硬编码 `___atoms` 只对一个专家成立。改为从 `sqlite_master` 推导，
+    并加「不同名字的专家各自读得到」的回归测试。
+- **设计 token**（`32fad76`）：`DESIGN.md` 描述的是**从未实现**的深色+DeepSeek 蓝+`styles.css` :root
+  （实际是浅色+琥珀、全仓无 CSS 变量）→ 与 DESIGN.md 同样的病。现在 token **只在 `src/theme.ts` 定义一次**
+  （TS 类型约束），启动注入成 CSS 变量，组件用 `var(--x)`；只有一个来源 → 漂移结构上不可能。
+  `DESIGN.md` 重写为描述现实 + 如实欠账（60 处裸 hex / 278 处内联样式 / 装饰色板三份重复）。
+- **前端测试基建 + 7 项体验软点**（`de72f9c`）：vitest+jsdom，XSS 净化 13 例（**鉴别力已验证**：
+  换回旧「只正则剥 `<script>`」实现 → 9 例失败）、SSE 分帧 13 例、引用解析 5 例、片段合并 6 例。
+  软点：`STATUS_TAG` 无兜底 + 顶层 ErrorBoundary、流式片段索引 key、原地改 state、每 token 都 `scrollTo`
+  （用户无法上翻）、模型下载按钮永久 loading、多选上传 N 并发、编辑器静默失败 + 无请求守卫。
+- **上传限流**：5 处裸 `await file.read()`（知识库那 100MB 上限甚至是**读完才判**）统一走 `read_upload`
+  （先看 `file.size`，再分块、超限立刻 413）；实测 51MB → 413。
+
+### 第二批审计修复（`a309a7d`）
+
+- **SQLite 连接从不关闭（最要命）**：`sqlite3.Connection` 自带的 `with` 只提交/回滚、**不关闭连接** →
+  全仓 50+ 处 `with db.connect() as conn:` 每次漏一个 fd，而服务整天常驻。`connect()` 改
+  `@contextmanager`（提交/回滚/**必然 close**），57 处调用点零改动；`knowledge/index.py` sidecar 同修。
+  实测 200 次调用 fd 稳定（改前每次 +1），commit/rollback 语义各有测试。
+- **`_TOOL_OWNERS` 模块级全局 → 请求局部**：并发对话会互相覆盖工具→插件来源映射（A 的 tool_call 帧
+  带上 B 的插件，前端徽标错乱）。
+- **工具装配开销**：见上面对 55ms 的校正；修了「`ensure_agent_runtime` 即使命中缓存也**急切求值**
+  `plugin_service.tools()`」与「`tools()`+`tool_owners()` 各查一次 `list_all()`」（新增
+  `tools_and_owners()` 只查一次）。
+- **数字人事件队列满静默丢最新** → 改丢**最旧**（动作是"最新有效"语义）+ 计数 + 限频告警；
+  SSE 长连接加 15s 心跳注释帧。**坑**：`asyncio.wait_for` 不能包在 async generator **外面**做超时
+  （取消会顺着 `await q.get()` 抛进生成器把它终结、长连接断），必须写在生成器内部。
+- **历史分页两条路径语义不一致**：`page()` 是倒序分页（从最新往前），而 pending/backfill 路径
+  `msgs[-limit:]` **忽略 offset**，且投影为空时还会回落重算 → 翻页重复拿同一批尾部消息。
+  统一为「从最新往前取 limit 条，offset 再往前跳」+ `limit/offset` 校验。
+  - ⚠️ **这条测试第一版没有鉴别力**：同一线程第二次请求已被标 ready，走的不是 pending 分支，
+    把旧实现改回去照样通过 → 改成用**两个独立线程**逼出 pending 路径，并实测确认旧实现会失败。
+- **顺手**：`plugin_service.sync()` 原只 `INSERT OR IGNORE`、从不清理目录已消失的残留行
+  （手动删插件目录会留下点不开也没工具的幽灵条目，违背"目录即 source of truth"）→ 现在会清掉。
+  实测用户现有库无幽灵行、清理不会误删。
+
+### 文档治理
+
+- `docs/placeholder-priorities.md` **重写**：上一版是 v0.12 残留，排的 12 项里 Tauri 打包、`plugins/voice` STT、
+  文件面板↔fs 工具、mem0、subagent、Supervisor 二层在 **v0.13 之后全部不存在**（逐项 grep 核实命中数为 0）。
+  一份排着"不存在的东西"的待办表比没有更糟 → 改为按「对单机日用的实际影响」排序，并写死规矩：
+  **写进待办前先 grep 确认落地点存在**。
+- `docs/HANDOVER.md`：§7 补 7 行能力域、§8 重写为状态台账（本轮已完成 / 仍待办 / **明确不做**）、
+  §6 补 10 条本轮踩坑、§9 补本轮 12 个 commit 与测试基线。
+- `DESIGN.md` 重写为描述现实（见上）。
 
 ## 分发范围决策（2026-10-06 用户拍板）
 
@@ -304,7 +383,7 @@ SSE 事件协议（当前完整）：`token` / `reasoning` / `tool_call_chunk`�
 
 - **已核实完成**：对话上下文保留（M4 投影含工具步骤）；模型插件工具语义（description 已含动作清单+中文标签）；models[].actions 已定论（全局 VRMA 清单）
 - **用户拍板**：模型资产补全废弃（cat 动作/VRMA_01~07 不补）；AI 数字人模型升级废弃（已全 3D）；动作名空格保持现状（Mixamo 原名，enum 合法可播）；人设约束完成（改系统提示词后不再是小猫，尖括号标签自然消失）；bundle code-split 不做（本地加载收益低）
-- **轨迹抽屉**：~~增强废弃——简版保持现状，后续轨迹能力集成 Langfuse（待办）~~ **Langfuse 已集成（2026-10-05）**：SDK 安装 + 后端配置持久化（工作区 langfuse.json，`GET|PUT /settings/langfuse`）+ 设置页 Langfuse 配置 UI + 对话轨迹上报验证通过（本地部署 localhost:3000，docker compose，数据不出本地）；**遗留 bug（未修）**：设置页 Secret Key 已保存但「测试连接」仍提示未输入（用户暂停时记录）
+- **轨迹抽屉**：~~增强废弃——简版保持现状，后续轨迹能力集成 Langfuse（待办）~~ **Langfuse 已集成（2026-10-05）**：SDK 安装 + 后端配置持久化（工作区 langfuse.json，`GET|PUT /settings/langfuse`）+ 设置页 Langfuse 配置 UI + 对话轨迹上报验证通过（本地部署 localhost:3000，docker compose，数据不出本地）；~~**遗留 bug**：设置页 Secret Key 已保存但「测试连接」仍提示未输入~~ → **已修（2026-10-06 核实）**：根因就是本轮的脱敏哨兵问题——前端把 GET 回的脱敏串原样回传，后端按「含 `***` 即取已保存值」处理（`api.py` 的 `/settings/langfuse/test`）。实测：GET 返回 `sk-l***3995` → 用该串测连接 → **报的是连接失败而非「均为必填」**，证明已正确替换为真 key（旧行为会当成空值直接 400）
 
 ## 插件三层能力 + 事件层落地（2026-10-05）
 
