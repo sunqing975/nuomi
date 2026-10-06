@@ -16,7 +16,7 @@ import logging
 import re
 from contextlib import aclosing
 
-from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 
@@ -46,6 +46,9 @@ from app.infra.harness.manager import manager
 from app.storage import db
 
 logger = logging.getLogger(__name__)
+
+# AI 数字人 SSE 长连接的心跳间隔（秒）：空闲时写注释帧，防被判空闲断开
+_SSE_KEEPALIVE_SECONDS = 15.0
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
@@ -100,11 +103,21 @@ def ensure_agent_runtime(agent_row: dict):
     memory.sqlite + 无工具」的残缺实例缓存下来，导致专家工作区的对话历史读不到、
     后续对话全部错写到全局根库。
     """
+    agent_id = agent_row["agent_id"]
+    # 缓存命中就直接返回：这些实参是**急切求值**的，即使 manager 内部命中缓存也会被算一遍
+    # （实测 plugin_service.tools() ~5.6ms/次，白算还占着事件循环）。
+    # 释放实例的路径（插件启停/切模型/改 provider 端点）都会调 manager.close()/release()，
+    # 所以"不存在于缓存"就等于"参数需要重算"。
+    if manager.has(agent_id):
+        return manager.get_agent(
+            agent_id, name=agent_row["name"], system_prompt=agent_row["system_prompt"] or ""
+        )
+
     return manager.get_agent(
-        agent_row["agent_id"],
+        agent_id,
         name=agent_row["name"],
         system_prompt=agent_row["system_prompt"] or "",
-        workspace_dir=ensure_agent_workspace(agent_row["agent_id"], agent_row["name"]),
+        workspace_dir=ensure_agent_workspace(agent_id, agent_row["name"]),
         plugin_tools=plugin_service.tools(),
         skills_dir=_all_skills_dirs(),
         skills_disabled=skill_service.disabled_set(),
@@ -275,15 +288,16 @@ def _resolve_avatar_action(tool_name: str, args: str = "") -> dict | None:
     return {"motion": None, "expressions": [expression], "label": _expression_label(expression)}
 
 
-# 工具来源映射（name→plugin_id，每次对话装配时刷新；同名工具去重后与 tools() 一致）
-_TOOL_OWNERS: dict[str, str] = {}
+async def _publish_actions(events, tool_owners: dict[str, str]):
+    """转发内部事件流，并把工具调用（动作/表情）广播给AI 数字人壳。
 
-
-async def _publish_actions(events):
-    """转发内部事件流，并把工具调用（动作/表情）广播给AI 数字人壳。"""
+    ``tool_owners``（工具名→来源插件 id）**按请求传入**，不用模块级全局：
+    它是每次对话装配 tools() 时算出来的，放全局会被并发对话互相覆盖 ——
+    A 的 tool_call 帧会拿到 B 的插件映射（前端来源徽标错乱）。
+    """
     async for ev in events:
         if ev.get("type") == "tool_call" and ev.get("name"):
-            owner = _TOOL_OWNERS.get(ev["name"])
+            owner = tool_owners.get(ev["name"])
             if owner:
                 ev["plugin_id"] = owner  # 前端展示来源徽标（多插件同名工具可辨识）
             payload = _resolve_avatar_action(ev["name"], ev.get("args") or "")
@@ -292,7 +306,7 @@ async def _publish_actions(events):
             # 任何工具调用都广播"干活中"（M8 工具执行可视化，不限于动作工具）
             avatar_events.publish_status("working")
         elif ev.get("type") == "tool_result":
-            owner = _TOOL_OWNERS.get(ev.get("name") or "")
+            owner = tool_owners.get(ev.get("name") or "")
             if owner:
                 ev["plugin_id"] = owner
             # 工具执行完成 → 恢复默认表情（连续工具会有 working→idle 抖动，可接受）
@@ -302,12 +316,20 @@ async def _publish_actions(events):
 
 @router.get("/avatar/events")
 async def avatar_events_sse(request: Request) -> StreamingResponse:
-    """AI 数字人动作事件流（SSE 长连接）：任意对话产生的工具调用实时广播。"""
+    """AI 数字人动作事件流（SSE 长连接）：任意对话产生的工具调用实时广播。
+
+    空闲 ``_SSE_KEEPALIVE_SECONDS`` 秒写一个 SSE **注释帧**（``: ping``）：
+    SSE 只在有事件时才有数据，长时间安静的连接会被浏览器/中间设备判为空闲而断开，
+    表现为"数字人偶尔收不到动作"。注释帧对客户端不可见（壳的解析器跳过非 ``data:`` 行）。
+    """
 
     async def gen():
-        async for ev in avatar_events.stream():
+        async for ev in avatar_events.stream(keepalive=_SSE_KEEPALIVE_SECONDS):
             if await request.is_disconnected():
                 break
+            if ev is None:
+                yield ": ping\n\n"  # 心跳（注释帧）
+                continue
             yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
@@ -391,7 +413,10 @@ def _wire_to_messages(wire_list: list[str]) -> list:
 
 @router.get("/agents/{agent_id}/chat/history")
 async def chat_history(
-    agent_id: str, thread_id: str, limit: int = 100, offset: int = 0
+    agent_id: str,
+    thread_id: str,
+    limit: int = Query(default=100, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
 ) -> list[dict]:
     """按线程取对话历史，返回有序片段流（按真实时间顺序）。
 
@@ -399,20 +424,30 @@ async def chat_history(
     harness 运行时实例；未就绪（pending，含迁移期老会话）时从 checkpointer
     读取并全量 backfill 投影，checkpointer 始终是消息权威。
     片段类型：user / reasoning（深度思考）/ tool_call / tool_result / text。
+
+    **分页语义（两条路径必须一致）**：从**最新**往前取 ``limit`` 条，``offset`` 表示
+    再往前跳过多少条（对齐 ``thread_message_repo.page`` 的「倒序分页」）。
+    原 backfill 分支用 ``msgs[-limit:]`` 忽略了 offset，且投影为空时还会回落重算 →
+    翻页会重复拿到同一批尾部消息。
     """
     agent_row = agent_service.get(agent_id)
     if agent_row is None:
         raise HTTPException(status_code=404, detail="Agent 不存在")
+
     if thread_message_repo.projection_status(thread_id) == PROJ_READY:
         rows, _ = thread_message_repo.page(thread_id, limit=limit, offset=offset)
-        if rows:
-            return _segments_from_messages(_wire_to_messages([r["message_json"] for r in rows]))
+        # 投影是权威：即使为空（offset 越界）也直接返回，
+        # 不要回落到 backfill —— 那会把尾部消息又当成"这一页"返回
+        return _segments_from_messages(_wire_to_messages([r["message_json"] for r in rows]))
+
     # pending：checkpointer 权威 + 全量 backfill 投影（一次全量，之后每轮增量 append）
     agent = ensure_agent_runtime(agent_row)
     msgs = await agent.aget_history(thread_id, limit=100_000)
     thread_message_repo.replace_all(thread_id, messages_to_inputs(msgs))
     thread_message_repo.mark_projection(thread_id, PROJ_READY)
-    return _segments_from_messages(msgs[-limit:] if limit else msgs)
+    end = max(0, len(msgs) - offset)
+    start = max(0, end - limit)
+    return _segments_from_messages(msgs[start:end])
 
 
 @router.post("/agents/{agent_id}/chat")
@@ -437,9 +472,9 @@ async def chat(agent_id: str, body: ChatBody, request: Request) -> StreamingResp
     ensure_agent_runtime(agent_row)
 
     async def gen():
-        global _TOOL_OWNERS
-        _TOOL_OWNERS = plugin_service.tool_owners()  # 每次对话刷新工具来源映射（插件启停即生效）
-        tools = plugin_service.tools()
+        # 工具装配与来源映射：请求局部（插件启停立即生效，且并发对话互不干扰）。
+        # 一次 list_all() 同时算出两者 —— 原先各算一次要多查一遍 DB 与表情清单。
+        tools, tool_owners = plugin_service.tools_and_owners()
         # AI 数字人插件启用时，自动拼入身体使用说明（不污染专家人设）
         from app.domain.avatar.service import load_avatar_instructions
 
@@ -483,7 +518,8 @@ async def chat(agent_id: str, body: ChatBody, request: Request) -> StreamingResp
                     knowledge_base_ids=body.knowledge_base_ids,
                     agent_config=agent_row.get("config_json"),
                     on_turn_complete=_persist_turn,
-                )
+                ),
+                tool_owners,
             ),
             thread_id=body.thread_id,
         )

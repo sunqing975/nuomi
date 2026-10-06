@@ -9,6 +9,8 @@ import contextlib
 import json
 import sqlite3
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -163,7 +165,30 @@ def db_path() -> Path:
     return settings.data_root / "nuomi.db"
 
 
-def connect() -> sqlite3.Connection:
+@contextmanager
+def connect() -> Iterator[sqlite3.Connection]:
+    """打开一个 SQLite 连接（**上下文管理器**：退出时提交并真正关闭）。
+
+    ⚠️ 为什么不直接返回 Connection：``sqlite3.Connection`` 自带的 ``with`` 只提交/回滚，
+    **不会关闭连接**。于是 ``with db.connect() as conn:`` 每次调用都泄漏一个连接和一个文件
+    描述符 —— 全仓有 50+ 处这种写法，而后端是整天常驻的，跑一小时能攒下几百个句柄。
+
+    这里包一层：成功提交、异常回滚、**无论如何 close()**。调用点写法完全不变。
+    需要自行管理生命周期的场景用 ``_connect_raw()``。
+    """
+    conn = _connect_raw()
+    try:
+        yield conn
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def _connect_raw() -> sqlite3.Connection:
+    """裸连接工厂（内部用；调用方负责 commit/close）。"""
     conn = sqlite3.connect(db_path())
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")

@@ -6,11 +6,12 @@ float32 小端 BLOB 向量；检索 = 进程内全表余弦 top-k（文档量小
 
 from __future__ import annotations
 
+import contextlib
 import json
 import math
 import sqlite3
 import struct
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -39,11 +40,30 @@ class KnowledgeIndex:
         return self._path
 
     def _connect(self) -> sqlite3.Connection:
+        """索引 sidecar（index.sqlite）的裸连接。
+
+        注意与 ``app.storage.db.connect`` 的区别：那个是上下文管理器（会关闭），
+        这个是普通工厂 —— 因此**每个 with 块都要用** ``contextlib.closing`` 包住，
+        否则同样会漏 fd。本文件的用法统一走 ``_session()``。
+        """
         return sqlite3.connect(self._path)
+
+    @contextlib.contextmanager
+    def _session(self) -> Iterator[sqlite3.Connection]:
+        """连接 + 提交 + 关闭（替代裸 ``with self._connect()``，后者不关闭连接）。"""
+        conn = self._connect()
+        try:
+            yield conn
+            conn.commit()
+        except BaseException:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
     def _initialize(self) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        with self._connect() as conn:
+        with self._session() as conn:
             conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS chunks (
@@ -87,7 +107,7 @@ class KnowledgeIndex:
                     json.dumps(meta, ensure_ascii=False, separators=(",", ":")),
                 )
             )
-        with self._connect() as conn:
+        with self._session() as conn:
             conn.execute("DELETE FROM chunks WHERE doc_id = ?", (doc_id,))
             conn.executemany(
                 "INSERT INTO chunks(chunk_id, doc_id, ordinal, text, embedding, meta_json) "
@@ -96,7 +116,7 @@ class KnowledgeIndex:
             )
 
     def delete_doc(self, doc_id: str) -> None:
-        with self._connect() as conn:
+        with self._session() as conn:
             conn.execute("DELETE FROM chunks WHERE doc_id = ?", (doc_id,))
 
     def search(self, query_vec: Sequence[float], k: int) -> list[Hit]:
@@ -109,7 +129,7 @@ class KnowledgeIndex:
         query_norm = math.sqrt(sum(value * value for value in query))
         if query_norm == 0:
             raise ValueError("query vector cannot be zero")
-        with self._connect() as conn:
+        with self._session() as conn:
             rows = conn.execute(
                 "SELECT chunk_id, doc_id, ordinal, text, embedding, meta_json FROM chunks"
             ).fetchall()

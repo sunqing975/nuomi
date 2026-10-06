@@ -67,6 +67,17 @@ class PluginService:
                     ),
                 )
                 rows.append(self._row_from_manifest(manifest))
+
+            # 清理"目录已消失"的残留行：本模块的设计原则是**插件目录即 source of truth**，
+            # 而下面的 INSERT OR IGNORE 只会新增/保活、从不删除 —— 用户手动删掉插件目录后，
+            # 控制台会留下一个点不开、也没工具的幽灵条目（enabled 为 1 却 tool_count=0）。
+            removed = {
+                r["plugin_id"] for r in conn.execute("SELECT plugin_id FROM plugins").fetchall()
+            } - {p.manifest.id for p in loaded}
+            if removed:
+                conn.executemany(
+                    "DELETE FROM plugins WHERE plugin_id = ?", [(pid,) for pid in removed]
+                )
         return rows
 
     # ---------- 查询 ----------
@@ -126,6 +137,21 @@ class PluginService:
 
     # ---------- 工具装配（供对话端点） ----------
 
+    def _enabled_map(self) -> dict[str, bool]:
+        """插件 id → 是否全局启用（一次 DB 查询）。"""
+        return {r["plugin_id"]: bool(r["enabled"]) for r in self.list_all()}
+
+    def tools_and_owners(self) -> tuple[list, dict[str, str]]:
+        """一次 ``list_all()`` 同时装配工具与来源映射（对话热路径用这个）。
+
+        ``tools()`` 与 ``tool_owners()`` 各自都会查一次 ``list_all()``（含 VRM 表情解析），
+        对话里两者都要用 → 走这里可以省掉一遍。注意**不做结果缓存**：实测 ``tools()``
+        在真实工作区约 5.6ms，而缓存需要按「插件启停 / 切模型 / 动画增删」失效，
+        为 5ms 引入失效逻辑不划算（且一旦漏失效就是工具集过期这种难查的 bug）。
+        """
+        enabled = self._enabled_map()
+        return self._build_tools(enabled), self._build_owners(enabled)
+
     def tools(self) -> list:
         """按全局启停装配插件工具 + AI 数字人动态工具（StructuredTool 列表）。
 
@@ -138,7 +164,9 @@ class PluginService:
         同名工具去重（2026-10-05）：多个插件声明同名工具时保留最后注册的——
         octop build_plugin_tools 不去重，同名会进两个 StructuredTool 造成调用歧义。
         """
-        global_enabled = {r["plugin_id"]: bool(r["enabled"]) for r in self.list_all()}
+        return self._build_tools(self._enabled_map())
+
+    def _build_tools(self, global_enabled: dict[str, bool]) -> list:
         tools = build_plugin_tools(global_plugins=global_enabled)
         tools = tools + self._avatar_dynamic_tools(global_enabled)
         # 同名去重：dict 键覆盖保留最后注册者（与 tool_owners() 的映射一致）
@@ -155,9 +183,11 @@ class PluginService:
         注意：_sanitize_tool 会把中文工具名改成 tool_{n}，中文名场景下映射会 miss（无徽标），
         本项目工具名均为英文（slug 化），可接受。
         """
+        return self._build_owners(self._enabled_map())
+
+    def _build_owners(self, global_enabled: dict[str, bool]) -> dict[str, str]:
         from octop_harness.plugins.registry import PluginRegistry
 
-        global_enabled = {r["plugin_id"]: bool(r["enabled"]) for r in self.list_all()}
         owners: dict[str, str] = {}
         for reg in PluginRegistry().all_tools():
             if global_enabled.get(reg.plugin_id) is False:
