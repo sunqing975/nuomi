@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  Avatar, Button, Card, Input, Modal, Popconfirm, Space, Switch, Tag,
+  Avatar, Button, Card, Input, Modal, Popconfirm, Space, Switch, Tabs,
   Typography, Upload, message,
 } from 'antd';
-import { CloudUploadOutlined, DeleteOutlined, GithubOutlined, ReloadOutlined, ShopOutlined } from '@ant-design/icons';
+import { CloudUploadOutlined, DeleteOutlined, GithubOutlined, ReloadOutlined } from '@ant-design/icons';
 import { del, get, post, patch, upload, type Plugin } from '../api';
 import EntityGrid from '../components/EntityGrid';
 import MarketPage from './Market';
 import PageLayout from '../components/PageLayout';
+
+/** 插件 kind 中文化（产品不暴露英文术语） */
+const KIND_LABEL: Record<string, string> = { tool: '工具插件', model: '模型插件' };
 
 const AVATAR_COLORS = ['#f59e0b', '#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
 
@@ -16,7 +19,6 @@ export default function PluginsPage() {
   const [loading, setLoading] = useState(false);
   const [gitOpen, setGitOpen] = useState(false);
   const [gitUrl, setGitUrl] = useState('');
-  const [marketOpen, setMarketOpen] = useState(false);
   const [gitLoading, setGitLoading] = useState(false);
 
   const load = useCallback(async () => {
@@ -72,7 +74,7 @@ export default function PluginsPage() {
   const remove = async (p: Plugin) => {
     try {
       await del(`/plugins/${p.plugin_id}`);
-      message.success(`插件 ${p.plugin_id} 已删除`);
+      message.success(`插件 ${p.name} 已删除`);
       load();
     } catch (e) {
       message.error(`删除失败：${(e as Error).message}`);
@@ -82,99 +84,112 @@ export default function PluginsPage() {
   const renderPlugin = (p: Plugin) => {
     const color = AVATAR_COLORS[(p.plugin_id.charCodeAt(0) || 0) % AVATAR_COLORS.length];
     return (
-      <Card size="small" hoverable style={{ height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
-          <Tag color="blue" style={{ position: 'absolute', top: 8, right: 8, margin: 0, fontSize: 11 }}>
-            {p.kind || 'tool'}
-          </Tag>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', paddingRight: 44 }}>
-            <Avatar size={40} style={{ backgroundColor: color, flexShrink: 0 }}>
-              {(p.plugin_id[0] || '?').toUpperCase()}
-            </Avatar>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <Typography.Text strong ellipsis style={{ display: 'block' }} title={p.name}>
-                {p.name}
-              </Typography.Text>
-              <Typography.Text code style={{ fontSize: 11 }}>{p.plugin_id}</Typography.Text>
-            </div>
+      <Card
+        size="small"
+        hoverable
+        styles={{ body: { display: 'flex', flexDirection: 'column', gap: 8, height: '100%' } }}
+      >
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <Avatar size={40} style={{ backgroundColor: color, flexShrink: 0 }}>
+            {(p.name[0] || '?').toUpperCase()}
+          </Avatar>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <Typography.Text strong ellipsis style={{ display: 'block' }} title={p.name}>
+              {p.name}
+            </Typography.Text>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {KIND_LABEL[p.kind] ?? '插件'} · v{p.version || '—'} · {p.tool_count ?? 0} 个工具
+            </Typography.Text>
           </div>
-          <div style={{ marginTop: 8, fontSize: 12, color: 'var(--label-2)' }}>
-            版本 {p.version || '—'} · {p.tool_count ?? 0} 个工具
-          </div>
-          <div style={{ flex: 1 }} />
-          <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ color: 'var(--label-3)', fontSize: 12 }}>全局启停</span>
-            <Space size={4}>
-              <Switch size="small" checked={p.enabled} onChange={v => toggle(p, v)} />
-              <Popconfirm
-                title="删除插件？"
-                description="将删除插件目录与全部绑定，不可恢复"
-                okText="删除" cancelText="取消"
-                onConfirm={() => remove(p)}
-              >
-                <Button size="small" type="text" danger icon={<DeleteOutlined />} />
-              </Popconfirm>
-            </Space>
-          </div>
-        </Card>
+        </div>
+        <Typography.Paragraph
+          type="secondary" style={{ fontSize: 12, marginBottom: 0, flex: 1 }}
+          ellipsis={{ rows: 2, tooltip: p.description }}
+        >
+          {p.description || '（暂无描述）'}
+        </Typography.Paragraph>
+        <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+          <Space size={4}>
+            <Switch
+              size="small" checked={p.enabled} onChange={v => toggle(p, v)}
+              checkedChildren="启用" unCheckedChildren="停用"
+            />
+          </Space>
+          <Popconfirm
+            title="删除插件？"
+            description="将删除插件目录与全部绑定，不可恢复"
+            okText="删除" cancelText="取消"
+            onConfirm={() => remove(p)}
+          >
+            <Button size="small" type="text" danger icon={<DeleteOutlined />} />
+          </Popconfirm>
+        </Space>
+      </Card>
     );
   };
 
   return (
     <PageLayout
       title="插件"
-      description="插件全局启停：对所有专家生效，AI 按需调用"
-      extra={
-        <>
-          <Button type="primary" icon={<ShopOutlined />} onClick={() => setMarketOpen(true)}>插件市场</Button>
-          <Button icon={<GithubOutlined />} onClick={() => setGitOpen(true)}>从 Git 导入</Button>
-          <Upload
-            accept=".zip"
-            showUploadList={false}
-            beforeUpload={(file) => {
-              importZip(file);
-              return false; // 手动上传，阻止 antd 自动提交
-            }}
-          >
-            <Button icon={<CloudUploadOutlined />}>导入 zip</Button>
-          </Upload>
-          <Button icon={<ReloadOutlined />} onClick={sync} loading={loading}>重新扫描</Button>
-        </>
-      }
+      description="给专家挂载工具能力：安装、启停与导入"
     >
-      <Modal
-        title="插件市场"
-        open={marketOpen}
-        footer={null}
-        width={880}
-        onCancel={() => setMarketOpen(false)}
-      >
-        <MarketPage onInstalled={load} />
-      </Modal>
-      <Modal
-        title="从 Git 仓库导入插件"
-        open={gitOpen}
-        onOk={importGit}
-        confirmLoading={gitLoading}
-        onCancel={() => { setGitOpen(false); setGitUrl(''); }}
-        okText="导入" cancelText="取消"
-      >
-        <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 4 }}>
-          浅克隆仓库并导入工作区 <Typography.Text code>plugins/</Typography.Text>（需根目录含 plugin.yaml）。
-          支持 https:// / ssh:// / git@ 地址，体积上限 50MB。
-        </Typography.Paragraph>
-        <Input
-          placeholder="https://github.com/user/plugin-repo.git"
-          value={gitUrl}
-          onChange={e => setGitUrl(e.target.value)}
-          onPressEnter={importGit}
-          autoFocus
-        />
-      </Modal>
-      <EntityGrid
-        items={plugins}
-        loading={loading}
-        emptyText="还没有插件，可导入或重新扫描"
-        renderItem={renderPlugin}
+      <Tabs
+        items={[
+          {
+            key: 'installed',
+            label: '已安装',
+            children: (
+              <>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <div style={{ flex: 1 }} />
+                  <Button icon={<GithubOutlined />} onClick={() => setGitOpen(true)}>从 Git 导入</Button>
+                  <Upload
+                    accept=".zip"
+                    showUploadList={false}
+                    beforeUpload={(file) => {
+                      importZip(file);
+                      return false; // 手动上传，阻止 antd 自动提交
+                    }}
+                  >
+                    <Button icon={<CloudUploadOutlined />}>导入 zip</Button>
+                  </Upload>
+                  <Button icon={<ReloadOutlined />} onClick={sync} loading={loading}>重新扫描</Button>
+                </div>
+                <Modal
+                  title="从 Git 仓库导入插件"
+                  open={gitOpen}
+                  onOk={importGit}
+                  confirmLoading={gitLoading}
+                  onCancel={() => { setGitOpen(false); setGitUrl(''); }}
+                  okText="导入" cancelText="取消"
+                >
+                  <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 4 }}>
+                    浅克隆仓库并导入工作区 <Typography.Text code>plugins/</Typography.Text>（需根目录含 plugin.yaml）。
+                    支持 https:// / ssh:// / git@ 地址，体积上限 50MB。
+                  </Typography.Paragraph>
+                  <Input
+                    placeholder="https://github.com/user/plugin-repo.git"
+                    value={gitUrl}
+                    onChange={e => setGitUrl(e.target.value)}
+                    onPressEnter={importGit}
+                    autoFocus
+                  />
+                </Modal>
+                <EntityGrid
+                  items={plugins}
+                  loading={loading}
+                  emptyText="还没有插件，可导入或重新扫描"
+                  renderItem={renderPlugin}
+                />
+              </>
+            ),
+          },
+          {
+            key: 'market',
+            label: '插件市场',
+            children: <MarketPage onInstalled={load} />,
+          },
+        ]}
       />
     </PageLayout>
   );

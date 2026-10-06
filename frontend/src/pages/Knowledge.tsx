@@ -86,7 +86,7 @@ export default function KnowledgePage() {
   const status = useMemo(() => {
     if (!capability) return { color: 'default', text: '连接中…' };
     if (!capability.deps_available) return { color: 'red', text: '依赖缺失' };
-    if (capability.ready) return { color: 'green', text: `就绪 · ${capability.model}` };
+    if (capability.ready) return { color: 'green', text: '就绪' };
     if (!capability.downloaded) return { color: 'orange', text: '模型未下载' };
     return { color: 'orange', text: '未启用' };
   }, [capability]);
