@@ -8,7 +8,7 @@
 |---|---|---|
 | 大脑（机制层） | [octop-harness](https://pypi.org/project/octop-harness/) | Agent 运行时（LangChain Deep Agents）：循环/工具/记忆/checkpointer/技能/MCP |
 | 业务层 | Python + FastAPI | 专家/会话/能力领域服务（自研）；插件三层能力（工具注册 / 事件订阅发布 / 聊天卡片 UI） |
-| 形象层（AI 数字人壳） | shells/nuomi-avatar/（基于 nuomi-avatar，MIT） | 纯表现层：three.js + VRM 3D 渲染、情绪表情、流式字幕、工具执行状态；大脑全在 backend（详见 [shells/nuomi-avatar/README.md](shells/nuomi-avatar/README.md)） |
+| 形象层（AI 数字人壳） | shells/nuomi-avatar/（自研，Electron + three.js + @pixiv/three-vrm） | 纯表现层：VRM 3D 渲染、情绪表情、流式字幕、工具执行状态；大脑全在 backend（详见 [shells/nuomi-avatar/README.md](shells/nuomi-avatar/README.md)） |
 | 存储 | SQLite | agents/threads/thread_messages 投影表（对齐 Octop schema，已建成） |
 
 > **AI 数字人模型版权说明**：VRM 模型资产在工作区（数据根）的 `models/3D/`，不入库。
@@ -138,5 +138,6 @@ transport（FastAPI 路由） → domain（领域服务） → infra/harness（�
 
 本项目以 MIT 许可证开源，全文见仓库根的 [LICENSE](LICENSE)（Copyright (c) 2026 Nuomi contributors）。
 
-依赖与第三方资产按各自的 License 使用：octop-harness、nuomi-avatar 均为开源依赖；
+依赖与第三方资产按各自的 License 使用：octop-harness 为开源依赖；
+数字人壳自研（Electron / three.js / @pixiv/three-vrm 等运行时依赖见 `shells/nuomi-avatar/package.json`）；
 VRM 模型与 `.vrma` 动作资产见上文「AI 数字人模型版权说明」。
