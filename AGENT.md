@@ -531,3 +531,9 @@ SSE 事件协议（当前完整）：`token` / `reasoning` / `tool_call_chunk`�
 - **落地**：专家/插件/技能已安装/插件市场/技能市场五类卡全部改知识库形态；停用态统一 opacity 0.75 + 「已停用」tag；initialAvatarOf 加 size 参数（卡片头用 24）
 - **审美基准**：后续所有卡片类页面沿用此形态
 - **验证**：前端 tsc/vitest 60/build 全绿、壳重启「糯米启动完成」
+
+## 插件市场/技能市场升级为独立页面（2026-10-06，commit 4faef1f）
+
+- **用户纠正**：市场不该是页内 Tab——「插件市场」应是独立页面，否则面包屑（能力/插件）没有层级作用
+- **落地**：能力组导航新增「插件市场」「技能市场」独立项（面包屑自动生成「能力/插件市场」）；插件页/技能页恢复单页（已安装管理，导入按钮回 PageLayout extra）；新建 PluginMarketPage / SkillMarketPage（PageLayout + 市场内容，技能市场逻辑从 Skills.tsx 拆出）
+- **验证**：前端 tsc/vitest 60/build 全绿、壳重启「糯米启动完成」
