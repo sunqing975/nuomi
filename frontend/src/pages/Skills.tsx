@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Avatar, Button, Card, Input, Modal, Popconfirm, Select, Space, Switch, Tabs,
+  Avatar, Button, Card, Input, Modal, Popconfirm, Select, Space, Switch,
   Tag, Typography, Upload, message,
 } from 'antd';
-import { CloudUploadOutlined, DeleteOutlined, DownloadOutlined, GithubOutlined, ReloadOutlined } from '@ant-design/icons';
+import { CloudUploadOutlined, DeleteOutlined, GithubOutlined } from '@ant-design/icons';
 import {
-  del, get, patch, post, upload, type Skill, type SkillHubItem, type SkillPackage,
+  del, get, patch, post, upload, type Skill, type SkillPackage,
 } from '../api';
 import EntityGrid from '../components/EntityGrid';
 import PageLayout from '../components/PageLayout';
@@ -17,12 +17,6 @@ export default function SkillsPage() {
   const [packages, setPackages] = useState<SkillPackage[]>([]);
   const [envVars, setEnvVars] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
-  // —— 市场 ——
-  const [hubTab, setHubTab] = useState<'skills' | 'skillsets'>('skills');
-  const [query, setQuery] = useState('');
-  const [hubItems, setHubItems] = useState<SkillHubItem[]>([]);
-  const [hubLoading, setHubLoading] = useState(false);
-  const [installing, setInstalling] = useState<string | null>(null);
   const [gitOpen, setGitOpen] = useState(false);
   const [gitUrl, setGitUrl] = useState('');
   const [gitLoading, setGitLoading] = useState(false);
@@ -74,24 +68,6 @@ export default function SkillsPage() {
     }
   };
 
-  const searchHub = useCallback(async (q: string, tab: 'skills' | 'skillsets') => {
-    setHubLoading(true);
-    try {
-      if (tab === 'skills') {
-        setHubItems(await get<SkillHubItem[]>(`/skillhub/search?q=${encodeURIComponent(q)}&page_size=50`));
-      } else {
-        setHubItems(await get<SkillHubItem[]>(`/skillhub/skillsets?q=${encodeURIComponent(q)}&page_size=50`));
-      }
-    } finally {
-      setHubLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    searchHub('', hubTab);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hubTab]);
-
   const toggleSkill = async (s: Skill, enabled: boolean) => {
     await patch(`/skills/${s.name}`, { enabled });
     message.success(enabled ? '已启用（重启专家实例生效）' : '已停用');
@@ -121,35 +97,6 @@ export default function SkillsPage() {
       load();
     } catch (e) {
       message.error(`删除失败：${(e as Error).message}`);
-    }
-  };
-
-  const installSkill = async (item: SkillHubItem) => {
-    setInstalling(item.slug);
-    try {
-      await post('/skills/install', { slug: item.slug });
-      message.success(`技能 ${item.display_name} 已安装`);
-      if (item.requires_api_key) {
-        message.warning('该技能需要 API Key，请到「设置 → 环境变量」配置后重启对话生效', 5);
-      }
-      load();
-    } catch (e) {
-      message.error(`安装失败：${(e as Error).message}`);
-    } finally {
-      setInstalling(null);
-    }
-  };
-
-  const installPackage = async (item: SkillHubItem) => {
-    setInstalling(item.slug);
-    try {
-      const p = await post<SkillPackage>('/skill-packages/from-skillhub', { slug: item.slug });
-      message.success(`技能包 ${p.name} 已安装（${p.skill_count} 个技能）`);
-      load();
-    } catch (e) {
-      message.error(`安装失败：${(e as Error).message}`);
-    } finally {
-      setInstalling(null);
     }
   };
 
@@ -268,151 +215,67 @@ export default function SkillsPage() {
     return <Avatar size={size} style={{ backgroundColor: color, flexShrink: 0 }}>{ch}</Avatar>;
   };
 
-  const renderHubItem = (item: SkillHubItem) => {
-    const installingNow = installing === item.slug;
-    const name = item.display_name || item.slug;
-    const desc = item.summary || item.description || '—';
-    return (
-      <Card
-        size="small"
-        hoverable
-        style={{ height: '100%' }}
-        title={<Space>{item.icon_url ? (
-          <img src={item.icon_url} alt="" width={24} height={24}
-            style={{ borderRadius: 4, objectFit: 'cover', flexShrink: 0 }} />
-        ) : initialAvatarOf(name, 24)}<span>{name}</span></Space>}
-        extra={
-          item.requires_api_key && (
-            <Tag color="orange" style={{ marginInlineEnd: 0 }}
-              title="该技能需要 API Key，安装后在「设置 → 环境变量」配置">
-              需 API Key
-            </Tag>
-          )
-        }
-      >
-        <Typography.Paragraph type="secondary" ellipsis={{ rows: 2 }} style={{ fontSize: 13, minHeight: 40, marginBottom: 8 }}>
-          {desc}
-        </Typography.Paragraph>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            {hubTab === 'skills' ? '技能' : '技能包'}
-            {hubTab === 'skillsets' && item.skill_count != null ? ` · ${item.skill_count} 个技能` : ''}
-          </Typography.Text>
-          <Button size="small" type="primary" loading={installingNow}
-            icon={<DownloadOutlined />}
-            onClick={() => (hubTab === 'skills' ? installSkill(item) : installPackage(item))}>
-            {hubTab === 'skills' ? '安装技能' : '安装技能包'}
-          </Button>
-        </div>
-      </Card>
-    );
-  };
-
   return (
     <PageLayout
       title="技能"
-      description="技能 / 技能包管理：可导入本地包，或从 SkillHub 市场安装"
+      description="技能 / 技能包管理：可导入本地包，安装市场的技能请到「技能市场」页"
     >
-      <Tabs
-        items={[
-          {
-            key: 'installed', label: '已安装',
-            children: (
-              <>
-                <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <Select
-                    value={kindFilter}
-                    onChange={setKindFilter}
-                    style={{ width: 120 }}
-                    options={[
-                      { value: 'all', label: '全部类型' },
-                      { value: 'builtin', label: '内置' },
-                      { value: 'skill', label: '技能' },
-                      { value: 'package', label: '技能包' },
-                    ]}
-                  />
-                  <Input.Search
-                    placeholder="搜索名称 / 描述"
-                    allowClear style={{ width: 240 }}
-                    value={installedQuery}
-                    onChange={e => setInstalledQuery(e.target.value)}
-                  />
-                  <div style={{ flex: 1 }} />
-                  <Button icon={<GithubOutlined />} onClick={() => setGitOpen(true)}>从 Git 导入</Button>
-                  <Upload
-                    accept=".zip"
-                    showUploadList={false}
-                    beforeUpload={(file) => {
-                      importSkillZip(file);
-                      return false; // 手动上传，阻止 antd 自动提交
-                    }}
-                  >
-                    <Button icon={<CloudUploadOutlined />}>导入技能 zip</Button>
-                  </Upload>
-                </div>
-                <Modal
-                  title="从 Git 仓库导入技能"
-                  open={gitOpen}
-                  onOk={importSkillGit}
-                  confirmLoading={gitLoading}
-                  onCancel={() => { setGitOpen(false); setGitUrl(''); }}
-                  okText="导入" cancelText="取消"
-                >
-                  <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 4 }}>
-                    浅克隆仓库并导入工作区 <Typography.Text code>skills/</Typography.Text>（需根目录含 SKILL.md）。
-                    支持 https:// / ssh:// / git@ 地址，体积上限 50MB。
-                  </Typography.Paragraph>
-                  <Input
-                    placeholder="https://github.com/user/skill-repo.git"
-                    value={gitUrl}
-                    onChange={e => setGitUrl(e.target.value)}
-                    onPressEnter={importSkillGit}
-                    autoFocus
-                  />
-                </Modal>
-                <EntityGrid
-                  items={installedItems}
-                  loading={loading}
-                  emptyText="没有匹配的已安装项"
-                  renderItem={renderInstalledItem}
-                />
-              </>
-            ),
-          },
-          {
-            key: 'hub', label: 'SkillHub 市场',
-            children: (
-              <>
-                <div style={{ display: 'flex', gap: 12, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <Input.Search
-                    placeholder={hubTab === 'skills'
-                      ? '搜索技能（如：翻译、编程）' : '搜索技能包（技能集）'}
-                    allowClear style={{ width: 320 }} defaultValue=""
-                    onSearch={q => searchHub(q, hubTab)}
-                  />
-                  <Button icon={<ReloadOutlined />} onClick={() => searchHub('', hubTab)} />
-                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                    来源：腾讯 SkillHub 市场（api.skillhub.cn）
-                  </Typography.Text>
-                </div>
-                <Tabs
-                  size="small" activeKey={hubTab}
-                  onChange={k => setHubTab(k as 'skills' | 'skillsets')}
-                  items={[
-                    { key: 'skills', label: '技能' },
-                    { key: 'skillsets', label: '技能包（技能集）' },
-                  ]}
-                />
-                <EntityGrid
-                  items={hubItems}
-                  loading={hubLoading}
-                  emptyText="暂无结果，换个关键词试试"
-                  renderItem={renderHubItem}
-                />
-              </>
-            ),
-          },
-        ]}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+        <Select
+          value={kindFilter}
+          onChange={setKindFilter}
+          style={{ width: 120 }}
+          options={[
+            { value: 'all', label: '全部类型' },
+            { value: 'builtin', label: '内置' },
+            { value: 'skill', label: '技能' },
+            { value: 'package', label: '技能包' },
+          ]}
+        />
+        <Input.Search
+          placeholder="搜索名称 / 描述"
+          allowClear style={{ width: 240 }}
+          value={installedQuery}
+          onChange={e => setInstalledQuery(e.target.value)}
+        />
+        <div style={{ flex: 1 }} />
+        <Button icon={<GithubOutlined />} onClick={() => setGitOpen(true)}>从 Git 导入</Button>
+        <Upload
+          accept=".zip"
+          showUploadList={false}
+          beforeUpload={(file) => {
+            importSkillZip(file);
+            return false; // 手动上传，阻止 antd 自动提交
+          }}
+        >
+          <Button icon={<CloudUploadOutlined />}>导入技能 zip</Button>
+        </Upload>
+      </div>
+      <Modal
+        title="从 Git 仓库导入技能"
+        open={gitOpen}
+        onOk={importSkillGit}
+        confirmLoading={gitLoading}
+        onCancel={() => { setGitOpen(false); setGitUrl(''); }}
+        okText="导入" cancelText="取消"
+      >
+        <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 4 }}>
+          浅克隆仓库并导入工作区 <Typography.Text code>skills/</Typography.Text>（需根目录含 SKILL.md）。
+          支持 https:// / ssh:// / git@ 地址，体积上限 50MB。
+        </Typography.Paragraph>
+        <Input
+          placeholder="https://github.com/user/skill-repo.git"
+          value={gitUrl}
+          onChange={e => setGitUrl(e.target.value)}
+          onPressEnter={importSkillGit}
+          autoFocus
+        />
+      </Modal>
+      <EntityGrid
+        items={installedItems}
+        loading={loading}
+        emptyText="没有匹配的已安装项"
+        renderItem={renderInstalledItem}
       />
     </PageLayout>
   );

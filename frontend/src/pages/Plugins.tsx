@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  Avatar, Button, Card, Input, Modal, Popconfirm, Space, Switch, Tabs, Tag,
+  Avatar, Button, Card, Input, Modal, Popconfirm, Space, Switch, Tag,
   Typography, Upload, message,
 } from 'antd';
 import { CloudUploadOutlined, DeleteOutlined, GithubOutlined, ReloadOutlined } from '@ant-design/icons';
 import { del, get, post, patch, upload, type Plugin } from '../api';
 import EntityGrid from '../components/EntityGrid';
-import MarketPage from './Market';
 import PageLayout from '../components/PageLayout';
 
 /** 插件 kind 中文化（产品不暴露英文术语） */
@@ -130,64 +129,48 @@ export default function PluginsPage() {
     <PageLayout
       title="插件"
       description="给专家挂载工具能力：安装、启停与导入"
+      extra={
+        <>
+          <Button icon={<GithubOutlined />} onClick={() => setGitOpen(true)}>从 Git 导入</Button>
+          <Upload
+            accept=".zip"
+            showUploadList={false}
+            beforeUpload={(file) => {
+              importZip(file);
+              return false; // 手动上传，阻止 antd 自动提交
+            }}
+          >
+            <Button icon={<CloudUploadOutlined />}>导入 zip</Button>
+          </Upload>
+          <Button icon={<ReloadOutlined />} onClick={sync} loading={loading}>重新扫描</Button>
+        </>
+      }
     >
-      <Tabs
-        items={[
-          {
-            key: 'installed',
-            label: '已安装',
-            children: (
-              <>
-                <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <div style={{ flex: 1 }} />
-                  <Button icon={<GithubOutlined />} onClick={() => setGitOpen(true)}>从 Git 导入</Button>
-                  <Upload
-                    accept=".zip"
-                    showUploadList={false}
-                    beforeUpload={(file) => {
-                      importZip(file);
-                      return false; // 手动上传，阻止 antd 自动提交
-                    }}
-                  >
-                    <Button icon={<CloudUploadOutlined />}>导入 zip</Button>
-                  </Upload>
-                  <Button icon={<ReloadOutlined />} onClick={sync} loading={loading}>重新扫描</Button>
-                </div>
-                <Modal
-                  title="从 Git 仓库导入插件"
-                  open={gitOpen}
-                  onOk={importGit}
-                  confirmLoading={gitLoading}
-                  onCancel={() => { setGitOpen(false); setGitUrl(''); }}
-                  okText="导入" cancelText="取消"
-                >
-                  <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 4 }}>
-                    浅克隆仓库并导入工作区 <Typography.Text code>plugins/</Typography.Text>（需根目录含 plugin.yaml）。
-                    支持 https:// / ssh:// / git@ 地址，体积上限 50MB。
-                  </Typography.Paragraph>
-                  <Input
-                    placeholder="https://github.com/user/plugin-repo.git"
-                    value={gitUrl}
-                    onChange={e => setGitUrl(e.target.value)}
-                    onPressEnter={importGit}
-                    autoFocus
-                  />
-                </Modal>
-                <EntityGrid
-                  items={plugins}
-                  loading={loading}
-                  emptyText="还没有插件，可导入或重新扫描"
-                  renderItem={renderPlugin}
-                />
-              </>
-            ),
-          },
-          {
-            key: 'market',
-            label: '插件市场',
-            children: <MarketPage onInstalled={load} />,
-          },
-        ]}
+      <Modal
+        title="从 Git 仓库导入插件"
+        open={gitOpen}
+        onOk={importGit}
+        confirmLoading={gitLoading}
+        onCancel={() => { setGitOpen(false); setGitUrl(''); }}
+        okText="导入" cancelText="取消"
+      >
+        <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 4 }}>
+          浅克隆仓库并导入工作区 <Typography.Text code>plugins/</Typography.Text>（需根目录含 plugin.yaml）。
+          支持 https:// / ssh:// / git@ 地址，体积上限 50MB。
+        </Typography.Paragraph>
+        <Input
+          placeholder="https://github.com/user/plugin-repo.git"
+          value={gitUrl}
+          onChange={e => setGitUrl(e.target.value)}
+          onPressEnter={importGit}
+          autoFocus
+        />
+      </Modal>
+      <EntityGrid
+        items={plugins}
+        loading={loading}
+        emptyText="还没有插件，可导入或重新扫描"
+        renderItem={renderPlugin}
       />
     </PageLayout>
   );

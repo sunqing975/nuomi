@@ -4,11 +4,14 @@ import type { ReactNode } from 'react';
 import {
   RobotOutlined, ApiOutlined, ReadOutlined, GlobalOutlined, DatabaseOutlined,
   SmileOutlined, MessageOutlined, SettingOutlined, BookOutlined,
+  ShopOutlined, ShoppingOutlined,
 } from '@ant-design/icons';
 import ChatPage from './pages/Chat';
 import ExpertsPage from './pages/Experts';
 import PluginsPage from './pages/Plugins';
+import PluginMarketPage from './pages/PluginMarketPage';
 import SkillsPage from './pages/Skills';
+import SkillMarketPage from './pages/SkillMarketPage';
 import ConnectorsPage from './pages/Connectors';
 import StoragePage from './pages/Storage';
 import AvatarModelsPage from './pages/AvatarModels';
@@ -35,7 +38,9 @@ const NAV: NavEntry[] = [
     children: [
       { key: 'experts', icon: <RobotOutlined />, label: '专家' },
       { key: 'plugins', icon: <ApiOutlined />, label: '插件' },
+      { key: 'pluginMarket', icon: <ShopOutlined />, label: '插件市场' },
       { key: 'skills', icon: <ReadOutlined />, label: '技能' },
+      { key: 'skillMarket', icon: <ShoppingOutlined />, label: '技能市场' },
       { key: 'connectors', icon: <GlobalOutlined />, label: '连接器' },
       { key: 'knowledge', icon: <BookOutlined />, label: '知识库' },
     ],
@@ -152,7 +157,9 @@ export default function App() {
           {page === 'chat' && <ChatPage />}
           {page === 'experts' && <ExpertsPage />}
           {page === 'plugins' && <PluginsPage />}
+          {page === 'pluginMarket' && <PluginMarketPage />}
           {page === 'skills' && <SkillsPage />}
+          {page === 'skillMarket' && <SkillMarketPage />}
           {page === 'connectors' && <ConnectorsPage />}
           {page === 'knowledge' && (kbDetailId ? <KnowledgeDetailPage kbId={kbDetailId} /> : <KnowledgePage />)}
           {page === 'avatarModels' && <AvatarModelsPage />}
