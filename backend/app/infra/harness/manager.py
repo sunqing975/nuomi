@@ -101,9 +101,19 @@ class HarnessManager:
                 agent.close()
 
     def close(self) -> None:
-        """关闭全部实例（进程退出时调用）。"""
+        """关闭全部 agent 实例（插件/技能/连接器/Provider 变更后重建用）。
+
+        注意：**不清理 Langfuse tracer**。close() 被 15 处配置类端点调用（开关插件、
+        存 env、改 provider、切模型…），顺手把 ``_langfuse`` 置 None 会让轨迹观测在
+        本进程内永久失效且毫无提示（要等下次 PUT /settings/langfuse 或重启才恢复）。
+        Langfuse 生命周期只由 ``set_langfuse`` 与进程退出的 ``shutdown`` 管。
+        """
         for agent_id in list(self._agents):
             self.release(agent_id)
+
+    def shutdown(self) -> None:
+        """进程退出：释放全部实例并冲刷 Langfuse（main lifespan 收尾调用）。"""
+        self.close()
         if self._langfuse is not None:
             self._langfuse.flush()
             self._langfuse = None

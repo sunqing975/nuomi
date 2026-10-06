@@ -11,6 +11,7 @@ import json
 from pathlib import Path
 
 from app.config import settings
+from app.infra.secret_file import tighten, write_json
 
 LANGFUSE_FILE_NAME = "langfuse.json"
 
@@ -31,6 +32,7 @@ def load() -> dict:
             "host": DEFAULT_HOST,
             "secret_key": "",
         }
+    tighten(p)  # 旧文件权限补成 0600
     try:
         data = json.loads(p.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
@@ -46,10 +48,8 @@ def load() -> dict:
 
 
 def save(config: dict) -> dict:
-    path().write_text(
-        json.dumps(config, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    """原子写 + 0600（secret_key 明文落盘，权限必须收紧）。"""
+    write_json(path(), config)
     return config
 
 

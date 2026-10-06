@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 
 from app.config import settings
+from app.infra.secret_file import tighten, write_json
 
 PROVIDERS_FILE_NAME = "providers.json"
 
@@ -37,13 +38,15 @@ def load() -> list[dict]:
     """读 providers.json；缺失/损坏回退 .env 种子单 provider。"""
     p = path()
     if p.is_file():
+        tighten(p)  # 旧文件权限补成 0600（api_key 明文）
         try:
             data = json.loads(p.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             data = None
         if isinstance(data, dict) and isinstance(data.get("providers"), list):
             provs = [
-                d for d in data["providers"]
+                d
+                for d in data["providers"]
                 if isinstance(d, dict) and d.get("id") and d.get("base_url")
             ]
             if provs:
@@ -52,21 +55,14 @@ def load() -> list[dict]:
 
 
 def save(providers: list[dict]) -> list[dict]:
-    path().write_text(
-        json.dumps({"providers": providers}, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    """原子写 + 0600（api_key 明文落盘，权限必须收紧）。"""
+    write_json(path(), {"providers": providers})
     return providers
 
 
 def model_refs() -> set[str]:
     """全部合法模型复合串（校验对话请求 model 用）。"""
-    return {
-        f"{p['id']}/{m['id']}"
-        for p in load()
-        for m in (p.get("models") or [])
-        if m.get("id")
-    }
+    return {f"{p['id']}/{m['id']}" for p in load() for m in (p.get("models") or []) if m.get("id")}
 
 
 def mask_key(key: str) -> str:
