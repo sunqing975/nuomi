@@ -238,7 +238,10 @@ async def create_text_document(kb_id: str, body: TextDocBody) -> dict:
 
 @router.post("/knowledge-bases/{kb_id}/documents")
 async def upload_document(kb_id: str, file: UploadFile = File(...)) -> dict:
-    content = await file.read()
+    from app.transport.uploads import MAX_DOCUMENT_BYTES, read_upload
+
+    # 边读边限流：原先 await file.read() 全量入内存，100MB 上限是读完才判
+    content = await read_upload(file, MAX_DOCUMENT_BYTES, "文档")
     filename = (file.filename or "").strip()
     if not filename:
         raise HTTPException(status_code=400, detail="文件名不能为空")

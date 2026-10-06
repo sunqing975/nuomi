@@ -22,6 +22,7 @@ from app.infra.local_guard import LocalGuardMiddleware
 from app.storage.db import init_db
 from app.transport.api import router
 from app.transport.knowledge_api import router as knowledge_router
+from app.transport.memory_api import router as memory_router
 from app.transport.openai_compat import router as openai_router
 
 logger = logging.getLogger(__name__)
@@ -169,6 +170,7 @@ app.add_middleware(LocalGuardMiddleware)
 app.include_router(router)
 app.include_router(openai_router)
 app.include_router(knowledge_router)
+app.include_router(memory_router)
 
 # —— 前端控制台（frontend/dist 静态挂载，同源零 CORS；浏览器或壳内都访问 /console/）——
 _FRONTEND_DIR = REPO_ROOT / "frontend" / "dist"

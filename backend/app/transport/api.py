@@ -717,9 +717,11 @@ async def import_plugin_zip(file: UploadFile = File(...)) -> dict:
     导入成功默认启用；释放全部 agent 实例，下次对话即可用新插件工具。
     """
     from app.domain.importer import import_plugin_zip as _import
+    from app.transport.uploads import MAX_ARCHIVE_BYTES, read_upload
 
     try:
-        plugin_id = await asyncio.to_thread(_import, await file.read())
+        data = await read_upload(file, MAX_ARCHIVE_BYTES, "插件包")
+        plugin_id = await asyncio.to_thread(_import, data)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     plugin = _sync_plugin_row(plugin_id)  # 注册必须回事件循环（见 helper 说明）
@@ -870,9 +872,11 @@ async def import_skill_zip(file: UploadFile = File(...)) -> dict:
     释放全部 agent 实例，下次对话注入新技能。
     """
     from app.domain.importer import import_skill_zip as _import
+    from app.transport.uploads import MAX_ARCHIVE_BYTES, read_upload
 
     try:
-        skill = await asyncio.to_thread(_import, await file.read())
+        data = await read_upload(file, MAX_ARCHIVE_BYTES, "技能包")
+        skill = await asyncio.to_thread(_import, data)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     manager.close()  # 释放全部实例：下次对话重建，注入新技能
@@ -1551,8 +1555,9 @@ async def delete_avatar_model(model_id: str) -> dict:
 async def import_avatar_model(file: UploadFile = File(...)) -> dict:
     """导入 VRM 模型：写入工作区 models/3D/，自动出现在模型清单（切模型零重启）。"""
     from app.domain.avatar.service import import_vrm
+    from app.transport.uploads import MAX_MODEL_BYTES, read_upload
 
-    data = await file.read()
+    data = await read_upload(file, MAX_MODEL_BYTES, "模型文件")
     try:
         return await asyncio.to_thread(import_vrm, data, file.filename or "")
     except ValueError as e:
@@ -1563,8 +1568,9 @@ async def import_avatar_model(file: UploadFile = File(...)) -> dict:
 async def import_avatar_animation(file: UploadFile = File(...)) -> dict:
     """导入 Mixamo FBX 动作：转 .vrma 进壳 assets/animations/（壳 watch 自动注册，动作工具零重启生效）。"""
     from app.domain.avatar.service import import_animation_fbx
+    from app.transport.uploads import MAX_ANIMATION_BYTES, read_upload
 
-    data = await file.read()
+    data = await read_upload(file, MAX_ANIMATION_BYTES, "动作文件")
     try:
         result = await asyncio.to_thread(import_animation_fbx, data, file.filename or "")
     except ValueError as e:

@@ -222,6 +222,11 @@ export interface ToolEvent {
 
 /** 有序片段：一次对话按真实时间顺序穿插（思考→调工具→看结果→正文） */
 export interface Segment {
+  /**
+   * 稳定 id（前端生成，后端不返回）。用于 React key：片段在流式期间会相邻合并、
+   * 历史回读会整批替换，用数组下标作 key 会让 SegmentView 内部的折叠状态错位到别的片段。
+   */
+  id?: string;
   type: 'user' | 'text' | 'reasoning' | 'tool_call' | 'tool_result';
   content?: string;
   name?: string;
@@ -330,6 +335,136 @@ export const knowledgeApi = {
   fileUrl: (kbId: string, docId: string) => `/api/knowledge-bases/${kbId}/documents/${docId}/file`,
 };
 
+// —— 记忆 API（见 backend/app/transport/memory_api.py）——
+
+/** 一条结构化记忆（octop 记忆引擎的 atom）：我因为哪句话、记住了什么 */
+export interface MemoryAtom {
+  id: string;
+  assertion: string;
+  verbatim_quote: string;
+  importance: string;
+  confidence: string;
+  occurred_at: string;
+  created_at: string;
+  entity_id: string;
+  entity_name?: string | null;
+  entity_type?: string | null;
+  deprecated_at?: string | null;
+  superseded_by?: string | null;
+  /** 来源对话的 thread_id（哪次聊天让我记住的） */
+  source_thread_id?: string | null;
+  source_at?: string | null;
+  source_text?: string | null;
+}
+
+export interface MemoryEntity {
+  id: string;
+  canonical_name: string;
+  entity_type: string;
+  atom_count: number;
+  last_promoted_at?: string | null;
+}
+
+export interface MemoryFile {
+  name: string;
+  bytes: number;
+  updated_at: number;
+  standard: boolean;
+}
+
+export interface MemoryOverview {
+  agent_id: string;
+  agent_name: string;
+  exists: boolean;
+  stats: {
+    atoms: number;
+    deprecated: number;
+    entities: number;
+    raw_events: number;
+    episodes: number;
+  };
+  entities: MemoryEntity[];
+  atoms: MemoryAtom[];
+  total: number;
+  files: MemoryFile[];
+  max_file_bytes: number;
+}
+
+export const memoryApi = {
+  overview: (
+    agentId: string,
+    opts?: { limit?: number; offset?: number; includeDeprecated?: boolean },
+  ) => {
+    const q = new URLSearchParams();
+    if (opts?.limit != null) q.set('limit', String(opts.limit));
+    if (opts?.offset != null) q.set('offset', String(opts.offset));
+    if (opts?.includeDeprecated) q.set('include_deprecated', 'true');
+    const suffix = q.toString() ? `?${q}` : '';
+    return get<MemoryOverview>(`/agents/${agentId}/memory${suffix}`);
+  },
+  readFile: (agentId: string, name: string) =>
+    get<{ name: string; content: string }>(
+      `/agents/${agentId}/memory/files/${encodeURIComponent(name)}`,
+    ),
+  writeFile: (agentId: string, name: string, content: string) =>
+    put<{ ok: boolean; name: string; bytes: number }>(
+      `/agents/${agentId}/memory/files/${encodeURIComponent(name)}`,
+      { content },
+    ),
+  /** 忘记一条记忆（后端走引擎的软遗忘，可审计） */
+  forgetAtom: (agentId: string, atomId: string, reason?: string) =>
+    del<{ ok: boolean; atom_id: string }>(
+      `/agents/${agentId}/memory/atoms/${encodeURIComponent(atomId)}${
+        reason ? `?reason=${encodeURIComponent(reason)}` : ''
+      }`,
+    ),
+};
+
+/**
+ * SSE 逐行缓冲解析的**纯函数内核**（从 chatStream 抽出，便于按任意字节切片做单测）。
+ *
+ * 传入上一次未消费完的残留 `buf` 与新解码出的文本，返回本次解析出的事件 + 新的残留。
+ * 网络 chunk 边界与行边界无关：半行必须留在 buf 里等下一次，否则标记跨 chunk 就会丢。
+ */
+export function feedChatStream(buf: string, chunk: string): { events: ChatEvent[]; buf: string } {
+  const lines = (buf + chunk).split('\n');
+  const rest = lines.pop() ?? '';
+  const events: ChatEvent[] = [];
+  for (const line of lines) {
+    const t = line.trim();
+    if (!t.startsWith('data:')) continue;
+    const payload = t.slice(5).trim();
+    if (!payload) continue;
+    try {
+      // octop 原生事件帧：token / tool_call_chunk / tool_result / done / error
+      const ev = JSON.parse(payload) as {
+        type?: string;
+        content?: string;
+        message?: string;
+        name?: string;
+        args?: string;
+        plugin_id?: string;
+        messages?: { name?: string; content?: string; plugin_id?: string }[];
+      };
+      if (ev.type === 'token' && ev.content) {
+        events.push({ type: 'token', content: ev.content });
+      } else if (ev.type === 'reasoning' && ev.content) {
+        events.push({ type: 'reasoning', content: ev.content });
+      } else if (ev.type === 'tool_call_chunk' && ev.name) {
+        events.push({ type: 'tool_call', name: ev.name, content: ev.args, plugin_id: ev.plugin_id });
+      } else if (ev.type === 'tool_result') {
+        const m = ev.messages?.[0];
+        events.push({ type: 'tool_result', name: m?.name, detail: m?.content, plugin_id: m?.plugin_id });
+      } else if (ev.type === 'error') {
+        events.push({ type: 'error', content: ev.message });
+      } else if (ev.type === 'done') {
+        events.push({ type: 'done' });
+      }
+    } catch { /* skip malformed */ }
+  }
+  return { events, buf: rest };
+}
+
 /**
  * 调用专家对话 SSE 流（octop 原生事件帧），逐事件回调（token 累积由调用方处理）。
  *
@@ -361,40 +496,8 @@ export async function chatStream(
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    buf += decoder.decode(value, { stream: true });
-    const lines = buf.split('\n');
-    buf = lines.pop() || '';
-    for (const line of lines) {
-      const t = line.trim();
-      if (!t.startsWith('data:')) continue;
-      const payload = t.slice(5).trim();
-      if (!payload) continue;
-      try {
-        // octop 原生事件帧：token / tool_call_chunk / tool_result / done / error
-        const ev = JSON.parse(payload) as {
-          type?: string;
-          content?: string;
-          message?: string;
-          name?: string;
-          args?: string;
-          plugin_id?: string;
-          messages?: { name?: string; content?: string; plugin_id?: string }[];
-        };
-        if (ev.type === 'token' && ev.content) {
-          onEvent({ type: 'token', content: ev.content });
-        } else if (ev.type === 'reasoning' && ev.content) {
-          onEvent({ type: 'reasoning', content: ev.content });
-        } else if (ev.type === 'tool_call_chunk' && ev.name) {
-          onEvent({ type: 'tool_call', name: ev.name, content: ev.args, plugin_id: ev.plugin_id });
-        } else if (ev.type === 'tool_result') {
-          const m = ev.messages?.[0];
-          onEvent({ type: 'tool_result', name: m?.name, detail: m?.content, plugin_id: m?.plugin_id });
-        } else if (ev.type === 'error') {
-          onEvent({ type: 'error', content: ev.message });
-        } else if (ev.type === 'done') {
-          onEvent({ type: 'done' });
-        }
-      } catch { /* skip malformed */ }
-    }
+    const parsed = feedChatStream(buf, decoder.decode(value, { stream: true }));
+    buf = parsed.buf;
+    for (const e of parsed.events) onEvent(e);
   }
 }
