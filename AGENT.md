@@ -569,3 +569,15 @@ SSE 事件协议（当前完整）：`token` / `reasoning` / `tool_call_chunk`�
 - **模型列不需要显示**（用户）：模型在编辑弹窗里管理，列表展示冗余 → 删表格「模型」列
   + Tag import；models 字段在弹窗/探测逻辑保留（2e2d283）
 - 本轮前端视觉/信息架构整修收官；用户：「目前感觉没啥问题了。接下来就是 chat 页的优化了」
+
+## chat 页视觉统一 + 收工（2026-10-06，9aa4e0f / 5ad6b2d / 1e81ea9）
+
+- **chat 页视觉统一第一版**（9aa4e0f）：助手正文=surface 白底细边框圆角 → 用户 primary 实底
+  白字尾角；头像 32px（助手主色淡底描边/用户 primary 底）；思考折叠与工具调用卡片
+  蓝 → 主色系（结果绿保留）；Composer 输入区容器化（圆角卡片+borderless 输入框）；
+  会话列表抽 SessionItem（hover 浅灰/删除 hover 变红/选中主色淡底）+「会话记录」小节；
+  工具条 subtitle 去掉裸 thread_id → 消息数
+- **助手正文去框去底**（5ad6b2d，用户：「正文有框太丑」）：assistantBubbleStyle 改纯文字
+  （无框无底平铺，Linear/Claude 风格），流式块复用同常量；用户消息保留 primary 底
+- **发送清空输入框**（1e81ea9，用户 bug 反馈）：onSend 未 setInput('') → 发送时先清空
+- 今日收官：用户「今天就这样吧，把代码提交并推送一下」
