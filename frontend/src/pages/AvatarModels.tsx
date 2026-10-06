@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  Alert, Button, Card, Popconfirm, Space, Switch, Tag, Tooltip, Typography, Upload, message,
+  Button, Card, Popconfirm, Space, Switch, Tag, Tooltip, Typography, Upload, message,
 } from 'antd';
 import {
   CheckCircleFilled, DeleteOutlined, LoadingOutlined, PlayCircleOutlined, SmileOutlined, UploadOutlined,
@@ -180,20 +180,6 @@ export default function AvatarModelsPage() {
           </Typography.Text>
         </Space>
       </Card>
-
-      <Alert
-        type="info"
-        showIcon
-        style={{ marginBottom: 16 }}
-        message="数字人模型资产（工作区 models/3D/）"
-        description={
-          <span style={{ fontSize: 13 }}>
-            所有数字人共用同一套动作 / 表情能力：动作来自 Mixamo 动画，表情来自当前形象自带的预设。
-            对数字人说「给我比个心」「笑一个」，AI 会自动调用动作 / 表情来驱动数字人。
-            切换形象 / 新增动作无需重启。使用中的形象支持表情预览（▶），点击即在窗口实播。
-          </span>
-        }
-      />
 
       <Card
         size="small"

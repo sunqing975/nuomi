@@ -88,14 +88,14 @@ export default function ExpertsPage({ onBackend }: { onBackend?: (ok: boolean) =
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</div>
               </div>
-              {a.last_state === 'running' && <Tag color="green">运行中</Tag>}
+              {a.runtime === 'running' && <Tag color="green">运行中</Tag>}
             </div>
             <div style={{ color: 'var(--label-2)', fontSize: 13, minHeight: 36 }}>
               {a.description || '暂无描述'}
             </div>
             <Space wrap>
               <Switch checked={a.enabled} onChange={() => toggleEnabled(a)} checkedChildren="启用" unCheckedChildren="停用" />
-              <Button size="small" onClick={() => startAgent(a)}>{a.last_state === 'running' ? '重启实例' : '启动实例'}</Button>
+              <Button size="small" onClick={() => startAgent(a)}>{a.runtime === 'running' ? '重启实例' : '启动实例'}</Button>
               <Button size="small" onClick={() => { setEditing(a); form.setFieldsValue(a); setCreateOpen(true); }}>编辑</Button>
               <Popconfirm title={`删除「${a.name}」？`} onConfirm={async () => { await del(`/agents/${a.agent_id}`); message.success('已删除'); load(); }}>
                 <Button size="small" danger>删除</Button>

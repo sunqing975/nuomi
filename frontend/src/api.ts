@@ -95,6 +95,8 @@ export interface Agent {
   color: string;
   welcome_message: string;
   kind: string;
+  /** 实时运行时状态（manager 内存缓存，running/stopped）；last_state 是 DB 持久化旧值，崩溃/重启后失真，UI 勿用 */
+  runtime?: string;
   last_state: string;
   created_at: string;
 }

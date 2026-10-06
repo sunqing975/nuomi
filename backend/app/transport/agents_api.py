@@ -26,6 +26,19 @@ from app.transport.runtime import ensure_agent_runtime
 router = APIRouter(prefix="/api", tags=["agents"])
 
 
+def _enrich(row: dict) -> dict:
+    """enrich + 实时运行时状态。
+
+    last_state 是 DB 持久化旧值（start/stop 时写入，进程崩溃或后端重启后不复位，
+    会显示陈旧「运行中」）；实时状态以 manager 内存缓存为准。
+    domain 层不依赖 infra（P0-1 分层约束），故在 transport 层合并。
+    """
+    return {
+        **enrich_agent(row),
+        "runtime": "running" if manager.has(row["agent_id"]) else "stopped",
+    }
+
+
 class AgentCreateBody(BaseModel):
     name: str
     description: str = ""
@@ -60,7 +73,7 @@ class AgentImportBody(BaseModel):
 
 @router.get("/agents")
 async def list_agents() -> list[dict]:
-    return [enrich_agent(r) for r in agent_service.list_all()]
+    return [_enrich(r) for r in agent_service.list_all()]
 
 
 @router.post("/agents/import")
@@ -72,7 +85,7 @@ async def import_agent(body: AgentImportBody) -> dict:
         row = import_octop_expert(body.source_dir, name=body.name)
     except (FileNotFoundError, ValueError) as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
-    return enrich_agent(row)
+    return _enrich(row)
 
 
 @router.post("/agents")
@@ -80,7 +93,7 @@ async def create_agent(body: AgentCreateBody) -> dict:
     data = body.model_dump()
     row = agent_service.create(data)
     ensure_agent_workspace(row["agent_id"], row["name"])
-    return enrich_agent(row)
+    return _enrich(row)
 
 
 @router.get("/agents/{agent_id}")
@@ -88,7 +101,7 @@ async def get_agent(agent_id: str) -> dict:
     row = agent_service.get(agent_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Agent 不存在")
-    return enrich_agent(row)
+    return _enrich(row)
 
 
 @router.patch("/agents/{agent_id}")
