@@ -212,7 +212,7 @@ export default function AvatarModelsPage() {
               <Tag key={a.name} style={{ marginBottom: 4 }}>
                 {a.label_zh || a.name}
                 <PlayCircleOutlined
-                  style={{ marginLeft: 5, color: '#1677ff', cursor: 'pointer' }}
+                  style={{ marginLeft: 5, color: 'var(--link)', cursor: 'pointer' }}
                   onClick={ev => { ev.stopPropagation(); preview('action', a.name); }}
                 />
                 <Popconfirm
@@ -226,7 +226,7 @@ export default function AvatarModelsPage() {
                   okButtonProps={{ danger: true }}
                 >
                   <DeleteOutlined
-                    style={{ marginLeft: 6, color: '#bfbfbf', cursor: 'pointer' }}
+                    style={{ marginLeft: 6, color: 'var(--label-3)', cursor: 'pointer' }}
                     onClick={ev => ev.stopPropagation()}
                   />
                 </Popconfirm>
@@ -260,7 +260,7 @@ export default function AvatarModelsPage() {
                 onClick={() => switchModel(m)}
                 title={
                   <span>
-                    {isActive && <CheckCircleFilled style={{ color: '#f59e0b', marginRight: 6 }} />}
+                    {isActive && <CheckCircleFilled style={{ color: 'var(--accent)', marginRight: 6 }} />}
                     {m.id}
                   </span>
                 }

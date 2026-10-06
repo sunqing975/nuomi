@@ -199,7 +199,7 @@ function ProvidersTab() {
       title: '名称', dataIndex: 'name', width: 160,
       render: (_: unknown, p: Provider) => (
         <Space size={4}>
-          <ApiOutlined style={{ color: '#1677ff' }} />
+          <ApiOutlined style={{ color: 'var(--link)' }} />
           <span>{p.name}</span>
           <Typography.Text type="secondary" style={{ fontSize: 12 }} code>{p.id}</Typography.Text>
         </Space>

@@ -65,10 +65,10 @@ export default function App() {
       <Sider
         width={200}
         theme="light"
-        style={{ borderRight: '1px solid #e5e7eb', position: 'relative', overflow: 'auto' }}
+        style={{ borderRight: '1px solid var(--line-2)', position: 'relative', overflow: 'auto' }}
       >
         <div style={{ padding: '18px 20px 12px', fontSize: 16, fontWeight: 700 }}>
-          <span style={{ color: '#f59e0b' }}>●</span> Nuomi
+          <span style={{ color: 'var(--accent)' }}>●</span> Nuomi
         </div>
         <Menu
           mode="inline"
@@ -77,14 +77,14 @@ export default function App() {
           onClick={e => switchPage(e.key)}
           style={{ borderInlineEnd: 'none' }}
         />
-        <div style={{ position: 'absolute', bottom: 16, left: 20, fontSize: 12, color: '#9ca3af' }}>
+        <div style={{ position: 'absolute', bottom: 16, left: 20, fontSize: 12, color: 'var(--label-3)' }}>
           表现层可插拔 · 协议标准化
         </div>
       </Sider>
       <Layout>
         <Header
           style={{
-            background: '#fff', borderBottom: '1px solid #e5e7eb',
+            background: 'var(--surface)', borderBottom: '1px solid var(--line-2)',
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             padding: '0 28px', height: 60,
           }}

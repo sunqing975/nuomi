@@ -239,16 +239,16 @@ export default function SkillsPage() {
           </Typography.Paragraph>
           <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             {it.kind === 'builtin' ? (
-              <span style={{ color: '#9ca3af', fontSize: 12 }}>随 harness 注入 · 只读</span>
+              <span style={{ color: 'var(--label-3)', fontSize: 12 }}>随 harness 注入 · 只读</span>
             ) : isSkill ? (
-              <span style={{ color: '#9ca3af', fontSize: 12 }}>
+              <span style={{ color: 'var(--label-3)', fontSize: 12 }}>
                 {it.requires_env?.length ? (miss.length ? '密钥待配置' : '密钥已配置') : '无需密钥'}
               </span>
             ) : (
-              <span style={{ color: '#9ca3af', fontSize: 12 }}>包级整体启停</span>
+              <span style={{ color: 'var(--label-3)', fontSize: 12 }}>包级整体启停</span>
             )}
             {it.kind === 'builtin' ? (
-              <Typography.Text style={{ fontSize: 11, color: '#9ca3af' }}>
+              <Typography.Text style={{ fontSize: 11, color: 'var(--label-3)' }}>
                 lang: {it.lang || '—'}
               </Typography.Text>
             ) : isSkill ? (

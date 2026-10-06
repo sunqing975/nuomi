@@ -59,7 +59,7 @@ function CitationsTags({ citations }: { citations: KnowledgeCitation[] }) {
   if (!citations.length) return null;
   return (
     <div style={{ marginTop: 6 }}>
-      <div style={{ fontSize: 12, color: '#9ca3af', marginBottom: 4 }}>📚 知识库引用</div>
+      <div style={{ fontSize: 12, color: 'var(--label-3)', marginBottom: 4 }}>📚 知识库引用</div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
         {citations.map(c => (
           <Tag key={c.docId} style={{ fontSize: 12, margin: 0 }}>
@@ -79,7 +79,7 @@ function KnowledgeCitations({ raw }: { raw?: string }) {
     <div>
       <CitationsTags citations={citations} />
       {text ? (
-        <div style={{ color: '#6b7280', marginTop: 2, whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 120, overflow: 'auto' }}>
+        <div style={{ color: 'var(--label-2)', marginTop: 2, whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 120, overflow: 'auto' }}>
           {text}
         </div>
       ) : null}
@@ -141,9 +141,9 @@ const toolCardStyle: React.CSSProperties = {
   marginTop: 4,
   padding: '12px 14px',
   borderRadius: 10,
-  border: '1px solid #d0d5dd',
-  background: '#ffffff',
-  color: '#1f2937',
+  border: '1px solid var(--line-3)',
+  background: 'var(--surface)',
+  color: 'var(--label-1)',
   maxWidth: 480,
   boxShadow: '0 1px 2px rgba(16, 24, 40, 0.06)',
   fontSize: 13,
@@ -198,7 +198,7 @@ function PluginToolCard({ toolName, result, args }: { toolName: string; result: 
     return <div style={toolCardStyle}>{result}</div>;
   }
   if (html === null) {
-    return <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>加载插件卡片…</div>;
+    return <div style={{ fontSize: 12, color: 'var(--label-3)', marginTop: 4 }}>加载插件卡片…</div>;
   }
   if (!html.trim()) {
     // render 返回空：同样兜底为原始结果文本
@@ -216,13 +216,13 @@ function SegmentView({ seg }: { seg: Segment }) {
   const [open, setOpen] = useState(isTool && hasCard);
   if (seg.type === 'reasoning') {
     return (
-      <div style={{ marginBottom: 6, fontSize: 12, color: '#8c8c8c' }}>
-        <a onClick={() => setOpen(v => !v)} style={{ color: '#8c8c8c' }}>
+      <div style={{ marginBottom: 6, fontSize: 12, color: 'var(--label-4)' }}>
+        <a onClick={() => setOpen(v => !v)} style={{ color: 'var(--label-4)' }}>
           {open ? '▾' : '▸'} 💭 深度思考
         </a>
         {open && (
           <div style={{
-            marginTop: 4, padding: '6px 8px', background: '#fafafa', borderRadius: 6,
+            marginTop: 4, padding: '6px 8px', background: 'var(--surface-2)', borderRadius: 6,
             whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 200, overflow: 'auto',
           }}>
             {seg.content}
@@ -248,7 +248,7 @@ function SegmentView({ seg }: { seg: Segment }) {
           )}
         </a>
         {open && hasDetail && (
-          <div style={{ color: '#6b7280', marginTop: 2, whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: isCall ? 80 : 120, overflow: 'auto' }}>
+          <div style={{ color: 'var(--label-2)', marginTop: 2, whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: isCall ? 80 : 120, overflow: 'auto' }}>
             {hasCard
               ? <PluginToolCard toolName={seg.name || ''} result={seg.content ?? ''} args={seg.args} />
               : (isCall ? seg.args : (seg.name === 'search_knowledge' ? <KnowledgeCitations raw={seg.content} /> : seg.content))}
@@ -268,7 +268,7 @@ function SkillPicker({
   selected: string[]; onToggleSkill: (name: string) => void; onTogglePackage: (pkg: SkillPackage) => void;
 }) {
   const GroupLabel = ({ children }: { children: React.ReactNode }) => (
-    <div style={{ fontSize: 11, color: '#8c8c8c', padding: '6px 10px 2px', fontWeight: 600 }}>{children}</div>
+    <div style={{ fontSize: 11, color: 'var(--label-4)', padding: '6px 10px 2px', fontWeight: 600 }}>{children}</div>
   );
   const Row = ({ active, onClick, title, desc }: { active: boolean; onClick: () => void; title: string; desc?: string }) => (
     <div
@@ -278,11 +278,11 @@ function SkillPicker({
         cursor: 'pointer', background: active ? '#e6f4ff' : 'transparent', marginBottom: 2,
       }}
     >
-      <span style={{ color: '#1677ff', fontSize: 13, marginTop: 1 }}>{active ? '☑' : '☐'}</span>
+      <span style={{ color: 'var(--link)', fontSize: 13, marginTop: 1 }}>{active ? '☑' : '☐'}</span>
       <div style={{ minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 500 }}>{title}</div>
         {desc ? (
-          <div style={{ fontSize: 12, color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{desc}</div>
+          <div style={{ fontSize: 12, color: 'var(--label-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{desc}</div>
         ) : null}
       </div>
     </div>
@@ -291,7 +291,7 @@ function SkillPicker({
   const content = (
     <div style={{ width: 300, maxHeight: 340, overflow: 'auto' }}>
       {empty ? (
-        <div style={{ color: '#9ca3af', textAlign: 'center', padding: 16 }}>暂无可用技能，先到「技能」页安装/启用</div>
+        <div style={{ color: 'var(--label-3)', textAlign: 'center', padding: 16 }}>暂无可用技能，先到「技能」页安装/启用</div>
       ) : (
         <>
           {skills.length > 0 && (
@@ -341,7 +341,7 @@ function ConnectorPicker({ connectors, selected, onToggle }: { connectors: Conne
   const content = (
     <div style={{ width: 280, maxHeight: 320, overflow: 'auto' }}>
       {connectors.length === 0 ? (
-        <div style={{ color: '#9ca3af', textAlign: 'center', padding: 16 }}>暂无连接器，先到「连接器」页添加</div>
+        <div style={{ color: 'var(--label-3)', textAlign: 'center', padding: 16 }}>暂无连接器，先到「连接器」页添加</div>
       ) : (
         connectors.map(c => (
           <div key={c.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', borderRadius: 8 }}>
@@ -364,7 +364,7 @@ function KnowledgePicker({ bases, selected, onToggle, disabled }: { bases: Knowl
   const content = (
     <div style={{ width: 300, maxHeight: 320, overflow: 'auto' }}>
       {bases.length === 0 ? (
-        <div style={{ color: '#9ca3af', textAlign: 'center', padding: 16 }}>暂无知识库，先到「知识库」页创建</div>
+        <div style={{ color: 'var(--label-3)', textAlign: 'center', padding: 16 }}>暂无知识库，先到「知识库」页创建</div>
       ) : (
         bases.map(b => {
           const active = selected.includes(b.id);
@@ -381,7 +381,7 @@ function KnowledgePicker({ bases, selected, onToggle, disabled }: { bases: Knowl
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: 500 }}>{b.name}</div>
                 {b.description ? (
-                  <div style={{ fontSize: 12, color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.description}</div>
+                  <div style={{ fontSize: 12, color: 'var(--label-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.description}</div>
                 ) : null}
               </div>
             </div>
@@ -417,13 +417,13 @@ function TrajectoryDrawer({ open, onClose, messages }: { open: boolean; onClose:
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {rows.map(r => (
-            <div key={r.seq} style={{ border: '1px solid #f0f0f0', borderRadius: 8, padding: '8px 10px', background: r.kind === 'tool_call' ? '#f0f7ff' : '#f6ffed' }}>
+            <div key={r.seq} style={{ border: '1px solid var(--line-1)', borderRadius: 8, padding: '8px 10px', background: r.kind === 'tool_call' ? '#f0f7ff' : '#f6ffed' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Tag color={r.kind === 'tool_call' ? 'blue' : 'green'} style={{ margin: 0 }}>{r.seq}</Tag>
                 <span style={{ fontSize: 13, fontWeight: 500 }}>{r.kind === 'tool_call' ? '⚙ 调用' : '✓ 结果'} {r.name || ''}</span>
               </div>
               {r.detail ? (
-                <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4, whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 160, overflow: 'auto' }}>{r.detail}</div>
+                <div style={{ fontSize: 12, color: 'var(--label-2)', marginTop: 4, whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 160, overflow: 'auto' }}>{r.detail}</div>
               ) : null}
             </div>
           ))}
@@ -817,7 +817,7 @@ export default function ChatPage() {
                   />
                 </Popconfirm>
               </div>
-              <small style={{ color: '#9ca3af' }}>
+              <small style={{ color: 'var(--label-3)' }}>
                 {s.updated_at ? new Date(s.updated_at).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '延续记忆'}
               </small>
             </div>
@@ -827,7 +827,7 @@ export default function ChatPage() {
 
       {/* 右侧：消息区 + 输入 */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-        <div style={{ paddingBottom: 10, borderBottom: '1px solid #f0f0f0', marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ paddingBottom: 10, borderBottom: '1px solid var(--line-1)', marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <Typography.Text strong style={{ fontSize: 15 }}>{activeTitle || '新会话'}</Typography.Text>
             {activeThread && (
@@ -850,7 +850,7 @@ export default function ChatPage() {
               <div style={{ maxWidth: '78%', display: 'flex', gap: 8, flexDirection: m.role === 'user' ? 'row-reverse' : 'row' }}>
                 <div style={{
                   width: 30, height: 30, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center',
-                  justifyContent: 'center', background: m.role === 'user' ? '#f59e0b' : '#e8e8e8', color: '#fff',
+                  justifyContent: 'center', background: m.role === 'user' ? '#f59e0b' : '#e8e8e8', color: 'var(--surface)',
                 }}>
                   {m.role === 'user' ? <UserOutlined /> : <RobotOutlined style={{ color: '#666' }} />}
                 </div>
@@ -871,7 +871,7 @@ export default function ChatPage() {
                     : m.segments.map((s, j) => (
                         <div key={s.id ?? `m${i}-${j}`} style={{
                           padding: '8px 12px', borderRadius: 10, fontSize: 14, lineHeight: 1.6,
-                          background: '#f59e0b', color: '#fff', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                          background: 'var(--accent)', color: 'var(--surface)', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
                         }}>
                           {s.content}
                         </div>
@@ -899,7 +899,7 @@ export default function ChatPage() {
                   ),
                 )}
                 {sending && streamSegments.every(s => s.type === 'tool_result' || s.type === 'tool_call') && (
-                  <div style={{ fontSize: 12, color: '#9ca3af' }}>思考中…</div>
+                  <div style={{ fontSize: 12, color: 'var(--label-3)' }}>思考中…</div>
                 )}
               </div>
             </div>
@@ -941,12 +941,12 @@ export default function ChatPage() {
           {interrupted && !sending && (
             <div style={{
               display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6,
-              padding: '6px 10px', background: '#fffbe6', border: '1px solid #ffe58f',
-              borderRadius: 6, fontSize: 12, color: '#874d00',
+              padding: '6px 10px', background: 'var(--warn-bg)', border: '1px solid var(--warn-line)',
+              borderRadius: 6, fontSize: 12, color: 'var(--accent-text)',
             }}>
               <span>上一轮回复被中断（未收到完成帧）。</span>
-              <a onClick={() => send(interrupted.text, interrupted.threadId)} style={{ color: '#1677ff' }}>重试</a>
-              <a onClick={() => setInterrupted(null)} style={{ color: '#8c8c8c' }}>忽略</a>
+              <a onClick={() => send(interrupted.text, interrupted.threadId)} style={{ color: 'var(--link)' }}>重试</a>
+              <a onClick={() => setInterrupted(null)} style={{ color: 'var(--label-4)' }}>忽略</a>
             </div>
           )}
           <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>

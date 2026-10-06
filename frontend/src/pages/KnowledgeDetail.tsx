@@ -174,7 +174,7 @@ export default function KnowledgeDetailPage({ kbId }: { kbId: string }) {
       dataIndex: 'filename',
       render: (_, d) => (
         <Space>
-          {d.is_dir ? <FolderOutlined style={{ color: '#f59e0b' }} /> : <FileOutlined style={{ color: '#9ca3af' }} />}
+          {d.is_dir ? <FolderOutlined style={{ color: 'var(--accent)' }} /> : <FileOutlined style={{ color: 'var(--label-3)' }} />}
           <Typography.Text
             style={{ cursor: d.is_dir ? 'pointer' : 'default', color: d.is_dir ? '#1677ff' : undefined }}
             onClick={d.is_dir ? () => enterFolder(d.path) : undefined}
@@ -238,7 +238,7 @@ export default function KnowledgeDetailPage({ kbId }: { kbId: string }) {
           title={
             <Space>
               <Button size="small" type="text" onClick={backToList}>← 返回列表</Button>
-              <BookOutlined style={{ color: '#1677ff' }} />
+              <BookOutlined style={{ color: 'var(--link)' }} />
               <span>{kb.name}</span>
               {!kb.enabled && <Tag color="default">已停用</Tag>}
               <Typography.Text type="secondary" style={{ fontSize: 13 }}>

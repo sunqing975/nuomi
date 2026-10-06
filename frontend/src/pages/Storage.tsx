@@ -30,15 +30,15 @@ export default function StoragePage() {
       </Row>
 
       <Card title="路径" style={{ marginBottom: 16 }}>
-        <Row style={{ padding: '6px 0', borderBottom: '1px dashed #e5e7eb' }}>
+        <Row style={{ padding: '6px 0', borderBottom: '1px dashed var(--line-2)' }}>
           <Col span={12}>工作区（专家/会话/插件/技能）</Col>
-          <Col span={12} style={{ textAlign: 'right', color: '#6b7280', wordBreak: 'break-all' }}>
+          <Col span={12} style={{ textAlign: 'right', color: 'var(--label-2)', wordBreak: 'break-all' }}>
             <Typography.Text code>{ws.workspace}</Typography.Text>
           </Col>
         </Row>
         <Row style={{ padding: '6px 0' }}>
           <Col span={12}>数据根（SQLite）</Col>
-          <Col span={12} style={{ textAlign: 'right', color: '#6b7280', wordBreak: 'break-all' }}>
+          <Col span={12} style={{ textAlign: 'right', color: 'var(--label-2)', wordBreak: 'break-all' }}>
             <Typography.Text code>{ws.data_root}</Typography.Text>
           </Col>
         </Row>

@@ -119,7 +119,7 @@ export default function KnowledgeModelsModal({ open, onClose, capability, onChan
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <span style={{ minWidth: 80 }}>知识库功能</span>
           <Switch checked={capability?.enabled ?? false} onChange={toggleEnabled} />
-          <span style={{ color: '#6b7280', fontSize: 13 }}>
+          <span style={{ color: 'var(--label-2)', fontSize: 13 }}>
             {capability?.ready ? '就绪' : capability?.downloaded ? '未启用' : '模型未就绪'}
           </span>
         </div>

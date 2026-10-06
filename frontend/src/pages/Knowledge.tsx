@@ -115,7 +115,7 @@ export default function KnowledgePage() {
                 style={kb.enabled ? undefined : { opacity: 0.75 }}
                 title={
                   <Space>
-                    <BookOutlined style={{ color: '#1677ff' }} />
+                    <BookOutlined style={{ color: 'var(--link)' }} />
                     <span>{kb.name}</span>
                     {!kb.enabled && <Tag color="default">已停用</Tag>}
                   </Space>

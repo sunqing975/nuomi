@@ -130,7 +130,7 @@ export default function McpPage() {
           </div>
           <div style={{ flex: 1 }} />
           <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ color: '#9ca3af', fontSize: 12 }}>工具名带 {s.name}_ 前缀</span>
+            <span style={{ color: 'var(--label-3)', fontSize: 12 }}>工具名带 {s.name}_ 前缀</span>
             <Space size={4}>
               <Button size="small" type="text" icon={<EditOutlined />} onClick={() => openEdit(s)} />
               <Popconfirm

@@ -96,12 +96,12 @@ export default function PluginsPage() {
               <Typography.Text code style={{ fontSize: 11 }}>{p.plugin_id}</Typography.Text>
             </div>
           </div>
-          <div style={{ marginTop: 8, fontSize: 12, color: '#6b7280' }}>
+          <div style={{ marginTop: 8, fontSize: 12, color: 'var(--label-2)' }}>
             版本 {p.version || '—'} · {p.tool_count ?? 0} 个工具
           </div>
           <div style={{ flex: 1 }} />
           <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ color: '#9ca3af', fontSize: 12 }}>全局启停</span>
+            <span style={{ color: 'var(--label-3)', fontSize: 12 }}>全局启停</span>
             <Space size={4}>
               <Switch size="small" checked={p.enabled} onChange={v => toggle(p, v)} />
               <Popconfirm

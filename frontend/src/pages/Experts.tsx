@@ -69,7 +69,7 @@ export default function ExpertsPage({ onBackend }: { onBackend?: (ok: boolean) =
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div style={{
                   width: 40, height: 40, borderRadius: '50%',
-                  background: a.color || '#f59e0b', color: '#fff',
+                  background: a.color || '#f59e0b', color: 'var(--surface)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20,
                 }}>
                   {a.icon_name === 'cat' ? '🐱' : <RobotOutlined />}
@@ -82,7 +82,7 @@ export default function ExpertsPage({ onBackend }: { onBackend?: (ok: boolean) =
                   </Space>
                 </div>
               </div>
-              <div style={{ color: '#6b7280', fontSize: 13, minHeight: 36 }}>
+              <div style={{ color: 'var(--label-2)', fontSize: 13, minHeight: 36 }}>
                 {a.description || '暂无描述'}
               </div>
               <Space wrap>
@@ -98,7 +98,7 @@ export default function ExpertsPage({ onBackend }: { onBackend?: (ok: boolean) =
         ))}
       </Row>
       {!loading && agents.length === 0 && (
-        <div style={{ textAlign: 'center', color: '#9ca3af', padding: 48 }}>
+        <div style={{ textAlign: 'center', color: 'var(--label-3)', padding: 48 }}>
           还没有专家，点「新建专家」创建第一个
         </div>
       )}
