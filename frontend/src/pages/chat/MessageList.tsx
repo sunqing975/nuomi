@@ -9,7 +9,7 @@ import { RobotOutlined } from '@ant-design/icons';
 import type { RefObject } from 'react';
 import type { ChatMessage, Segment } from '../../api';
 import EmptyState from '../../components/EmptyState';
-import { MarkdownText, MessageBubble, SegmentView } from './MessageBubble';
+import { MarkdownText, MessageBubble, SegmentView, assistantAvatarStyle, assistantBubbleStyle } from './MessageBubble';
 
 export interface MessageListProps {
   messages: ChatMessage[];
@@ -37,15 +37,13 @@ export default function MessageList({
       ))}
       {hasStream && (
         <div style={{ display: 'flex', marginBottom: 12, gap: 8 }}>
-          <div style={{ width: 30, height: 30, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#e8e8e8' }}>
-            <RobotOutlined style={{ color: '#666' }} />
+          <div style={assistantAvatarStyle}>
+            <RobotOutlined style={{ color: '#d97706', fontSize: 15 }} />
           </div>
           <div style={{ minWidth: 0 }}>
             {streamSegments.map((s, j) =>
               s.type === 'text' ? (
-                <div key={s.id ?? `stream-${j}`} style={{
-                  marginBottom: 6, padding: '8px 12px', borderRadius: 10, background: '#f5f5f5', color: '#333',
-                }}>
+                <div key={s.id ?? `stream-${j}`} style={{ ...assistantBubbleStyle, marginBottom: 6, fontSize: 14, lineHeight: 1.6 }}>
                   <MarkdownText raw={s.content} />
                   <span style={{ opacity: 0.5 }}>▍</span>
                 </div>

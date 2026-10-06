@@ -180,12 +180,13 @@ export function SegmentView({ seg }: { seg: Segment }) {
   if (seg.type === 'reasoning') {
     return (
       <div style={{ marginBottom: 6, fontSize: 12, color: 'var(--label-4)' }}>
-        <a onClick={() => setOpen(v => !v)} style={{ color: 'var(--label-4)' }}>
+        <a onClick={() => setOpen(v => !v)} style={{ color: 'var(--accent-text)' }}>
           {open ? '▾' : '▸'} 💭 深度思考
         </a>
         {open && (
           <div style={{
             marginTop: 4, padding: '6px 8px', background: 'var(--surface-2)', borderRadius: 6,
+            border: '1px solid var(--line-1)',
             whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 200, overflow: 'auto',
           }}>
             {seg.content}
@@ -201,10 +202,10 @@ export function SegmentView({ seg }: { seg: Segment }) {
     return (
       <div style={{
         marginBottom: 6, fontSize: 12, padding: '4px 8px', borderRadius: 6, maxWidth: 520,
-        background: isCall ? '#f0f7ff' : '#f6ffed',
-        border: `1px solid ${isCall ? '#d6e4ff' : '#d9f7be'}`,
+        background: isCall ? '#fff7e6' : '#f6ffed',
+        border: `1px solid ${isCall ? '#ffd591' : '#d9f7be'}`,
       }}>
-        <a onClick={() => setOpen(v => !v)} style={{ color: isCall ? '#1677ff' : '#52c41a', fontWeight: 500, cursor: 'pointer' }}>
+        <a onClick={() => setOpen(v => !v)} style={{ color: isCall ? '#d97706' : '#52c41a', fontWeight: 500, cursor: 'pointer' }}>
           {open ? '▾' : '▸'} {isCall ? '⚙ 调用' : '✓ 结果'} {seg.name || '(工具)'}
           {seg.plugin_id && (
             <Tag style={{ fontSize: 10, marginLeft: 6, marginRight: 0 }}>{seg.plugin_id}</Tag>
@@ -223,34 +224,56 @@ export function SegmentView({ seg }: { seg: Segment }) {
   return null;
 }
 
-/** 消息气泡：左侧助手（分段渲染）/ 右侧用户（纯文本） */
+/** 消息气泡：左侧助手（分段渲染）/ 右侧用户（纯文本）
+ *
+ * 气泡样式常量导出给 MessageList（流式块复用同一视觉，不出现两套气泡）。
+ * 全站基准：助手=surface 白底细边框（克制），用户=primary 实色白字（强归属）；
+ * 头像 32px：助手主色淡底+主色图标，用户 primary 底+白图标。
+ */
+export const assistantBubbleStyle: CSSProperties = {
+  padding: '8px 12px',
+  borderRadius: '4px 12px 12px 12px',
+  background: 'var(--surface)',
+  border: '1px solid var(--line-3)',
+  color: 'var(--label-1)',
+};
+export const userBubbleStyle: CSSProperties = {
+  padding: '8px 12px',
+  borderRadius: '12px 12px 4px 12px',
+  background: 'var(--primary)',
+  color: '#fff',
+};
+export const assistantAvatarStyle: CSSProperties = {
+  width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  background: '#f59e0b1a', border: '1px solid #f59e0b55',
+};
+export const userAvatarStyle: CSSProperties = {
+  width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  background: 'var(--primary)',
+};
+
 export function MessageBubble({ message, index }: { message: ChatMessage; index: number }) {
   const isUser = message.role === 'user';
   return (
     <div style={{ display: 'flex', marginBottom: 12, justifyContent: isUser ? 'flex-end' : 'flex-start' }}>
       <div style={{ maxWidth: '78%', display: 'flex', gap: 8, flexDirection: isUser ? 'row-reverse' : 'row' }}>
-        <div style={{
-          width: 30, height: 30, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center',
-          justifyContent: 'center', background: isUser ? '#f59e0b' : '#e8e8e8', color: 'var(--surface)',
-        }}>
-          {isUser ? <UserOutlined /> : <RobotOutlined style={{ color: '#666' }} />}
+        <div style={isUser ? userAvatarStyle : assistantAvatarStyle}>
+          {isUser ? <UserOutlined style={{ color: '#fff', fontSize: 14 }} /> : <RobotOutlined style={{ color: '#d97706', fontSize: 15 }} />}
         </div>
         <div style={{ minWidth: 0 }}>
           {isUser
             ? message.segments.map((s, j) => (
                 <div key={s.id ?? `m${index}-${j}`} style={{
-                  padding: '8px 12px', borderRadius: 10, fontSize: 14, lineHeight: 1.6,
-                  background: 'var(--accent)', color: 'var(--surface)', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                  ...userBubbleStyle, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 14, lineHeight: 1.6,
                 }}>
                   {s.content}
                 </div>
               ))
             : message.segments.map((s, j) =>
                 s.type === 'text' ? (
-                  <div key={s.id ?? `m${index}-${j}`} style={{
-                    marginBottom: 6, padding: '8px 12px', borderRadius: 10,
-                    background: '#f5f5f5', color: '#333',
-                  }}>
+                  <div key={s.id ?? `m${index}-${j}`} style={{ ...assistantBubbleStyle, marginBottom: 6, fontSize: 14, lineHeight: 1.6 }}>
                     <MarkdownText raw={s.content} placeholder="（空回复）" />
                   </div>
                 ) : (

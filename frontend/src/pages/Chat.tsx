@@ -75,6 +75,51 @@ function TrajectoryDrawer({ open, onClose, messages }: { open: boolean; onClose:
   );
 }
 
+/** 会话列表项：选中态主色描边/淡底，hover 浅灰 + 删除图标变红（IM 列表交互） */
+function SessionItem({ session, active, onOpen, onDelete }: {
+  session: SessionMeta; active: boolean; onOpen: () => void; onDelete: () => void;
+}) {
+  const [hover, setHover] = useState(false);
+  return (
+    <div
+      onClick={onOpen}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        padding: '8px 10px', marginBottom: 6, borderRadius: 8, cursor: 'pointer',
+        background: active ? '#fff7e6' : hover ? '#fafafa' : 'var(--surface)',
+        border: active ? '1px solid #f59e0b' : '1px solid var(--line-1)',
+        transition: 'background 0.15s',
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
+        <div style={{
+          fontSize: 13, fontWeight: active ? 600 : 400,
+          color: active ? 'var(--accent-text)' : 'var(--label-1)',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {session.title || '（空会话）'}
+        </div>
+        <Popconfirm
+          title="删除这个会话？"
+          description="会话记录和对话上下文将一并清除"
+          okText="删除" cancelText="取消"
+          onConfirm={e => { e?.stopPropagation(); onDelete(); }}
+          onCancel={e => e?.stopPropagation()}
+        >
+          <DeleteOutlined
+            onClick={e => e.stopPropagation()}
+            style={{ color: hover ? '#dc2626' : 'var(--label-4)', fontSize: 13, flexShrink: 0, transition: 'color 0.15s' }}
+          />
+        </Popconfirm>
+      </div>
+      <small style={{ color: 'var(--label-3)' }}>
+        {session.updated_at ? new Date(session.updated_at).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '延续记忆'}
+      </small>
+    </div>
+  );
+}
+
 export default function ChatPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [agentId, setAgentId] = useState<string | null>(null);
@@ -321,41 +366,19 @@ export default function ChatPage() {
         <Button icon={<PlusOutlined />} onClick={newSession} disabled={!agentId || sending} block>
           新建会话
         </Button>
+        <div style={{ fontSize: 12, color: 'var(--label-3)', fontWeight: 600 }}>会话记录</div>
         <div style={{ overflow: 'auto', flex: 1 }}>
           {sessions.length === 0 && (
             <EmptyState simple description="暂无会话" style={{ marginTop: 24 }} />
           )}
           {sessions.map(s => (
-            <div
+            <SessionItem
               key={s.thread_id}
-              onClick={() => switchSession(s.thread_id)}
-              style={{
-                padding: '8px 10px', marginBottom: 6, borderRadius: 8, cursor: 'pointer',
-                background: s.thread_id === activeThread ? '#fff7e6' : '#fafafa',
-                border: s.thread_id === activeThread ? '1px solid #f59e0b' : '1px solid #f0f0f0',
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
-                <div style={{ fontSize: 13, fontWeight: s.thread_id === activeThread ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {s.title || '（空会话）'}
-                </div>
-                <Popconfirm
-                  title="删除这个会话？"
-                  description="会话记录和对话上下文将一并清除"
-                  okText="删除" cancelText="取消"
-                  onConfirm={e => { e?.stopPropagation(); deleteSession(s.thread_id); }}
-                  onCancel={e => e?.stopPropagation()}
-                >
-                  <DeleteOutlined
-                    onClick={e => e.stopPropagation()}
-                    style={{ color: '#dc2626', fontSize: 13, flexShrink: 0 }}
-                  />
-                </Popconfirm>
-              </div>
-              <small style={{ color: 'var(--label-3)' }}>
-                {s.updated_at ? new Date(s.updated_at).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '延续记忆'}
-              </small>
-            </div>
+              session={s}
+              active={s.thread_id === activeThread}
+              onOpen={() => switchSession(s.thread_id)}
+              onDelete={() => deleteSession(s.thread_id)}
+            />
           ))}
         </div>
       </div>
@@ -364,7 +387,7 @@ export default function ChatPage() {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         <SectionToolbar
           title={activeTitle || '新会话'}
-          subtitle={activeThread ?? undefined}
+          subtitle={messages.length > 0 ? `${messages.length} 条消息` : undefined}
           extra={
             <>
               <Button size="small" icon={<HistoryOutlined />} onClick={() => setTrajectoryOpen(true)} disabled={sending}>

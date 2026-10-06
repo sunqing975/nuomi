@@ -251,7 +251,11 @@ export default function Composer(props: ComposerProps) {
           <a onClick={onDismissInterrupted} style={{ color: 'var(--label-4)' }}>忽略</a>
         </div>
       )}
-      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+      <div style={{
+        display: 'flex', gap: 8, alignItems: 'flex-end',
+        border: '1px solid var(--line-3)', borderRadius: 12, background: 'var(--surface)',
+        padding: '8px 8px 8px 12px',
+      }}>
         <Input.TextArea
           value={input}
           onChange={e => setInput(e.target.value)}
@@ -263,7 +267,8 @@ export default function Composer(props: ComposerProps) {
           placeholder="输入消息，Enter 发送"
           autoSize={{ minRows: 1, maxRows: 6 }}
           disabled={sending || !agentId}
-          style={{ flex: 1 }}
+          variant="borderless"
+          style={{ flex: 1, padding: '4px 0' }}
         />
         {sending ? (
           <Button danger icon={<StopOutlined />} onClick={onStop}>停止</Button>
