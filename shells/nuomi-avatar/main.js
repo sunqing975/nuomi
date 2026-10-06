@@ -1,10 +1,37 @@
-const { app, BrowserWindow, ipcMain, screen } = require('electron')
+/**
+ * 糯米壳（nuomi-avatar）主进程。
+ *
+ * ========================= 安全取舍说明（2026-10-06）=========================
+ * 数字人窗口仍然是 `nodeIntegration: true` + `contextIsolation: false`，**这是刻意的**：
+ *   1. 渲染进程需要用 Node `fs` 直接读本地 VRM 资产（工作区绝对路径，可能是任意目录），
+ *      并用 `require()` 加载 three.js / @pixiv/three-vrm（ESM 需 esbuild 预打包成 CJS）；
+ *   2. 迁移到 `contextIsolation + preload` 需要把 fs/path/require、IPC、动画资产加载
+ *      全部改造成 preload 暴露的 API（app.js + js/** 约 6k 行），改动面大、回归风险高，
+ *      而收益在当前威胁模型下有限。
+ *
+ * 因此风险边界必须靠「不加载远端内容」来兜底，本次已落地的三道闸门：
+ *   · index.html 的 CSP meta：只允许 'self' + file: + http://127.0.0.1:*，挡掉远端脚本；
+ *   · 两个窗口的 will-navigate / setWindowOpenHandler 白名单（见 lockNavigation）；
+ *   · 控制台窗口本身就是 nodeIntegration:false + contextIsolation:true。
+ *
+ * 将来若要彻底收紧，需要动的文件：main.js（webPreferences + 新增 preload.js 暴露
+ * fs/IPC 白名单接口）、index.html（引用 preload）、app.js（require('fs'/'path'/'electron')
+ * 改走 window.nuomi API）、js/model/vrm-model-setup.js、js/tts-client.js、
+ * js/tts-stream-processor.js、js/api-utils.js（日志 IPC）。
+ * ===========================================================================
+ */
+
+const { app, BrowserWindow, ipcMain, screen, dialog } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const http = require('http')
 const { spawn } = require('child_process')
 
 const configPath = path.join(app.getAppPath(), 'config.json')
+
+// 仓库根 .logs/（已 gitignore）：壳 / 后端 / 前端的 pid 与日志统一落在这里
+const LOG_DIR = path.join(__dirname, '..', '..', '.logs')
+const BACKEND_PID_FILE = path.join(LOG_DIR, 'backend.pid')
 
 // === 后端自动拉起（2026-10-05）：壳启动时检测 nuomi 后端，未就绪则 spawn uvicorn ===
 function checkBackendReady(origin, timeoutMs = 1500) {
@@ -15,6 +42,30 @@ function checkBackendReady(origin, timeoutMs = 1500) {
         })
         req.on('timeout', () => { req.destroy(); resolve(false) })
         req.on('error', () => resolve(false))
+    })
+}
+
+// 必须是「文件」，不能只是路径存在：目录/软链目录会让模型加载静默失败
+function isFile(p) {
+    if (!p || typeof p !== 'string') return false
+    try { return fs.statSync(p).isFile() } catch (e) { return false }
+}
+
+// 主进程内的极简 JSON GET（无 CORS/Origin 约束）。失败一律 resolve(null)，
+// 调用方按「拿不到就降级」处理，不抛异常。
+function httpGetJson(url, timeoutMs = 3000) {
+    return new Promise((resolve) => {
+        const req = http.get(url, { timeout: timeoutMs }, (res) => {
+            let body = ''
+            res.setEncoding('utf8')
+            res.on('data', (chunk) => { body += chunk })
+            res.on('end', () => {
+                if (res.statusCode !== 200) return resolve(null)
+                try { resolve(JSON.parse(body)) } catch (e) { resolve(null) }
+            })
+        })
+        req.on('timeout', () => { req.destroy(); resolve(null) })
+        req.on('error', () => resolve(null))
     })
 }
 
@@ -46,11 +97,31 @@ function refreshApiToken() {
 ipcMain.handle('api-token', () => loadApiToken(backendOrigin()))
 ipcMain.handle('refresh-api-token', () => refreshApiToken())
 
+// 后端 pid 落盘 + 常驻提示。
+// 为什么：壳用 detached+unref 拉起后端是刻意设计（壳退出后端继续常驻，控制台/对话不断线），
+// 但之前不记录 pid，用户只能靠 `make stop` 按端口杀 —— 换成记录 pid，停止方式可追溯。
+function recordBackendPid(pid) {
+    if (!pid) return
+    try {
+        fs.mkdirSync(LOG_DIR, { recursive: true })
+        fs.writeFileSync(BACKEND_PID_FILE, String(pid), 'utf8')
+    } catch (e) {
+        console.error('[backend] 写入 backend.pid 失败: ' + e.message)
+    }
+    console.log('[backend] 后端已常驻（detached，壳退出不会被带走），pid=' + pid)
+    console.log('[backend] 停止方式：kill ' + pid + '（或 make stop 按端口杀；pid 文件 .logs/backend.pid）')
+}
+
 function ensureBackend() {
     const origin = backendOrigin()
     return checkBackendReady(origin).then(async (alive) => {
         if (alive) {
             console.log('后端已就绪: ' + origin)
+            // 已有后端（make backend / 上一次壳启动留下的常驻进程）：壳不接管、退出也不动它
+            try {
+                const pid = fs.readFileSync(BACKEND_PID_FILE, 'utf8').trim()
+                if (pid) console.log('[backend] 复用已运行的后端（记录 pid=' + pid + '，停止方式：kill ' + pid + '）')
+            } catch (e) {}
             return { started: false }
         }
         console.log('后端未就绪，自动拉起 uvicorn ...')
@@ -60,7 +131,7 @@ function ensureBackend() {
         const port = new URL(origin).port || '8000'
         // 后端日志写 .logs/backend.log（文件 fd，非 pipe）：
         // ① uvicorn 访问日志不刷壳日志；② 壳退出后 pipe 断开不再 SIGPIPE 误杀常驻后端
-        const backendLog = path.join(__dirname, '..', '..', '.logs', 'backend.log')
+        const backendLog = path.join(LOG_DIR, 'backend.log')
         try { fs.mkdirSync(path.dirname(backendLog), { recursive: true }) } catch (e) {}
         const logFd = fs.openSync(backendLog, 'a')
         const child = spawn(
@@ -70,6 +141,8 @@ function ensureBackend() {
         )
         child.unref() // 脱离壳进程组：壳退出后后端保持常驻
         child.on('error', (err) => console.error('[backend] 启动失败: ' + err.message))
+        recordBackendPid(child.pid)
+
         // 最多等 30s 健康检查通过（后端含依赖加载/嵌入模型就绪）
         const deadline = Date.now() + 30000
         while (Date.now() < deadline) {
@@ -84,7 +157,104 @@ function ensureBackend() {
     })
 }
 
-function createWindow() {
+/**
+ * 解析真正可用的 VRM 模型绝对路径（2026-10-06）。
+ *
+ * 为什么：config.json 里的 ui.model_path 是「上一台机器上的绝对路径」
+ * （如 /Users/<别人>/Nuomi/models/3D/xxx.vrm），仓库里不含任何 .vrm 资产，
+ * 换机器/换用户目录后该路径必然不存在 → 数字人静默白屏。所以不信任配置里的路径：
+ *   1. 配置路径确实存在 → 直接用（日常快路径，零网络开销）
+ *   2. 不存在 → 向后端 GET /api/avatar/models（返回 {models:[{id,path,...}], active}）
+ *      问当前激活模型，取真实路径**回写 config.json**（渲染进程读 config 即拿到正确路径，
+ *      不必改动渲染进程的模型加载链路；同时把 main.js 的 fs.watch 切换逻辑也修好）
+ *   3. 都拿不到 → 返回 null，调用方弹可读错误框（不做静默白屏）
+ *
+ * 注意：后端地址来自 config.json 的 llm.api_url（形如 http://127.0.0.1:8000/api/v1），
+ * 这里只用它的 origin，再拼 /api/avatar/models。
+ *
+ * 已知边界：打包态 config.json 位于 app.asar 内只读，回写会失败——此时路径仍通过
+ * `--nuomi-model=` 参数下发给渲染进程（见 createWindow 的 additionalArguments），
+ * 保证本次启动能正常渲染；但「切换模型后持久化」在打包态仍需可写 config（见 README 遗留项）。
+ */
+async function resolveModelPath() {
+    let cfg = {}
+    try { cfg = JSON.parse(fs.readFileSync(configPath, 'utf8')) } catch (e) {}
+    const ui = cfg.ui || {}
+    const configured = ui.model_path
+
+    if (isFile(configured)) {
+        console.log('[model] 使用 config.json 中的模型路径: ' + configured)
+        return configured
+    }
+    console.warn('[model] config.json 的模型路径不可用: ' + (configured || '(未配置)'))
+
+    const origin = backendOrigin()
+    const url = origin + '/api/avatar/models'
+    const data = await httpGetJson(url, 5000)
+    const models = Array.isArray(data && data.models) ? data.models : []
+    if (!models.length) {
+        console.error('[model] 后端 ' + url + ' 未返回任何模型')
+        return null
+    }
+    // 优先 active 指向的模型；active 缺失/失配时退到列表第一个（能渲染总比白屏好）
+    const hit = models.find((m) => m && m.id && m.id === data.active) || models[0]
+    const realPath = hit && typeof hit.path === 'string' ? hit.path : ''
+    if (!isFile(realPath)) {
+        console.error('[model] 后端下发的模型路径不存在: ' + (realPath || '(空)'))
+        return null
+    }
+    console.log('[model] 已从后端解析到激活模型: ' + hit.id + ' -> ' + realPath)
+
+    // 回写 config.json：让渲染进程（fs 直读配置）与 fs.watch 切换逻辑都拿到真实路径
+    try {
+        cfg.ui = Object.assign({}, ui, {
+            model_path: realPath,
+            model: hit.id || ui.model,
+            model_type: hit.type || ui.model_type || 'vrm'
+        })
+        fs.writeFileSync(configPath, JSON.stringify(cfg, null, 2), 'utf8')
+        console.log('[model] 已回写 config.json（ui.model_path / ui.model）')
+    } catch (e) {
+        // 打包态 app.asar 只读；本次启动靠 --nuomi-model 参数兜底，不回退成白屏
+        console.error('[model] 回写 config.json 失败（打包态 asar 只读）: ' + e.message)
+    }
+    return realPath
+}
+
+/**
+ * 导航封锁（安全基线，2026-10-06）。
+ *
+ * 数字人窗口是 nodeIntegration:true 的：一旦它能被导航到远端页面，等于把 Node 能力
+ * 交给远端脚本。所以两个窗口只允许停在「本地 file:// + 127.0.0.1 后端」这两类地址上，
+ * 其余跳转/新窗口一律拒绝并打日志。
+ */
+function isAllowedTarget(rawUrl) {
+    try {
+        const u = new URL(rawUrl)
+        if (u.protocol === 'file:') return true
+        const isLocalHost = u.hostname === '127.0.0.1' || u.hostname === 'localhost' || u.hostname === '[::1]'
+        if ((u.protocol === 'http:' || u.protocol === 'https:') && isLocalHost) return true
+        return false
+    } catch (e) {
+        return false // 解析不了（about:blank / javascript: 等）一律不放行
+    }
+}
+
+function lockNavigation(win, label) {
+    win.webContents.on('will-navigate', (event, url) => {
+        if (!isAllowedTarget(url)) {
+            event.preventDefault()
+            console.warn('[security] ' + label + ' 已拦截导航: ' + url)
+        }
+    })
+    win.webContents.setWindowOpenHandler(({ url }) => {
+        if (isAllowedTarget(url)) return { action: 'allow' }
+        console.warn('[security] ' + label + ' 已拦截新窗口: ' + url)
+        return { action: 'deny' }
+    })
+}
+
+function createWindow(modelPathOverride) {
     let config = {}
     try {
         config = JSON.parse(fs.readFileSync(configPath, 'utf8'))
@@ -115,7 +285,12 @@ function createWindow() {
         // type: 'desktop',
         webPreferences: {
             nodeIntegration: true,
-            contextIsolation: false
+            contextIsolation: false,
+            // 主进程把「解析后的模型路径」下发给渲染进程：config.json 可能是只读的
+            // （打包态在 app.asar 内），此时渲染进程读到的仍是旧路径——参数是兜底通道。
+            additionalArguments: [
+                '--nuomi-model=' + (modelPathOverride || currentModelPath || '')
+            ]
         },
         resizable: true,
         movable: true,
@@ -126,6 +301,7 @@ function createWindow() {
     win.setMenu(null)
     win.setIgnoreMouseEvents(true, { forward: true })
     win.loadFile('index.html')
+    lockNavigation(win, '数字人窗口')
 
     // AI 数字人窗口关闭时清引用（控制面板是远程 /console/ 页面，无 preload，
     // 无需也收不到 IPC 通知，故不再发送 pet-stopped）
@@ -172,6 +348,7 @@ function createControlPanel() {
     })
 
     panel.setMenu(null)
+    lockNavigation(panel, '控制台窗口')
 
     // 后端可能尚未启动：加载失败则每 2s 重试（最多 30 次，约 1 分钟）
     const origin = backendOrigin()
@@ -193,6 +370,8 @@ function createControlPanel() {
 
 let avatarWindow = null
 let controlPanel = null
+// 启动时解析出的模型绝对路径（后端下发/配置里的有效路径），供后续重建窗口复用
+let currentModelPath = null
 
 // 动作资产导入/删除后，控制面板窗口跟随刷新（数字人渲染进程收到 SSE 后经 IPC 通知）
 ipcMain.on('reload-control-panel', () => {
@@ -228,15 +407,61 @@ ipcMain.on('toggle-control-panel', () => {
 
 // PTT 全局快捷键已废弃（旧 ASR 语音输入体系，renderer 无监听，2026-10-05 清理）
 
+// ===== 单实例锁（2026-10-06）=====
+// 为什么必须加：壳自己会拉起 uvicorn，双开 = 双数字人窗口 + 两个后端抢 :8000
+// （还会互相争 config.json 的写权）。第二个实例直接退出，并把已有实例的窗口拉到前面。
+const gotTheLock = app.requestSingleInstanceLock()
+if (!gotTheLock) {
+    console.log('检测到糯米已在运行（单实例锁未取得），本次启动退出')
+    app.quit()
+} else {
+    app.on('second-instance', () => {
+        // 已有实例收到：把用户能看到的窗口 show/focus（数字人窗口是透明无边框的，
+        // 单靠它用户容易「点了没反应」，所以控制面板优先）
+        const wins = [controlPanel, avatarWindow].filter((w) => w && !w.isDestroyed())
+        if (!wins.length) {
+            // 数字人开关为关 + 控制面板被关过：进程活着却没窗口，补一个控制面板
+            controlPanel = createControlPanel()
+            controlPanel.on('closed', () => { controlPanel = null })
+            return
+        }
+        for (const w of wins) {
+            if (w.isMinimized()) w.restore()
+            w.show()
+            w.focus()
+        }
+        console.log('第二个实例已退出，聚焦到已有窗口')
+    })
+
 app.whenReady().then(() => {
-    // 先确保后端就绪（未启动则自动拉起），再创建窗口——控制面板加载依赖后端
-    ensureBackend().finally(() => {
+    // 后端就绪（未启动则自动拉起）→ 解析模型路径 → 再创建窗口：
+    // 控制面板加载依赖后端；模型路径依赖后端 /api/avatar/models
+    ensureBackend()
+        .catch((e) => { console.error('[backend] 就绪检查异常: ' + e.message); return null })
+        .then(() => resolveModelPath())
+        .catch((e) => { console.error('[model] 解析模型路径异常: ' + e.message); return null })
+        .then((modelPath) => {
+        currentModelPath = modelPath
         let initialConfig = {}
         try { initialConfig = JSON.parse(fs.readFileSync(configPath, 'utf8')) } catch (e) {}
         const petEnabled = (initialConfig.ui || {}).avatar_enabled !== false // 缺省开
 
         if (petEnabled) {
-            avatarWindow = createWindow()
+            if (!modelPath) {
+                // 拿不到模型 = 必然白屏：给可读错误提示，别让用户对着透明窗口猜
+                dialog.showErrorBox(
+                    '糯米：找不到数字人模型',
+                    '未能确定可用的 VRM 模型路径，数字人窗口可能是空白的。\n\n' +
+                    '已尝试：\n' +
+                    '  · config.json 的 ui.model_path：' + ((initialConfig.ui || {}).model_path || '(未配置)') + '\n' +
+                    '  · 后端接口：' + backendOrigin() + '/api/avatar/models\n\n' +
+                    '请依次确认：\n' +
+                    '  1. 后端已启动（make backend，或 make start 自动拉起）\n' +
+                    '  2. 工作区 models/3D/ 下至少有一个 .vrm 模型文件\n' +
+                    '  3. 控制台「模型」页已选中一个模型'
+                )
+            }
+            avatarWindow = createWindow(modelPath)
         } else {
             console.log('AI 数字人开关为关，跳过创建AI 数字人窗口')
         }
@@ -300,8 +525,9 @@ app.whenReady().then(() => {
     })
 
         console.log('糯米启动完成')
-    }) // ensureBackend().finally 回调结束
-})
+        }) // ensureBackend → resolveModelPath 回调结束
+}) // whenReady 结束
+} // else（取得单实例锁）结束
 
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {

@@ -4,18 +4,69 @@
   "description": "糯米 AI 数字人表现层（nuomi-avatar，Electron + three.js VRM）",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "icon": "bash scripts/make-icon.sh",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
   },
   "dependencies": {
     "@pixiv/three-vrm": "^3.3.0",
     "@pixiv/three-vrm-animation": "^3.3.0",
     "axios": "^1.17.0",
-    "electron": "^28.0.0",
     "fbx-parser": "^2.1.3",
     "screenshot-desktop": "^1.15.4",
     "three": "^0.169.0"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC"
+  "author": "Nuomi",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.nuomi.avatar",
+    "productName": "Nuomi",
+    "copyright": "Copyright © 2026 Nuomi",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "asar": true,
+    "files": [
+      "main.js",
+      "app.js",
+      "index.html",
+      "config.json",
+      "prompts.json",
+      "emotion_expressions.json",
+      "css/**/*",
+      "js/**/*",
+      "assets/**/*",
+      "libs/**/*",
+      "node_modules/**/*",
+      "!tools/**",
+      "!scripts/**",
+      "!docs/**",
+      "!dist/**",
+      "!build/**",
+      "!**/*.md",
+      "!**/*.log",
+      "!**/node_modules/.bin/**"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.icns",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "identity": null,
+      "notarize": false,
+      "darkModeSupport": true
+    },
+    "dmg": {
+      "title": "${productName} ${version}"
+    }
+  }
 }

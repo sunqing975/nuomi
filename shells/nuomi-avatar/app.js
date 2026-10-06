@@ -34,11 +34,32 @@ function logTool(msg, level = 'info') {
 }
 
 // 加载配置
+// 模型路径以主进程为准：config.json 里的 ui.model_path 可能是「上一台机器」的绝对路径，
+// 主进程启动时已向后端 /api/avatar/models 解析出真实路径，并经 --nuomi-model= 下发兜底
+// （打包态 config.json 在 app.asar 内只读，回写会失败，只能靠这条通道）。
+function _readArgvModelPath() {
+    const p = process.argv.find((a) => typeof a === 'string' && a.startsWith('--nuomi-model='))
+    if (!p) return ''
+    const v = p.slice('--nuomi-model='.length)
+    // 路径含空格时 Electron 可能把参数拆成多段（会截断成上级目录），
+    // 所以必须校验「存在且是文件」，无效就忽略（不覆盖 config.json 里的正确路径）
+    try {
+        if (v && fs.statSync(v).isFile()) return v
+    } catch (e) {}
+    return ''
+}
+
 let config
 try {
     config = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), 'utf8'))
 } catch (e) {
     console.error('配置失败:', e)
+}
+const _argvModelPath = _readArgvModelPath()
+if (_argvModelPath) {
+    config = config || {}
+    config.ui = Object.assign({}, config.ui, { model_path: _argvModelPath })
+    console.log('模型路径由主进程下发: ' + _argvModelPath)
 }
 
 // 初始化TTS

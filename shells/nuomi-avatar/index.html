@@ -1,6 +1,29 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <!--
+      CSP（2026-10-06 安全基线）：只允许本地资源与 127.0.0.1 后端。
+      为什么：
+        · 数字人窗口是 nodeIntegration:true 的，一旦能加载远端脚本就等于把 Node 能力交出去；
+        · 本页实际只用到 file://（自身 + 工作区 VRM/VRMA 资产、css/js）与
+          http://127.0.0.1:* （后端 SSE /api/avatar/events、TTS :5006）；
+        · connect-src 里的 file:/blob:/data: 是 GLTFLoader 读 VRM（XHR）与内嵌贴图必需；
+          media-src 的 blob: 是 TTS 音频（URL.createObjectURL）必需；
+        · style-src 保留 'unsafe-inline'：three.js/交互代码会动态写元素 style。
+      没有 http(s) 通配，任何远端脚本/请求都会被拦下。
+    -->
+    <meta http-equiv="Content-Security-Policy"
+          content="default-src 'self' file:;
+                   script-src 'self' file:;
+                   style-src 'self' file: 'unsafe-inline';
+                   img-src 'self' file: data: blob:;
+                   media-src 'self' file: data: blob:;
+                   font-src 'self' file: data:;
+                   connect-src 'self' file: data: blob: http://127.0.0.1:* ws://127.0.0.1:*;
+                   worker-src 'self' blob:;
+                   object-src 'none';
+                   frame-src 'none';
+                   base-uri 'none'">
     <link rel="stylesheet" href="css/styles.css">
     <title>糯米 · AIAI 数字人</title>
 </head>

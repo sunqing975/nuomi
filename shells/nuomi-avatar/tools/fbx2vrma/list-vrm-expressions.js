@@ -1,5 +1,6 @@
 // list-vrm-expressions.js — 枚举 VRM 模型的 blend shape 表情清单
 // 用法: node list-vrm-expressions.js [dir]
+const os = require('os');
 const fs = require('fs');
 const path = require('path');
 
@@ -39,7 +40,10 @@ async function loadVrm(filePath) {
 }
 
 async function main() {
-  const dir = process.argv[2] || '/Users/superman/Nuomi/models/3D';
+  // 用法：node list-vrm-expressions.js [模型目录]
+  // 默认取数据根（NUOMI_HOME，默认 ~/Nuomi）下的 models/3D
+  const dir = process.argv[2]
+    || path.join(process.env.NUOMI_HOME || path.join(os.homedir(), 'Nuomi'), 'models', '3D');
   if (!fs.existsSync(dir)) {
     console.error(`目录不存在: ${dir}`);
     process.exit(1);

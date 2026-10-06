@@ -41,7 +41,7 @@ AI记录室/
 full-hub/
 plugins-dlc/
 
-# nuomi 定制：模型资产已迁工作区 /Users/superman/Nuomi/models/2D（2026-10-04）
+# nuomi 定制：模型资产已迁出壳仓库，放数据根（NUOMI_HOME，默认 ~/Nuomi）的 models/2D（2026-10-04）
 # 仓库仅保留可分发种子 assets/models/2D/hiyori
 
 # nuomi 定制：排除 Windows 启动脚本（macOS 用不到）
@@ -50,3 +50,13 @@ plugins-dlc/
 2.ASR.bat
 *.bat
 *.vbs
+
+# 打包产物与图标（electron-builder，2026-10-06）
+# build/ 由 `npm run icon` 生成 icon.icns；dist/ 是 electron-builder 输出
+build/
+dist/
+# electron-builder 的下载缓存（沙箱/离线环境用 ELECTRON_BUILDER_CACHE 指到仓库内）
+.electron-builder-cache/
+
+# 壳的 E2E 试探脚本产物（临时，不入库）
+.tmp-e2e/

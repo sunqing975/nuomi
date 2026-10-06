@@ -1,6 +1,7 @@
 // verify-vrma.js — 验证 .vrma 能被壳同款加载链解析并在目标 VRM 模型上生成 AnimationClip
 // 用法: node verify-vrma.js [path/to/file.vrma]
 // 依赖解析: 向上找到 shells/nuomi-avatar/node_modules (three/@pixiv/three-vrm/@pixiv/three-vrm-animation)
+const os = require('os');
 const fs = require('fs');
 
 // ---- Node 环境最小 polyfill（仅用于离线验证，无需真实解码纹理）----
@@ -26,8 +27,13 @@ const { GLTFLoader } = require('../../js/lib/gltf-loader-bundle.cjs');
 const { VRMLoaderPlugin } = require('@pixiv/three-vrm');
 const { VRMAnimationLoaderPlugin, createVRMAnimationClip } = require('@pixiv/three-vrm-animation');
 
-const VRM_MODEL = '/Users/superman/Nuomi/models/3D/6309260419351179234.vrm';
-const VRMA_FILE = process.argv[2] || '/Users/superman/projects/code/nuomi/shells/nuomi-avatar/assets/animations/elbow_punch.vrma';
+// 模型来自数据根（NUOMI_HOME，默认 ~/Nuomi）；可用第 1/2 个参数覆盖
+// 用法：node verify-vrma.js [模型.vrm] [动作.vrma]
+const DATA_ROOT = process.env.NUOMI_HOME || path.join(os.homedir(), 'Nuomi');
+const VRM_MODEL = process.argv[3]
+  || path.join(DATA_ROOT, 'models', '3D', '6309260419351179234.vrm');
+const VRMA_FILE = process.argv[2]
+  || path.join(__dirname, '..', '..', 'assets', 'animations', 'elbow_punch.vrma');
 
 function toArrayBuffer(buf) {
   return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
