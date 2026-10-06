@@ -219,6 +219,34 @@ thread_repo = ThreadRepo()
 thread_message_repo = ThreadMessageRepo()
 
 
+def _normalize_tool_calls(raw) -> list[dict]:
+    """turn 里的 tool_calls → LangChain ``AIMessage.tool_calls`` 要求的结构。
+
+    LangChain 要求 ``args`` 是 **dict**，而对话流里累积的是分块拼出的 JSON
+    **字符串**（``infra/harness/chat.py``）。原样传会抛
+    ``ValidationError: tool_calls.0.args Input should be a valid dictionary``，
+    异常又被上层吞成一条日志 → 该轮工具调用永久丢投影。
+    这里解析 + 兜底：非 JSON / 非 dict / 缺 name 的条目直接丢弃（宁可少记，不让整轮丢）。
+    """
+    out: list[dict] = []
+    for item in raw or []:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        if not name:
+            continue
+        args = item.get("args")
+        if isinstance(args, str):
+            try:
+                args = json.loads(args) if args.strip() else {}
+            except json.JSONDecodeError:
+                args = {}
+        if not isinstance(args, dict):
+            args = {}
+        out.append({"id": str(item.get("id") or ""), "name": name, "args": args})
+    return out
+
+
 def turn_to_message_inputs(turn: dict) -> list[dict]:
     """把一轮对话（stream_chat on_turn_complete 的 turn dict）序列化为投影输入。
 
@@ -247,7 +275,7 @@ def turn_to_message_inputs(turn: dict) -> list[dict]:
 
     answer = str(turn.get("answer") or "").strip()
     reasoning = str(turn.get("reasoning") or "").strip()
-    tool_calls = turn.get("tool_calls") or []
+    tool_calls = _normalize_tool_calls(turn.get("tool_calls"))
     if answer or reasoning or tool_calls:
         kwargs: dict = {}
         if reasoning:

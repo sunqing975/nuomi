@@ -10,9 +10,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import re
-import uuid
+from contextlib import aclosing
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
@@ -39,9 +41,11 @@ from app.domain.skillpackages.service import skill_package_service
 from app.domain.skills.service import skill_service
 from app.infra import env_store, skillhub
 from app.infra.avatar_events import avatar_events
-from app.infra.harness.chat import stream_chat, stream_octop_sse
+from app.infra.harness.chat import format_sse, stream_chat, stream_octop_sse
 from app.infra.harness.manager import manager
 from app.storage import db
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
@@ -109,17 +113,22 @@ def ensure_agent_runtime(agent_row: dict):
     )
 
 
-def _resolve_chat_abilities(skills, connectors) -> tuple[list[str] | None, list[str] | None]:
+async def _resolve_chat_abilities(skills, connectors) -> tuple[list[str] | None, list[str] | None]:
     """校验并归一化 per-turn 能力选择（skills / connectors），返回 (skills, connectors)。
 
     skills：None=全量技能；[]=禁用全部；列表=只启用这些（须存在于可用技能集合）。
     connectors：None=默认连接器（agent 配置）；[]=不挂载；列表=只挂载这些（须已配置）。
+
+    async 的原因：``_available_skill_keys()`` 会读工作区 + 内置的全部 SKILL.md
+    （实测 23–34ms，纯磁盘 IO）。留在事件循环上等于每轮对话白占 30ms，
+    所以挪到线程池（校验结果不变）。
     """
     if skills is not None:
         for name in skills:
             if not isinstance(name, str) or not name.strip():
                 raise HTTPException(status_code=400, detail="技能名不能为空")
-        unknown = [n for n in skills if n not in _available_skill_keys()]
+        available = await asyncio.to_thread(_available_skill_keys)
+        unknown = [n for n in skills if n not in available]
         if unknown:
             raise HTTPException(status_code=400, detail=f"技能不存在或未启用: {', '.join(unknown)}")
         skills = [s.strip() for s in skills]
@@ -168,6 +177,18 @@ class ChatBody(BaseModel):
 @router.get("/health")
 async def health() -> dict:
     return {"status": "ok"}
+
+
+@router.get("/session-token")
+async def session_token() -> dict:
+    """本机 API token（同源客户端获取，用于 ``/api/*`` 写操作）。
+
+    守卫中间件只放行「无 Origin（同源/非浏览器客户端）」或「本机 Origin」的请求；
+    跨站页面即便发起请求也拿不到响应（CORS 不放行），因此不构成 token 泄漏。
+    """
+    from app.infra.local_guard import api_token
+
+    return {"token": api_token()}
 
 
 # ---------- 会话管理（工作区 nuomi-state.json 权威，控制台读写） ----------
@@ -402,7 +423,7 @@ async def chat(agent_id: str, body: ChatBody, request: Request) -> StreamingResp
     if not agent_row.get("enabled"):
         raise HTTPException(status_code=400, detail="Agent 已停用")
     # per-turn 能力校验必须在流开始前完成（generator 内抛错不会转成 400）
-    skills, connectors = _resolve_chat_abilities(body.skills, body.connectors)
+    skills, connectors = await _resolve_chat_abilities(body.skills, body.connectors)
     model = body.model
     if model is not None:
         from app.infra.providers_store import model_refs
@@ -442,34 +463,51 @@ async def chat(agent_id: str, body: ChatBody, request: Request) -> StreamingResp
             if inputs:
                 thread_message_repo.append(body.thread_id, inputs)
 
+        frames = stream_octop_sse(
+            _publish_actions(
+                stream_chat(
+                    body.messages,
+                    body.thread_id,
+                    agent_id=agent_id,
+                    name=agent_row["name"],
+                    system_prompt=system_prompt,
+                    workspace_dir=ensure_agent_workspace(agent_id, agent_row["name"]),
+                    plugin_tools=tools,
+                    skills_dir=_all_skills_dirs(),
+                    skills_disabled=skill_service.disabled_set(),
+                    mcp_server_configs=settings.mcp_servers,
+                    mcp_default_servers=list(settings.mcp_servers.keys()) or None,
+                    skills=skills,
+                    connectors=connectors,
+                    model=model,
+                    knowledge_base_ids=body.knowledge_base_ids,
+                    agent_config=agent_row.get("config_json"),
+                    on_turn_complete=_persist_turn,
+                )
+            ),
+            thread_id=body.thread_id,
+        )
         try:
-            async for frame in stream_octop_sse(
-                _publish_actions(
-                    stream_chat(
-                        body.messages,
-                        body.thread_id,
-                        agent_id=agent_id,
-                        name=agent_row["name"],
-                        system_prompt=system_prompt,
-                        workspace_dir=ensure_agent_workspace(agent_id, agent_row["name"]),
-                        plugin_tools=tools,
-                        skills_dir=_all_skills_dirs(),
-                        skills_disabled=skill_service.disabled_set(),
-                        mcp_server_configs=settings.mcp_servers,
-                        mcp_default_servers=list(settings.mcp_servers.keys()) or None,
-                        skills=skills,
-                        connectors=connectors,
-                        model=model,
-                        knowledge_base_ids=body.knowledge_base_ids,
-                        agent_config=agent_row.get("config_json"),
-                        on_turn_complete=_persist_turn,
-                    )
-                ),
-                thread_id=body.thread_id,
-            ):
-                if await request.is_disconnected():
-                    break
-                yield frame
+            # aclosing：客户端断连 break 时关闭本层 SSE 生成器。注意机制——
+            # aclose 只把 GeneratorExit 抛进**本层**；这层没有 try/finally，
+            # 所以不会同步传播到上游。上游（LLM 流）是在引用释放后由 async
+            # generator 终结器异步关闭的（实测让出若干次事件循环后生效）。
+            # 效果成立，但别指望「break 完上游立刻关」。
+            async with aclosing(frames) as stream:
+                async for frame in stream:
+                    if await request.is_disconnected():
+                        break
+                    yield frame
+        except Exception as exc:  # 流中途失败：必须给客户端一个明确的终止帧
+            # 没有 error 帧时，前端只看到被截断的流，既没有 done 也没有错误 → 永久转圈。
+            logger.exception("对话流异常（thread=%s）", body.thread_id)
+            yield format_sse(
+                {
+                    "type": "error",
+                    "message": str(exc) or exc.__class__.__name__,
+                    "thread_id": body.thread_id,
+                }
+            )
         finally:
             # 推状态：回复结束，恢复 idle
             avatar_events.publish_status("idle")
@@ -506,7 +544,9 @@ class AgentPatchBody(BaseModel):
     icon_url: str | None = None
     color: str | None = None
     welcome_message: str | None = None
-    config_json: dict | None = None  # M3：运行时参数（max_iters/temperature/top_p/max_tokens/max_input_length）
+    config_json: dict | None = (
+        None  # M3：运行时参数（max_iters/temperature/top_p/max_tokens/max_input_length）
+    )
 
 
 class AgentImportBody(BaseModel):
@@ -581,16 +621,11 @@ async def start_agent(agent_id: str) -> dict:
         raise HTTPException(status_code=404, detail="Agent 不存在")
     if not row.get("enabled"):
         raise HTTPException(status_code=400, detail="Agent 已停用")
-    manager.get_agent(
-        agent_id,
-        name=row["name"],
-        system_prompt=row["system_prompt"],
-        plugin_tools=plugin_service.tools(),
-        skills_dir=_all_skills_dirs(),
-        skills_disabled=skill_service.disabled_set(),
-        mcp_server_configs=settings.mcp_servers,
-        mcp_default_servers=list(settings.mcp_servers.keys()) or None,
-    )
+    # 必须走统一入口：manager 按 agent_id 单例缓存，构造参数只在首次生效。
+    # 这里曾自行调 manager.get_agent 且漏传 workspace_dir —— 用户在「专家」页点
+    # 「启动实例」会把实例建到全局数据根（无 persona 文件、写全局 memory.sqlite），
+    # 之后该专家的对话/历史全部错位（详见 ensure_agent_runtime 的 docstring）。
+    ensure_agent_runtime(row)
     agent_service.set_state(agent_id, STATE_RUNNING)
     return {"ok": True, "state": STATE_RUNNING}
 
@@ -632,7 +667,6 @@ async def plugin_ui_manifest(plugin_id: str) -> dict:
 
     未声明面板（无 ui/manifest.json）返回 404，前端据此跳过文本折叠以外的渲染。
     """
-    from pathlib import Path
 
     from app.infra.plugins.market import plugin_dir
 
@@ -641,8 +675,8 @@ async def plugin_ui_manifest(plugin_id: str) -> dict:
         raise HTTPException(status_code=404, detail="插件未声明聊天面板（无 ui/manifest.json）")
     try:
         return json.loads(m.read_text(encoding="utf-8"))
-    except ValueError:
-        raise HTTPException(status_code=400, detail="ui/manifest.json 不是合法 JSON")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail="ui/manifest.json 不是合法 JSON") from e
 
 
 @router.get("/plugins/{plugin_id}/ui/{file_name}")
@@ -667,7 +701,12 @@ async def plugin_ui_file(plugin_id: str, file_name: str) -> FileResponse:
 
 @router.post("/plugins/sync")
 async def sync_plugins() -> list[dict]:
-    """重新扫描工作区 plugins/ 并加载（新插件默认启用）。"""
+    """重新扫描工作区 plugins/ 并加载（新插件默认启用）。
+
+    刻意**不** offload：``load_all()`` 会 clear 整个进程级注册表再逐个重填，
+    放到工作线程会让并发对话在窗口期读到空注册表（实测 0 个插件工具）。
+    真正耗时的文件操作（zip 解包 / git clone）在导入端点里已单独 offload。
+    """
     return plugin_service.sync()
 
 
@@ -680,9 +719,10 @@ async def import_plugin_zip(file: UploadFile = File(...)) -> dict:
     from app.domain.importer import import_plugin_zip as _import
 
     try:
-        plugin = _import(await file.read())
+        plugin_id = await asyncio.to_thread(_import, await file.read())
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+    plugin = _sync_plugin_row(plugin_id)  # 注册必须回事件循环（见 helper 说明）
     manager.close()  # 释放全部实例：下次对话重建，挂载新插件工具
     return {"ok": True, "plugin": plugin}
 
@@ -699,9 +739,10 @@ async def import_plugin_git(body: GitImportBody) -> dict:
     from app.domain.importer import import_plugin_git as _import
 
     try:
-        plugin = _import(body.url.strip())
+        plugin_id = await asyncio.to_thread(_import, body.url.strip())
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+    plugin = _sync_plugin_row(plugin_id)
     manager.close()
     return {"ok": True, "plugin": plugin}
 
@@ -753,9 +794,10 @@ async def install_market_plugin(body: MarketInstallBody) -> dict:
     from app.infra.plugins.market import install as market_install
 
     try:
-        plugin = market_install(body.plugin_id.strip())
+        plugin_id = await asyncio.to_thread(market_install, body.plugin_id.strip())
     except (ValueError, FileNotFoundError) as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+    plugin = _sync_plugin_row(plugin_id)
     manager.close()
     return {"ok": True, "plugin": plugin}
 
@@ -791,8 +833,9 @@ async def put_plugin_settings(plugin_id: str, body: PluginSettingsBody) -> dict:
 @router.get("/plugins/tts/audio/{name}")
 async def tts_audio(name: str) -> FileResponse:
     """TTS 合成音频临时文件（uuid 白名单，防路径穿越）。"""
-    from app.config import settings as app_settings
     from fastapi.responses import FileResponse
+
+    from app.config import settings as app_settings
 
     if not _UUID_RE.match(name):
         raise HTTPException(status_code=400, detail="音频名不合法")
@@ -800,7 +843,6 @@ async def tts_audio(name: str) -> FileResponse:
     if not p.is_file():
         raise HTTPException(status_code=404, detail="音频不存在或已过期")
     return FileResponse(p, media_type="audio/mpeg", filename=f"{name}.mp3")
-
 
 
 # ---------- 技能（能力域：对齐 Octop 技能概念） ----------
@@ -830,7 +872,7 @@ async def import_skill_zip(file: UploadFile = File(...)) -> dict:
     from app.domain.importer import import_skill_zip as _import
 
     try:
-        skill = _import(await file.read())
+        skill = await asyncio.to_thread(_import, await file.read())
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     manager.close()  # 释放全部实例：下次对话重建，注入新技能
@@ -843,7 +885,7 @@ async def import_skill_git(body: GitImportBody) -> dict:
     from app.domain.importer import import_skill_git as _import
 
     try:
-        skill = _import(body.url.strip())
+        skill = await asyncio.to_thread(_import, body.url.strip())
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     manager.close()
@@ -899,16 +941,24 @@ class EnvSaveBody(BaseModel):
 
 @router.get("/settings/env")
 async def get_app_env() -> dict[str, str]:
-    """应用环境变量（技能/连接器 API key 等；存 {workspace}/env.json）。"""
-    return env_store.load()
+    """应用环境变量（技能/连接器 API key 等；存 {workspace}/env.json）。
+
+    **疑似密钥的键名做脱敏返回**（``sk-2***fa1e``）：这些值会渲染进控制台 DOM，
+    一旦有 XSS 或插件的同源脚本就能整包读走明文密钥。PUT 侧把含 ``***`` 的值
+    当作「保持原值」，所以前端原样回写不会覆盖真实 key（与 providers 同语义）。
+    """
+    return env_store.mask_all(env_store.load())
 
 
 @router.put("/settings/env")
 async def put_app_env(body: EnvSaveBody) -> dict[str, str]:
-    """整体保存环境变量：即时注入进程 env，并释放 agent 实例（下次对话生效）。"""
+    """整体保存环境变量：即时注入进程 env，并释放 agent 实例（下次对话生效）。
+
+    返回脱敏视图（不把明文密钥回给前端）。
+    """
     saved = env_store.save(body.values)
     manager.close()
-    return saved
+    return env_store.mask_all(saved)
 
 
 class ProviderBody(BaseModel):
@@ -981,7 +1031,7 @@ async def probe_provider_models(body: ProviderProbeBody) -> dict:
     from app.infra.providers_store import probe_models
 
     try:
-        models = probe_models(body.base_url, body.api_key)
+        models = await asyncio.to_thread(probe_models, body.base_url, body.api_key)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"models": models}
@@ -1051,9 +1101,10 @@ async def put_langfuse(body: LangfuseBody) -> dict:
 
     启用时要求凭据齐全；停用则仅存开关，保留凭据供下次启用复用。
     """
+    from octop_harness.observability.langfuse import LangfuseConfig
+
     from app.infra.harness.langfuse_store import load as load_langfuse_cfg
     from app.infra.harness.langfuse_store import save as save_langfuse_cfg
-    from octop_harness.observability.langfuse import LangfuseConfig
 
     existing = load_langfuse_cfg()
     host = (body.host or "").strip().rstrip("/")
@@ -1071,7 +1122,12 @@ async def put_langfuse(body: LangfuseBody) -> dict:
             detail="启用 Langfuse 需要 Secret Key（当前未配置且本次未填写）",
         )
     cfg = save_langfuse_cfg(
-        {"enabled": bool(body.enabled), "host": host, "public_key": public_key, "secret_key": secret}
+        {
+            "enabled": bool(body.enabled),
+            "host": host,
+            "public_key": public_key,
+            "secret_key": secret,
+        }
     )
     manager.set_langfuse(LangfuseConfig(**cfg))
     return {"ok": True, "enabled": bool(body.enabled)}
@@ -1080,8 +1136,9 @@ async def put_langfuse(body: LangfuseBody) -> dict:
 @router.post("/settings/langfuse/test")
 async def test_langfuse(body: LangfuseTestBody) -> dict:
     """用给定配置校验 Langfuse 凭据（auth_check；不落盘）。"""
-    from app.infra.harness.langfuse_store import load as load_langfuse_cfg
     from langfuse import Langfuse
+
+    from app.infra.harness.langfuse_store import load as load_langfuse_cfg
 
     host = (body.host or "").strip().rstrip("/")
     public_key = (body.public_key or "").strip()
@@ -1092,8 +1149,8 @@ async def test_langfuse(body: LangfuseTestBody) -> dict:
         raise HTTPException(status_code=400, detail="Host / Public Key / Secret Key 均为必填")
     try:
         client = Langfuse(host=host, public_key=public_key, secret_key=secret)
-        ok = bool(client.auth_check())
-        client.flush()
+        # auth_check 与 flush 都是同步网络调用 —— 一起放线程，别只搬一个
+        ok = bool(await asyncio.to_thread(_langfuse_probe, client))
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"连接失败：{exc}") from exc
     if not ok:
@@ -1105,24 +1162,24 @@ async def test_langfuse(body: LangfuseTestBody) -> dict:
 
 @router.get("/skillhub/search")
 async def skillhub_search(q: str = "", page: int = 1, page_size: int = 20) -> list[dict]:
-    return skillhub.search(q, page=page, page_size=page_size)
+    return await asyncio.to_thread(skillhub.search, q, page=page, page_size=page_size)
 
 
 @router.get("/skillhub/rankings")
 async def skillhub_rankings(
     ranking_type: str = "hot", page: int = 1, page_size: int = 20
 ) -> list[dict]:
-    return skillhub.rankings(ranking_type, page=page, page_size=page_size)
+    return await asyncio.to_thread(skillhub.rankings, ranking_type, page=page, page_size=page_size)
 
 
 @router.get("/skillhub/skillsets/{slug}")
 async def skillhub_skillset(slug: str) -> dict:
-    return skillhub.skillset_detail(slug)
+    return await asyncio.to_thread(skillhub.skillset_detail, slug)
 
 
 @router.get("/skillhub/skillsets")
 async def skillhub_skillset_list(q: str = "", page: int = 1, page_size: int = 20) -> list[dict]:
-    return skillhub.skillset_list(q, page=page, page_size=page_size)
+    return await asyncio.to_thread(skillhub.skillset_list, q, page=page, page_size=page_size)
 
 
 @router.post("/skills/install")
@@ -1138,7 +1195,7 @@ async def install_skill_from_hub(body: SkillHubInstallBody) -> dict:
     if target.exists():
         raise HTTPException(status_code=409, detail=f"技能已存在: {safe}")
     try:
-        files = skillhub.download(slug)
+        files = await asyncio.to_thread(skillhub.download, slug)
     except skillhub.SkillHubError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     target.mkdir(parents=True, exist_ok=True)
@@ -1173,7 +1230,9 @@ async def create_skill_package_from_hub(body: SkillHubInstallBody) -> dict:
     if not slug:
         raise HTTPException(status_code=400, detail="slug 不能为空")
     try:
-        return skill_package_service.install_from_skillhub(slug, name=body.name)
+        return await asyncio.to_thread(
+            skill_package_service.install_from_skillhub, slug, name=body.name
+        )
     except skillhub.SkillHubError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except ValueError as exc:
@@ -1262,11 +1321,38 @@ def _validate_connector_spec(body: ConnectorBody) -> dict:
     }
 
 
+def _sync_plugin_row(plugin_id: str) -> dict:
+    """在**事件循环线程**上把工作区插件注册进 PluginRegistry，并返回插件行。
+
+    为什么必须留在循环上：``PluginRegistry`` 是进程级单例，``load_all()`` 是
+    「先 clear 再逐个注册」。一旦把注册放进 ``asyncio.to_thread``（zip 解包 / git
+    clone 的落盘部分确实该 offload），并发对话就会在 clear→register 的窗口期读到
+    空注册表 —— 实测该轮会拿到 0 个插件工具且无任何日志。
+    所以分工是：**文件操作 offload，注册留在循环上**（sync 内部无 await，对其他
+    协程是原子的）。
+    """
+    plugin_service.sync()
+    row = next((p for p in plugin_service.list_all() if p["plugin_id"] == plugin_id), None)
+    if row is None:
+        raise HTTPException(status_code=400, detail=f"插件导入后注册失败: {plugin_id}")
+    return row
+
+
+def _langfuse_probe(client) -> bool:
+    """Langfuse 凭据校验 + 冲刷（同步网络调用，供 to_thread 调用）。"""
+    ok = bool(client.auth_check())
+    client.flush()
+    return ok
+
+
 def _persist_connectors() -> None:
-    """写 data_root/connectors.json（重启后由 main._sync_mcp_file 读回，json 为权威）。"""
-    p = settings.data_root / "connectors.json"
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(settings.mcp_servers, ensure_ascii=False, indent=2), encoding="utf-8")
+    """写 data_root/connectors.json（重启后由 main._sync_connectors_file 读回，json 权威）。
+
+    原子写 + 0600：连接器 spec 的 ``env`` 里常放 MCP 子进程的密钥。
+    """
+    from app.infra.secret_file import write_json
+
+    write_json(settings.data_root / "connectors.json", settings.mcp_servers)
 
 
 @router.get("/connectors")
@@ -1468,7 +1554,7 @@ async def import_avatar_model(file: UploadFile = File(...)) -> dict:
 
     data = await file.read()
     try:
-        return import_vrm(data, file.filename or "")
+        return await asyncio.to_thread(import_vrm, data, file.filename or "")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
@@ -1480,7 +1566,7 @@ async def import_avatar_animation(file: UploadFile = File(...)) -> dict:
 
     data = await file.read()
     try:
-        result = import_animation_fbx(data, file.filename or "")
+        result = await asyncio.to_thread(import_animation_fbx, data, file.filename or "")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except (FileNotFoundError, TimeoutError, RuntimeError) as e:

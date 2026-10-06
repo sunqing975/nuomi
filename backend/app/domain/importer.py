@@ -88,8 +88,15 @@ def _find_root(tmp_root: Path, marker: str) -> Path:
     raise ZipImportError(f"zip 内未找到 {marker}（插件需 plugin.yaml，技能需 SKILL.md）")
 
 
-def _import_plugin_from_root(root: Path) -> dict:
-    """从已就绪的本地根（zip 解压 / git clone）导入插件 → 工作区 plugins/<id>/。"""
+def _import_plugin_from_root(root: Path) -> str:
+    """从已就绪的本地根（zip 解压 / git clone）把插件**落盘**到 plugins/<id>/，返回 plugin_id。
+
+    **只做文件操作，不在这里注册**。``octop_harness`` 的 ``PluginRegistry`` 是进程级
+    单例，而 ``load_all()`` 是「先 clear 再逐个注册」；本函数会被 ``asyncio.to_thread``
+    调用（zip 解包 / git clone 是秒级阻塞），若同时在这里注册，并发对话就会在窗口期
+    读到**空注册表** → 该轮静默丢失全部插件工具（实测观察到 0）。
+    注册必须回到事件循环上做，见 ``transport/api.py`` 的 ``_sync_plugin_row``。
+    """
     manifest = yaml.safe_load((root / "plugin.yaml").read_text(encoding="utf-8")) or {}
     plugin_id = str(manifest.get("id") or "").strip()
     if not plugin_id or not _NAME_RE.match(plugin_id):
@@ -101,11 +108,7 @@ def _import_plugin_from_root(root: Path) -> dict:
     if target.exists():
         raise ZipImportError(f"插件已存在: {plugin_id}（请先删除再导入）")
     shutil.copytree(root, target, ignore=shutil.ignore_patterns(".git", ".gitkeep"))
-    rows = plugin_service.sync()
-    row = next((r for r in rows if r["plugin_id"] == plugin_id), None)
-    if row is None:
-        raise ZipImportError(f"插件导入后注册失败: {plugin_id}")
-    return row
+    return plugin_id
 
 
 def _import_skill_from_root(root: Path) -> dict:
@@ -121,8 +124,8 @@ def _import_skill_from_root(root: Path) -> dict:
     return skill_service._read_skill(target)
 
 
-def import_plugin_zip(data: bytes) -> dict:
-    """导入插件 zip → 工作区 plugins/<id>/，并同步注册到 DB。"""
+def import_plugin_zip(data: bytes) -> str:
+    """解压插件 zip 并落盘到 plugins/<id>/，返回 plugin_id（不做注册；调用方在事件循环上 sync）。"""
     tmp = _safe_extract(data)
     try:
         root = _find_root(tmp, "plugin.yaml")
@@ -180,8 +183,12 @@ def _clone_git(url: str) -> Path:
         raise
 
 
-def import_plugin_git(url: str) -> dict:
-    """从 git 仓库导入插件 → 工作区 plugins/<id>/。"""
+def import_plugin_git(url: str) -> str:
+    """克隆 git 仓库并落盘插件到 plugins/<id>/，返回 plugin_id。
+
+    不做注册（调用方在事件循环上 ``plugin_service.sync()``，理由见
+    ``_import_plugin_from_root`` 的 docstring）。
+    """
     repo = _clone_git(url)
     try:
         root = _find_root(repo, "plugin.yaml")

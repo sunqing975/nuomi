@@ -9,8 +9,10 @@
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from collections.abc import AsyncIterator
+from contextlib import aclosing
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -28,6 +30,8 @@ from app.infra.harness.chat import stream_chat, stream_openai_sse
 from app.transport.api import ensure_agent_runtime
 
 router = APIRouter(prefix="/api/v1", tags=["openai"])
+
+logger = logging.getLogger(__name__)
 
 
 def _system_prompt_for(agent: dict) -> str:
@@ -109,39 +113,57 @@ async def chat_completions(body: OpenAIChatBody, request: Request) -> StreamingR
             agent_config=agent.get("config_json"),
             on_turn_complete=_persist_turn,
         )
-        if body.stream:
-            async for frame in stream_openai_sse(
-                events,
-                model=agent["name"],
-                include_usage=include_usage,
-            ):
-                if await request.is_disconnected():
-                    break
-                yield frame
-            return
-        # 非流式：攒完整回答后一次性返回
-        parts: list[str] = []
-        async for event in events:
-            if event["type"] == "token":
-                parts.append(event["content"])
-            if await request.is_disconnected():
-                break
-        answer = "".join(parts).strip()
-        yield json.dumps(
-            {
-                "id": _chat_id(),
-                "object": "chat.completion",
-                "model": agent["name"],
-                "choices": [
-                    {
-                        "index": 0,
-                        "message": {"role": "assistant", "content": answer},
-                        "finish_reason": "stop",
-                    }
-                ],
-            },
-            ensure_ascii=False,
-        )
+        try:
+            if body.stream:
+                # aclosing：客户端断连 break 时关闭本层 SSE 生成器。注意机制——
+                # aclose 只把 GeneratorExit 抛进**本层**；这层没有 try/finally，
+                # 所以不会同步传播到上游。上游（LLM 流）是在引用释放后由 async
+                # generator 终结器异步关闭的（实测让出若干次事件循环后生效）。
+                # 效果成立，但别指望「break 完上游立刻关」。
+                frames = stream_openai_sse(
+                    events,
+                    model=agent["name"],
+                    include_usage=include_usage,
+                )
+                async with aclosing(frames) as stream:
+                    async for frame in stream:
+                        if await request.is_disconnected():
+                            break
+                        yield frame
+                return
+            # 非流式：攒完整回答后一次性返回
+            parts: list[str] = []
+            async with aclosing(events) as turn_events:
+                async for event in turn_events:
+                    if event["type"] == "token":
+                        parts.append(event["content"])
+                    if await request.is_disconnected():
+                        break
+            answer = "".join(parts).strip()
+            yield json.dumps(
+                {
+                    "id": _chat_id(),
+                    "object": "chat.completion",
+                    "model": agent["name"],
+                    "choices": [
+                        {
+                            "index": 0,
+                            "message": {"role": "assistant", "content": answer},
+                            "finish_reason": "stop",
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+            )
+        except Exception as exc:
+            # 中途失败必须给壳一个明确的终止信号：壳只解析 SSE，流被截断会让它永久等待
+            logger.exception("AI 数字人对话流异常（agent=%s）", agent["agent_id"])
+            message = str(exc) or exc.__class__.__name__
+            if body.stream:
+                yield f"data: {json.dumps({'error': {'message': message}}, ensure_ascii=False)}\n\n"
+                yield "data: [DONE]\n\n"
+            else:
+                yield json.dumps({"error": {"message": message}}, ensure_ascii=False)
 
     media = "text/event-stream" if body.stream else "application/json"
     return StreamingResponse(

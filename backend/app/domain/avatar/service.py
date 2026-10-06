@@ -51,7 +51,10 @@ def list_models() -> list[dict]:
                     "motions": [a["name"] for a in actions],
                     "expressions": list_vrm_expressions(vrm_file),
                     "expressions_have_data": vrm_has_expression_data(vrm_file),
-                    "actions": {a["name"]: {"label_zh": a["label_zh"], "has_vrma": a["has_vrma"]} for a in actions},
+                    "actions": {
+                        a["name"]: {"label_zh": a["label_zh"], "has_vrma": a["has_vrma"]}
+                        for a in actions
+                    },
                     "builtin": False,
                 }
             )
@@ -110,6 +113,9 @@ def switch_model(model_id: str) -> dict:
 # ==================== 方案B：共享 VRM 动态工具元数据 ====================
 
 VRM_AVATAR_PLUGIN_ID = "vrm-avatar"
+
+# 该插件必须齐备的文件（ensure_vrm_avatar_plugin 的存在性判据）
+_AVATAR_PLUGIN_FILES = ("plugin.yaml", "main.py", "instructions.md")
 
 # VRM 标准表情 preset 中文标签（动态 enum 的 label 来源；模型实际拥有的由 GLB 枚举）
 EXPRESSION_LABELS: dict[str, str] = {
@@ -185,6 +191,7 @@ def _expression_zh(name: str) -> str:
         return EXPRESSION_LABELS[name]
     std = _EXPRESSION_ALIASES.get(name, name.lower())
     return EXPRESSION_LABELS.get(std, name)
+
 
 # 预设动作中文标签（手写骨骼动画兜底；有同名 .vrma 时由 VRMA 覆盖播放）
 ACTION_LABELS: dict[str, str] = {
@@ -319,9 +326,20 @@ def ensure_vrm_avatar_plugin() -> None:
     """确保共享 VRM 插件目录存在（plugin.yaml + 空 main.py + instructions.md）。
 
     工具不在插件静态注册——由 PluginService.tools() 装配时按当前模型/动画动态构造。
+
+    **存在即跳过**：本函数每轮对话都会被 ``load_avatar_instructions()`` 调到（把身体
+    说明拼进 system_prompt）。原实现无条件重写三个文件 + 一次 DB 查询 —— 纯浪费磁盘 IO
+    （实测从「每轮 3 次 write_text」降到 0.3–0.6ms）。只在确有文件缺失时才补写。
+    注：壳只 watch ``config.json`` 与 ``assets/animations/``，**不 watch 插件目录**，
+    所以这里没有「误触发动作刷新」的问题，依据仅是 IO 浪费。
+    取舍：内容不会自动升级——我们改了 instructions 文案后，已有安装保持旧内容
+    （也因此不会覆盖用户手改的内容）。需要强制更新时删掉 instructions.md 即可。
     """
     plugin_dir = settings.workspace_path / "plugins" / VRM_AVATAR_PLUGIN_ID
     plugin_dir.mkdir(parents=True, exist_ok=True)
+    if all((plugin_dir / name).is_file() for name in _AVATAR_PLUGIN_FILES):
+        return
+
     yaml = (
         f"id: {VRM_AVATAR_PLUGIN_ID}\n"
         "version: 1.0.0\n"
@@ -435,7 +453,9 @@ def load_avatar_instructions() -> str:
         ).fetchone()
     if not row or not row["enabled"]:
         return ""
-    instructions_path = settings.workspace_path / "plugins" / VRM_AVATAR_PLUGIN_ID / "instructions.md"
+    instructions_path = (
+        settings.workspace_path / "plugins" / VRM_AVATAR_PLUGIN_ID / "instructions.md"
+    )
     if not instructions_path.is_file():
         return ""
     try:
@@ -445,6 +465,7 @@ def load_avatar_instructions() -> str:
 
 
 # ---------- AI 自动分析模型 → 生成 actions.json + instructions.md ----------
+
 
 def enrich_model(model_id: str) -> dict:
     """分析模型，返回清单（方案B：不再按模型生成插件）。
@@ -460,6 +481,8 @@ def enrich_model(model_id: str) -> dict:
     if model_path:
         return _enrich_vrm(model_id, model_path)
     return {"ok": False, "error": f"模型不存在或不是 VRM 3D 模型: {model_id}"}
+
+
 def _enrich_vrm(model_id: str, vrm_path: Path) -> dict:
     """VRM 模型：确保共享AI 数字人插件就绪，返回模型实际可用清单。
 
@@ -471,7 +494,9 @@ def _enrich_vrm(model_id: str, vrm_path: Path) -> dict:
     actions = [a["name"] for a in list_avatar_actions()]
     logger.info(
         "enrich_vrm %s done: %d expressions, %d actions",
-        model_id, len(expressions), len(actions),
+        model_id,
+        len(expressions),
+        len(actions),
     )
     return {
         "ok": True,
@@ -542,7 +567,12 @@ def import_animation_fbx(file_bytes: bytes, filename: str) -> dict:
         logger.error("fbx2vrma 失败: %s", result.stderr[-800:])
         raise RuntimeError(f"FBX 转换失败: {result.stderr[-300:] or '未知错误'}") from None
     logger.info("import_animation_fbx -> %s (%d bytes)", out_vrma, out_vrma.stat().st_size)
-    return {"ok": True, "action": anim_name, "path": str(out_vrma), "actions": list_avatar_actions()}
+    return {
+        "ok": True,
+        "action": anim_name,
+        "path": str(out_vrma),
+        "actions": list_avatar_actions(),
+    }
 
 
 def delete_avatar_animation(name: str) -> dict:

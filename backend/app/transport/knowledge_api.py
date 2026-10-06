@@ -48,9 +48,15 @@ def _raise(exc: Exception) -> None:
     raise exc
 
 
-def _guard(call):
+async def _guard(call):
+    """把同步的 knowledge_service 调用挪到线程池执行。
+
+    知识库服务全是同步 sqlite + 文件 IO（上传写盘、解析、分块、重命名/删库动目录），
+    在 async 端点里直接调 = 阻塞事件循环：传一个大 PDF 会让整个后端（含 /api/health
+    与所有对话 SSE）失去响应。``asyncio.to_thread`` 不改变调用写法，只换执行线程。
+    """
     try:
-        return call()
+        return await asyncio.to_thread(call)
     except sqlite3.IntegrityError:
         raise HTTPException(status_code=409, detail="同名知识库已存在") from None
     except Exception as exc:
@@ -63,7 +69,7 @@ def _guard(call):
 
 @router.get("/knowledge/capability")
 async def capability() -> dict:
-    payload = status_payload()
+    payload = await asyncio.to_thread(status_payload)
     payload["max_bases"] = MAX_BASES
     payload["ocr_enabled"] = False  # OCR 能力接入后置（M6 已拍板，待实现）
     payload["downloading"] = sorted(_download_tasks)
@@ -81,16 +87,16 @@ async def put_feature(body: FeatureBody) -> dict:
     cfg = load_config()
     next_model = (body.model or cfg.model).strip() if body.model is not None else cfg.model
     if next_model:
-        next_model = _guard(lambda: assert_catalog_model(next_model))
+        next_model = await _guard(lambda: assert_catalog_model(next_model))
     enabled = body.enabled if body.enabled is not None else cfg.enabled
     model_changed = bool(next_model) and next_model != cfg.model
-    if enabled and next_model and not is_model_downloaded(next_model):
+    if enabled and next_model and not await asyncio.to_thread(is_model_downloaded, next_model):
         raise HTTPException(status_code=400, detail=f"模型未下载，请先下载: {next_model}")
-    save_config({"config": {"enabled": enabled, "model": next_model}})
+    await asyncio.to_thread(save_config, {"config": {"enabled": enabled, "model": next_model}})
     if model_changed and enabled:
         # 模型已切换：全部文档重置为 pending 并调度重索引（异步）。
-        reindex_all_documents(next_model)
-    return status_payload()
+        await asyncio.to_thread(reindex_all_documents, next_model)
+    return await asyncio.to_thread(status_payload)
 
 
 class DownloadBody(BaseModel):
@@ -99,8 +105,8 @@ class DownloadBody(BaseModel):
 
 @router.post("/knowledge/onnx-download")
 async def onnx_download(body: DownloadBody) -> dict:
-    model = _guard(lambda: assert_catalog_model(body.model))
-    if is_model_downloaded(model):
+    model = await _guard(lambda: assert_catalog_model(body.model))
+    if await asyncio.to_thread(is_model_downloaded, model):
         return {"started": False, "reason": "already_downloaded", "model": model}
     if model in _download_tasks and not _download_tasks[model].done():
         return {"started": False, "reason": "already_running", "model": model}
@@ -124,8 +130,8 @@ async def onnx_download(body: DownloadBody) -> dict:
 
 @router.delete("/knowledge/onnx-model")
 async def onnx_delete(model: str = Query(...)) -> dict:
-    _guard(lambda: assert_catalog_model(model))
-    removed = delete_downloaded_model(model)
+    await _guard(lambda: assert_catalog_model(model))
+    removed = await asyncio.to_thread(delete_downloaded_model, model)
     return {"ok": True, "removed": removed}
 
 
@@ -141,12 +147,13 @@ class KnowledgeBaseBody(BaseModel):
 
 @router.get("/knowledge-bases")
 async def list_bases() -> list[dict]:
-    return [asdict(b) for b in knowledge_service.list_bases()]
+    bases = await asyncio.to_thread(knowledge_service.list_bases)
+    return [asdict(b) for b in bases]
 
 
 @router.post("/knowledge-bases")
 async def create_base(body: KnowledgeBaseBody) -> dict:
-    return _guard(
+    return await _guard(
         lambda: asdict(
             knowledge_service.create_base(
                 name=body.name,
@@ -160,7 +167,7 @@ async def create_base(body: KnowledgeBaseBody) -> dict:
 
 @router.get("/knowledge-bases/{kb_id}")
 async def get_base(kb_id: str) -> dict:
-    return asdict(_guard(lambda: knowledge_service.get_base(kb_id)))
+    return asdict(await _guard(lambda: knowledge_service.get_base(kb_id)))
 
 
 class KnowledgeBasePatchBody(BaseModel):
@@ -173,7 +180,7 @@ class KnowledgeBasePatchBody(BaseModel):
 
 @router.patch("/knowledge-bases/{kb_id}")
 async def patch_base(kb_id: str, body: KnowledgeBasePatchBody) -> dict:
-    return _guard(
+    return await _guard(
         lambda: asdict(
             knowledge_service.update_base(
                 kb_id,
@@ -189,7 +196,7 @@ async def patch_base(kb_id: str, body: KnowledgeBasePatchBody) -> dict:
 
 @router.delete("/knowledge-bases/{kb_id}")
 async def delete_base(kb_id: str) -> dict:
-    _guard(lambda: knowledge_service.delete_base(kb_id))
+    await _guard(lambda: knowledge_service.delete_base(kb_id))
     return {"ok": True}
 
 
@@ -198,10 +205,8 @@ async def delete_base(kb_id: str) -> dict:
 
 @router.get("/knowledge-bases/{kb_id}/documents")
 async def list_documents(kb_id: str, prefix: str | None = None) -> list[dict]:
-    return [
-        asdict(d)
-        for d in _guard(lambda: knowledge_service.list_documents(kb_id, prefix=prefix))
-    ]
+    docs = await _guard(lambda: knowledge_service.list_documents(kb_id, prefix=prefix))
+    return [asdict(d) for d in docs]
 
 
 class FolderBody(BaseModel):
@@ -210,7 +215,7 @@ class FolderBody(BaseModel):
 
 @router.post("/knowledge-bases/{kb_id}/folders")
 async def create_folder(kb_id: str, body: FolderBody) -> dict:
-    return asdict(_guard(lambda: knowledge_service.create_folder(kb_id, body.path)))
+    return asdict(await _guard(lambda: knowledge_service.create_folder(kb_id, body.path)))
 
 
 class TextDocBody(BaseModel):
@@ -222,7 +227,7 @@ class TextDocBody(BaseModel):
 
 @router.post("/knowledge-bases/{kb_id}/documents/text")
 async def create_text_document(kb_id: str, body: TextDocBody) -> dict:
-    row = _guard(
+    row = await _guard(
         lambda: knowledge_service.create_text_document(
             kb_id, name=body.name, format=body.format, content=body.content, path=body.path
         )
@@ -237,7 +242,7 @@ async def upload_document(kb_id: str, file: UploadFile = File(...)) -> dict:
     filename = (file.filename or "").strip()
     if not filename:
         raise HTTPException(status_code=400, detail="文件名不能为空")
-    row = _guard(
+    row = await _guard(
         lambda: knowledge_service.upload_document(
             kb_id,
             filename=filename,
@@ -251,12 +256,12 @@ async def upload_document(kb_id: str, file: UploadFile = File(...)) -> dict:
 
 @router.get("/knowledge-bases/{kb_id}/documents/{doc_id}/preview")
 async def preview_document(kb_id: str, doc_id: str) -> dict:
-    return _guard(lambda: knowledge_service.preview_document(kb_id, doc_id))
+    return await _guard(lambda: knowledge_service.preview_document(kb_id, doc_id))
 
 
 @router.get("/knowledge-bases/{kb_id}/documents/{doc_id}/file")
 async def document_file(kb_id: str, doc_id: str) -> FileResponse:
-    path, filename, content_type = _guard(
+    path, filename, content_type = await _guard(
         lambda: knowledge_service.resolve_document_file(kb_id, doc_id)
     )
     return FileResponse(path, filename=filename, media_type=content_type)
@@ -268,12 +273,12 @@ class ContentBody(BaseModel):
 
 @router.get("/knowledge-bases/{kb_id}/documents/{doc_id}/content")
 async def read_content(kb_id: str, doc_id: str) -> dict:
-    return _guard(lambda: knowledge_service.read_text_document(kb_id, doc_id))
+    return await _guard(lambda: knowledge_service.read_text_document(kb_id, doc_id))
 
 
 @router.put("/knowledge-bases/{kb_id}/documents/{doc_id}/content")
 async def write_content(kb_id: str, doc_id: str, body: ContentBody) -> dict:
-    row = _guard(
+    row = await _guard(
         lambda: knowledge_service.update_text_document(kb_id, doc_id, content=body.content)
     )
     enqueue_index_document(kb_id, row.id)
@@ -287,18 +292,20 @@ class RenameBody(BaseModel):
 @router.post("/knowledge-bases/{kb_id}/documents/{doc_id}/rename")
 async def rename_document(kb_id: str, doc_id: str, body: RenameBody) -> dict:
     return asdict(
-        _guard(lambda: knowledge_service.rename_document(kb_id, doc_id, new_name=body.new_name))
+        await _guard(
+            lambda: knowledge_service.rename_document(kb_id, doc_id, new_name=body.new_name)
+        )
     )
 
 
 @router.post("/knowledge-bases/{kb_id}/documents/{doc_id}/reindex")
 async def reindex_document(kb_id: str, doc_id: str) -> dict:
-    row = _guard(lambda: knowledge_service.reindex_document(kb_id, doc_id))
+    row = await _guard(lambda: knowledge_service.reindex_document(kb_id, doc_id))
     enqueue_index_document(kb_id, row.id)
     return asdict(row)
 
 
 @router.delete("/knowledge-bases/{kb_id}/documents/{doc_id}")
 async def delete_document(kb_id: str, doc_id: str) -> dict:
-    _guard(lambda: knowledge_service.delete_document(kb_id, doc_id))
+    await _guard(lambda: knowledge_service.delete_document(kb_id, doc_id))
     return {"ok": True}

@@ -11,8 +11,9 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
-import yaml
 from pathlib import Path
+
+import yaml
 
 from app.config import settings
 from app.domain.plugins.service import plugin_service
@@ -47,15 +48,18 @@ def list_market() -> dict:
     return {"name": _registry().get("name", ""), "plugins": out}
 
 
-def install(plugin_id: str) -> dict:
-    """从内置市场安装插件 zip 到工作区 plugins/。"""
+def install(plugin_id: str) -> str:
+    """从内置市场把插件 zip **落盘**到工作区 plugins/，返回 plugin_id。
+
+    不做注册：``PluginRegistry`` 是进程级单例，注册必须回到事件循环做
+    （见 ``domain/importer._import_plugin_from_root`` 的说明）。
+    """
     from app.domain.importer import import_plugin_zip
 
     pkg = MARKET_DIR / f"{plugin_id}.zip"
     if not pkg.is_file():
         raise ValueError(f"市场没有该插件包：{plugin_id}")
-    plugin = import_plugin_zip(pkg.read_bytes())
-    return plugin
+    return import_plugin_zip(pkg.read_bytes())
 
 
 def plugin_dir(plugin_id: str) -> Path:
@@ -72,7 +76,11 @@ def settings_schema(plugin_id: str) -> list[dict]:
     fields = manifest.get("settings") or []
     if not isinstance(fields, list):
         return []
-    return [f for f in fields if isinstance(f, dict) and f.get("key") and f.get("type") in _SETTING_TYPES]
+    return [
+        f
+        for f in fields
+        if isinstance(f, dict) and f.get("key") and f.get("type") in _SETTING_TYPES
+    ]
 
 
 def _mask(value: str) -> str:
@@ -99,7 +107,9 @@ def get_config(plugin_id: str) -> dict:
             out[key] = _mask(str(saved[key])) if has else ""
             out[f"{key}__set"] = has
         else:
-            out[key] = saved[key] if has else f.get("default", "" if f["type"] != "boolean" else False)
+            out[key] = (
+                saved[key] if has else f.get("default", "" if f["type"] != "boolean" else False)
+            )
     out["__schema"] = settings_schema(plugin_id)
     out["__keys"] = [f["key"] for f in settings_schema(plugin_id)]
     return out
@@ -129,7 +139,9 @@ def save_config(plugin_id: str, values: dict) -> dict:
                 merged[key] = str(old_raw.get(key, ""))
             else:
                 merged[key] = s
-    (d / "config.json").write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
+    (d / "config.json").write_text(
+        json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     return get_config(plugin_id)
 
 
@@ -143,7 +155,9 @@ def load_module(plugin_id: str):
     module_name = f"market_plugin_{safe_id}"
     if module_name in sys.modules:
         return sys.modules[module_name]
-    spec = importlib.util.spec_from_file_location(module_name, entry, submodule_search_locations=[str(d)])
+    spec = importlib.util.spec_from_file_location(
+        module_name, entry, submodule_search_locations=[str(d)]
+    )
     if spec is None or spec.loader is None:
         raise ImportError(f"无法加载插件入口：{plugin_id}")
     module = importlib.util.module_from_spec(spec)

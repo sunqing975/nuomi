@@ -9,6 +9,7 @@ pending → processing → ready / failed。启动时 ``resume_pending_index_job
 from __future__ import annotations
 
 import asyncio
+import logging
 
 from app.infra.knowledge.chunk import chunk_text
 from app.infra.knowledge.embed import embed_knowledge_texts
@@ -18,8 +19,16 @@ from app.infra.knowledge.params import get_advanced_settings
 from app.infra.knowledge.parse import parse_document
 from app.infra.knowledge.repo import KnowledgeRepo
 
+logger = logging.getLogger(__name__)
+
 INDEX_CONCURRENCY = 2
 _index_semaphore: asyncio.Semaphore | None = None
+
+# 在飞任务强引用（防被 GC 提前回收）+ 异常消费。
+# asyncio 只持弱引用：不保存返回值的话，任务可能被 GC 掉 → 文档永远卡 pending；
+# 而没人 await 的任务异常只会打印一句 "Task exception was never retrieved"，
+# 业务侧（文档状态）看起来却是"什么都没发生"。
+_pending_tasks: set[asyncio.Task[None]] = set()
 
 
 def _get_index_semaphore() -> asyncio.Semaphore:
@@ -58,7 +67,12 @@ def process_document(kb_id: str, doc_id: str) -> None:
 
 
 def enqueue_index_document(kb_id: str, doc_id: str) -> asyncio.Task[None]:
-    """把 CPU/IO 密集的索引调度到事件循环之外。"""
+    """把 CPU/IO 密集的索引调度到事件循环之外。
+
+    任务引用存进 ``_pending_tasks``（asyncio 只持弱引用，否则可能被 GC），
+    完成后消费异常并记日志——``process_document`` 已把失败写进文档状态，
+    这里只保证「异常不静默」且「不出现 Task exception was never retrieved」。
+    """
     loop = asyncio.get_running_loop()
     sem = _get_index_semaphore()
 
@@ -66,7 +80,19 @@ def enqueue_index_document(kb_id: str, doc_id: str) -> asyncio.Task[None]:
         async with sem:
             await loop.run_in_executor(None, process_document, kb_id, doc_id)
 
-    return asyncio.create_task(_run())
+    task = asyncio.create_task(_run())
+    _pending_tasks.add(task)
+
+    def _done(t: asyncio.Task[None]) -> None:
+        _pending_tasks.discard(t)
+        if t.cancelled():
+            return
+        exc = t.exception()
+        if exc is not None:
+            logger.warning("文档索引任务失败（文档状态已置 failed）: %s", exc)
+
+    task.add_done_callback(_done)
+    return task
 
 
 def reindex_all_documents(embedding_model: str) -> None:
