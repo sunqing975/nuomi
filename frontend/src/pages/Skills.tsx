@@ -216,31 +216,32 @@ export default function SkillsPage() {
     <PageLayout
       title="技能"
       description="技能 / 技能包管理：可导入本地包，安装市场的技能请到「技能市场」页"
+      extra={
+        <>
+          <Button type="primary" icon={<ShoppingOutlined />} onClick={() => { window.location.hash = '#skillMarket'; }}>技能市场</Button>
+          <Dropdown menu={{
+            items: [
+              { key: 'git', label: '从 Git 仓库导入' },
+              { key: 'zip', label: '导入技能 zip 文件' },
+            ],
+            onClick: ({ key }: { key: string }) => {
+              if (key === 'git') setGitOpen(true);
+              else fileRef.current?.click();
+            },
+          }}>
+            <Button icon={<CloudUploadOutlined />}>导入<DownOutlined /></Button>
+          </Dropdown>
+          <input
+            ref={fileRef} type="file" accept=".zip" style={{ display: 'none' }}
+            onChange={e => {
+              const f = e.target.files?.[0];
+              if (f) importSkillZip(f);
+              e.target.value = '';
+            }}
+          />
+        </>
+      }
     >
-      <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-        <div style={{ flex: 1 }} />
-        <Button type="primary" icon={<ShoppingOutlined />} onClick={() => { window.location.hash = '#skillMarket'; }}>技能市场</Button>
-        <Dropdown menu={{
-          items: [
-            { key: 'git', label: '从 Git 仓库导入' },
-            { key: 'zip', label: '导入技能 zip 文件' },
-          ],
-          onClick: ({ key }: { key: string }) => {
-            if (key === 'git') setGitOpen(true);
-            else fileRef.current?.click();
-          },
-        }}>
-          <Button icon={<CloudUploadOutlined />}>导入<DownOutlined /></Button>
-        </Dropdown>
-        <input
-          ref={fileRef} type="file" accept=".zip" style={{ display: 'none' }}
-          onChange={e => {
-            const f = e.target.files?.[0];
-            if (f) importSkillZip(f);
-            e.target.value = '';
-          }}
-        />
-      </div>
       <Modal
         title="从 Git 仓库导入技能"
         open={gitOpen}
