@@ -4,6 +4,8 @@ import {
 } from 'antd';
 import { PlusOutlined, RobotOutlined } from '@ant-design/icons';
 import { get, post, patch, del, type Agent } from '../api';
+import EmptyState from '../components/EmptyState';
+import PageLayout from '../components/PageLayout';
 
 const { TextArea } = Input;
 
@@ -55,13 +57,15 @@ export default function ExpertsPage({ onBackend }: { onBackend?: (ok: boolean) =
   };
 
   return (
-    <>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+    <PageLayout
+      title="专家"
+      description="管理专家角色、人设与实例（记忆按会话隔离，对话侧按专家选择）"
+      extra={
         <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); form.resetFields(); setCreateOpen(true); }}>
           新建专家
         </Button>
-      </div>
-
+      }
+    >
       <Row gutter={[14, 14]}>
         {agents.map(a => (
           <Col xs={24} sm={12} lg={8} xl={6} key={a.agent_id}>
@@ -98,9 +102,7 @@ export default function ExpertsPage({ onBackend }: { onBackend?: (ok: boolean) =
         ))}
       </Row>
       {!loading && agents.length === 0 && (
-        <div style={{ textAlign: 'center', color: 'var(--label-3)', padding: 48 }}>
-          还没有专家，点「新建专家」创建第一个
-        </div>
+        <EmptyState description="还没有专家，点「新建专家」创建第一个" style={{ padding: '32px 0' }} />
       )}
 
       {/* 创建 / 编辑 */}
@@ -121,6 +123,6 @@ export default function ExpertsPage({ onBackend }: { onBackend?: (ok: boolean) =
           <Form.Item name="color" label="主题色"><Input placeholder="#f59e0b" /></Form.Item>
         </Form>
       </Modal>
-    </>
+    </PageLayout>
   );
 }

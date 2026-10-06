@@ -7,6 +7,7 @@ import { CloudUploadOutlined, DeleteOutlined, DownloadOutlined, GithubOutlined, 
 import {
   del, get, patch, post, upload, type Skill, type SkillHubItem, type SkillPackage,
 } from '../api';
+import PageLayout from '../components/PageLayout';
 
 export default function SkillsPage() {
   // —— 已安装 ——
@@ -338,7 +339,10 @@ export default function SkillsPage() {
   };
 
   return (
-    <>
+    <PageLayout
+      title="技能"
+      description="技能 / 技能包管理：可导入本地包，或从 SkillHub 市场安装"
+    >
       <Tabs
         items={[
           {
@@ -447,6 +451,6 @@ export default function SkillsPage() {
         技能包目录：<Typography.Text code>工作区/skill_packages/&lt;包名&gt;/skills/&lt;技能名&gt;/</Typography.Text>。
         内置技能（apple-notes / plan / 提醒 等）随 harness 注入专家。
       </Typography.Paragraph>
-    </>
+    </PageLayout>
   );
 }

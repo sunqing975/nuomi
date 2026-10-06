@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Card, Col, Row, Statistic, Typography } from 'antd';
 import { get, type WorkspaceOverview } from '../api';
+import PageLayout from '../components/PageLayout';
 
 const LABELS: Record<string, string> = {
   experts: '专家', plugins: '插件', skills: '技能', connectors: '连接器',
@@ -18,7 +19,10 @@ export default function StoragePage() {
   if (!ws) return null;
 
   return (
-    <>
+    <PageLayout
+      title="存储"
+      description="工作区与数据根路径总览，及表现层接入协议说明"
+    >
       <Row gutter={[14, 14]} style={{ marginBottom: 18 }}>
         {Object.entries(ws.counts).map(([k, v]) => (
           <Col xs={12} sm={6} key={k}>
@@ -53,6 +57,6 @@ export default function StoragePage() {
           协议见 <Typography.Text code>docs/avatar-protocol.md</Typography.Text>。表现层可插拔，后端与协议不变。
         </Typography.Paragraph>
       </Card>
-    </>
+    </PageLayout>
   );
 }

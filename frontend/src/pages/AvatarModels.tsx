@@ -6,6 +6,7 @@ import {
   CheckCircleFilled, DeleteOutlined, LoadingOutlined, PlayCircleOutlined, SmileOutlined, UploadOutlined,
 } from '@ant-design/icons';
 import { del, get, post, put, upload, type AvatarModel, type AvatarModelsResponse } from '../api';
+import PageLayout from '../components/PageLayout';
 
 export default function AvatarModelsPage() {
   const [models, setModels] = useState<AvatarModel[]>([]);
@@ -128,24 +129,27 @@ export default function AvatarModelsPage() {
   };
 
   return (
-    <>
+    <PageLayout
+      title="AI 数字人"
+      description="数字人模型资产（VRM）、动作表情与开关：对AI 数字人说话即可驱动"
+      extra={
+        <Switch
+          checked={avatarEnabled}
+          loading={toggling}
+          onChange={togglePet}
+          checkedChildren="开"
+          unCheckedChildren="关"
+        />
+      }
+    >
       <Card
         size="small"
         style={{ marginBottom: 16 }}
-        title={<b style={{ fontSize: 14 }}>AI 数字人开关</b>}
-        extra={
-          <Switch
-            checked={avatarEnabled}
-            loading={toggling}
-            onChange={togglePet}
-            checkedChildren="开"
-            unCheckedChildren="关"
-          />
-        }
+        title="使用说明"
       >
         <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 0 }}>
           {avatarEnabled
-            ? 'AI 数字人窗口显示中。关闭将销毁AI 数字人窗口（释放资源）并停用AI 数字人动作/表情插件（vrm-avatar），后端对话能力不受影响，可随时重新开启。'
+            ? 'AI 数字人窗口显示中（开关在页面右上角）。关闭将销毁AI 数字人窗口（释放资源）并停用AI 数字人动作/表情插件（vrm-avatar），后端对话能力不受影响，可随时重新开启。'
             : 'AI 数字人窗口已完全停止（释放资源），AI 数字人动作/表情插件已停用（LLM 不再调用动作工具）。开启后恢复AI 数字人插件。'}
         </Typography.Paragraph>
       </Card>
@@ -331,6 +335,6 @@ export default function AvatarModelsPage() {
           );
         })}
       </Row>
-    </>
+    </PageLayout>
   );
 }

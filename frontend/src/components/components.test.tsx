@@ -11,6 +11,7 @@ import EmptyState from './EmptyState';
 import EntityGrid from './EntityGrid';
 import ErrorState from './ErrorState';
 import PageCard from './PageCard';
+import PageLayout from './PageLayout';
 import SectionToolbar from './SectionToolbar';
 
 // vitest 未开 globals：@testing-library/react 的自动 cleanup 不生效，需手动注册
@@ -113,5 +114,36 @@ describe('EntityGrid', () => {
       />,
     );
     expect(screen.getByText('去导入')).toBeTruthy();
+  });
+});
+
+describe('PageLayout', () => {
+  it('渲染标题 + 描述 + extra + 内容', () => {
+    render(
+      <PageLayout title="专家" description="管理专家实例" extra={<button>新建</button>}>
+        内容区
+      </PageLayout>,
+    );
+    expect(screen.getByText('专家')).toBeTruthy();
+    expect(screen.getByText('管理专家实例')).toBeTruthy();
+    expect(screen.getByText('新建')).toBeTruthy();
+    expect(screen.getByText('内容区')).toBeTruthy();
+  });
+
+  it('默认内容区 maxWidth 1080 居中（wide 时全宽）', () => {
+    const normal = render(<PageLayout title="t">内容</PageLayout>).container.firstElementChild as HTMLElement;
+    expect(normal.style.maxWidth).toBe('1080px');
+    expect(normal.style.margin).toContain('auto');
+
+    cleanup();
+    const wide = render(<PageLayout title="t" wide>内容</PageLayout>).container.firstElementChild as HTMLElement;
+    expect(wide.style.maxWidth).toBe('none');
+  });
+
+  it('无 description / extra 时不渲染对应区块', () => {
+    render(<PageLayout title="标题">内容</PageLayout>);
+    expect(screen.getByText('标题')).toBeTruthy();
+    expect(screen.getByText('内容')).toBeTruthy();
+    expect(screen.queryByRole('button')).toBeNull();
   });
 });

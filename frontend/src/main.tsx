@@ -18,7 +18,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         algorithm: theme.defaultAlgorithm,
         // 值来自 src/theme.ts（与 styles.css 的 CSS 变量同源，theme.test.ts 锁一致性）
         token: {
-          colorPrimary: APP_TOKENS.accent,
+          colorPrimary: APP_TOKENS.primary,
+          colorLink: APP_TOKENS.link,
           colorBgLayout: APP_TOKENS.bg,
           colorBgContainer: APP_TOKENS.surface,
           colorText: APP_TOKENS.label1,

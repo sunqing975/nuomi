@@ -5,6 +5,7 @@ import {
 } from 'antd';
 import { DeleteOutlined, EditOutlined, MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import { del, get, post, put, type ConnectorServer } from '../api';
+import PageLayout from '../components/PageLayout';
 
 interface EnvItem {
   key?: string;
@@ -149,10 +150,13 @@ export default function McpPage() {
   };
 
   return (
-    <>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+    <PageLayout
+      title="连接器"
+      description="接入 MCP 服务器：工具以「{连接器名}_」前缀自动对专家可用，增删改后下次对话生效"
+      extra={
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增连接器</Button>
-      </div>
+      }
+    >
       <List
         grid={{ gutter: 12, xs: 1, sm: 2, md: 3, lg: 3, xl: 4, xxl: 5 }}
           className="nuomi-grid"
@@ -251,6 +255,6 @@ export default function McpPage() {
           </Form.Item>
         </Form>
       </Modal>
-    </>
+    </PageLayout>
   );
 }

@@ -28,6 +28,11 @@ export interface ThemeTokens {
   'accent': string;
   'accent-soft': string;
   'accent-text': string;
+  /**
+   * 交互主色（按钮/链接/聚焦）：琥珀深档，白字对比度达标。
+   * 与 `accent`（品牌亮档，logo/选中态/高亮点缀）同系：亮档做点缀、深档做交互。
+   */
+  'primary': string;
   'link': string;
   'ok': string;
   'warn': string;
@@ -57,7 +62,8 @@ export const THEME_TOKENS: ThemeTokens = {
   accent: '#f59e0b',
   'accent-soft': 'rgba(245, 158, 11, 0.18)',
   'accent-text': '#874d00',
-  link: '#1677ff',
+  primary: '#d97706',
+  link: '#d97706',
   ok: '#52c41a',
   warn: '#faad14',
   danger: '#ef4444',
@@ -124,6 +130,8 @@ export function applyCssTokens(mode: ThemeMode = 'light', root?: HTMLElement): v
 /** antd 主题用得到的少量常量（antd 的算法要参与计算，不能接受 var() 字符串）。 */
 export const APP_TOKENS = {
   accent: THEME_TOKENS.accent,
+  primary: THEME_TOKENS.primary,
+  link: THEME_TOKENS.link,
   bg: THEME_TOKENS.bg,
   surface: THEME_TOKENS.surface,
   label1: THEME_TOKENS['label-1'],

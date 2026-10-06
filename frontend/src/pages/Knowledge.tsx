@@ -10,6 +10,7 @@ import {
   knowledgeApi, type KnowledgeBase, type KnowledgeCapability,
 } from '../api';
 import KnowledgeModelsModal from './KnowledgeModelsModal';
+import PageLayout from '../components/PageLayout';
 
 /** 知识库列表页：/console/#knowledge（点卡片进入独立详情页 #knowledge/detail/<id>） */
 export default function KnowledgePage() {
@@ -90,15 +91,21 @@ export default function KnowledgePage() {
   }, [capability]);
 
   return (
-    <div style={{ maxWidth: 1080 }}>
+    <PageLayout
+      title="知识库"
+      description="文档检索知识库：上传文件 / 新建文本后，对话侧按库注入检索"
+      extra={
+        <>
+          <Button icon={<SettingOutlined />} onClick={() => setModelsOpen(true)}>管理模型…</Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>新建知识库</Button>
+        </>
+      }
+    >
       {/* ① 能力状态条 */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', marginBottom: 16 }}>
         <Typography.Text strong>嵌入服务</Typography.Text>
         <Tag color={status.color}>{status.text}</Tag>
         {capability?.downloading.length ? <Tag color="blue">下载中：{capability.downloading.join(', ')}</Tag> : null}
-        <span style={{ flex: 1 }} />
-        <Button icon={<SettingOutlined />} onClick={() => setModelsOpen(true)}>管理模型…</Button>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>新建知识库</Button>
       </div>
 
       {/* ② 知识库卡片区 */}
@@ -184,6 +191,6 @@ export default function KnowledgePage() {
       <Modal title="重命名知识库" open={renameOpen} onCancel={() => setRenameOpen(false)} onOk={saveRename} okText="保存">
         <Input value={renameName} onChange={e => setRenameName(e.target.value)} />
       </Modal>
-    </div>
+    </PageLayout>
   );
 }

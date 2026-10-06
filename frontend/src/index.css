@@ -50,7 +50,7 @@ body {
   margin: 0.5em 0; padding: 2px 12px; border-left: 3px solid rgba(0,0,0,0.15);
   color: #6b7280;
 }
-.md-body a { color: #1677ff; text-decoration: none; }
+.md-body a { color: var(--link); text-decoration: none; }
 .md-body a:hover { text-decoration: underline; }
 .md-body table { border-collapse: collapse; margin: 0.5em 0; max-width: 100%; }
 .md-body th, .md-body td { border: 1px solid rgba(0,0,0,0.12); padding: 4px 8px; font-size: 13px; }

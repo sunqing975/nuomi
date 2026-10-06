@@ -6,6 +6,7 @@ import {
 import { CloudUploadOutlined, DeleteOutlined, GithubOutlined, ReloadOutlined, ShopOutlined } from '@ant-design/icons';
 import { del, get, post, patch, upload, type Plugin } from '../api';
 import MarketPage from './Market';
+import PageLayout from '../components/PageLayout';
 
 const AVATAR_COLORS = ['#f59e0b', '#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
 
@@ -120,22 +121,27 @@ export default function PluginsPage() {
   };
 
   return (
-    <>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 16 }}>
-        <Button type="primary" icon={<ShopOutlined />} onClick={() => setMarketOpen(true)}>插件市场</Button>
-        <Button icon={<GithubOutlined />} onClick={() => setGitOpen(true)}>从 Git 导入</Button>
-        <Upload
-          accept=".zip"
-          showUploadList={false}
-          beforeUpload={(file) => {
-            importZip(file);
-            return false; // 手动上传，阻止 antd 自动提交
-          }}
-        >
-          <Button icon={<CloudUploadOutlined />}>导入 zip</Button>
-        </Upload>
-        <Button icon={<ReloadOutlined />} onClick={sync} loading={loading}>重新扫描</Button>
-      </div>
+    <PageLayout
+      title="插件"
+      description="已安装插件的管理：全局启停对所有专家生效，工具由 LLM 按需调用"
+      extra={
+        <>
+          <Button type="primary" icon={<ShopOutlined />} onClick={() => setMarketOpen(true)}>插件市场</Button>
+          <Button icon={<GithubOutlined />} onClick={() => setGitOpen(true)}>从 Git 导入</Button>
+          <Upload
+            accept=".zip"
+            showUploadList={false}
+            beforeUpload={(file) => {
+              importZip(file);
+              return false; // 手动上传，阻止 antd 自动提交
+            }}
+          >
+            <Button icon={<CloudUploadOutlined />}>导入 zip</Button>
+          </Upload>
+          <Button icon={<ReloadOutlined />} onClick={sync} loading={loading}>重新扫描</Button>
+        </>
+      }
+    >
       <Modal
         title="插件市场"
         open={marketOpen}
@@ -176,6 +182,6 @@ export default function PluginsPage() {
         插件目录：<Typography.Text code>工作区/plugins/</Typography.Text>（plugin.yaml + main.py，ctx.tool 注册工具）。
         全局启停对所有专家生效；专家级绑定在「专家」页配置。
       </Typography.Paragraph>
-    </>
+    </PageLayout>
   );
 }

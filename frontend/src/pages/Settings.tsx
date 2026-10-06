@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import {
-  Button, Card, Checkbox, Form, Input, Modal, Select, Space, Switch, Table, Tabs, Tag, Typography, message,
+  Button, Checkbox, Form, Input, Modal, Select, Space, Switch, Table, Tabs, Tag, Typography, message,
 } from 'antd';
 import {
   PlusOutlined, SaveOutlined, DeleteOutlined, EyeOutlined, EyeInvisibleOutlined, ApiOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons';
 import { get, post, put, type Provider, type Plugin } from '../api';
+import PageLayout from '../components/PageLayout';
 
 interface EnvRow {
   key: string;
@@ -581,8 +582,11 @@ export default function SettingsPage() {
   ];
 
   return (
-    <Card size="small" title={<b style={{ fontSize: 14 }}>设置</b>}>
+    <PageLayout
+      title="设置"
+      description="大模型 Provider、环境变量、遥测（Langfuse）与插件自定义配置"
+    >
       <Tabs defaultActiveKey="models" items={items} />
-    </Card>
+    </PageLayout>
   );
 }
