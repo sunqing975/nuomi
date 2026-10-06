@@ -516,3 +516,11 @@ SSE 事件协议（当前完整）：`token` / `reasoning` / `tool_call_chunk`�
 - **修复（大厂模式）**：主标题唯一化给 PageLayout；Header 左侧改为面包屑「能力 / 专家」（chat 顶级显示「对话」，知识库详情显示「能力 / 知识库 / 详情」），右侧「后端在线」Tag 保留
 - **清理**：NavLeaf.title 字段废弃（原顶栏标题专用），9 个 NAV 条目 title 值全删；面包屑由 BREADCRUMB 常量（NAV 展开时拼 group.label / label）驱动
 - **验证**：前端 tsc/vitest 60/build 全绿、壳重启「糯米启动完成」
+
+## 卡片体系统一 + 插件市场升级页面（2026-10-06，commit 7ad2a8f）
+
+- **问题**：用户反馈专家/插件/知识库卡片设计逻辑不一致（插件卡右上英文 kind tag 无样式、plugin_id code 裸奔、「全局启停」label；插件市场是 880 Modal 弹窗 vs 技能页 Tabs；市场卡 title 区堆砌三 tag + extra 状态；知识库顶部「就绪 · BAAI/bge-small-zh-v1.5」技术模型名）
+- **统一基准（四区模型）**：身份区（Avatar/icon + 名称 + 属性行浅色元信息）→ 描述区（ellipsis）→ 操作区（底部右对齐 Switch 启用/停用 + 删除）；右上角不挂 absolute tag；技术标识（plugin_id/slug/模型名）不裸奔
+- **落地**：插件/技能卡片全部向专家卡收敛；插件市场 Modal→页内 Tabs「已安装/插件市场」（与技能页同构，面包屑「能力/插件」不变）；市场卡重构去 author/设置长句；技能市场去外层包裹 Card；知识库状态条去模型名（异常状态如依赖缺失/未下载保留）
+- **kind 中文化**：tool→工具插件、model→模型插件（产品约定不暴露英文术语）
+- **验证**：前端 tsc/vitest 60/build 全绿、壳重启「糯米启动完成」
