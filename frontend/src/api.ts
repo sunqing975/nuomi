@@ -161,12 +161,6 @@ export interface ConnectorServer {
   env?: Record<string, string>;
 }
 
-export interface WorkspaceOverview {
-  workspace: string;
-  data_root: string;
-  counts: Record<string, number>;
-}
-
 export interface AvatarModel {
   id: string;
   path: string;

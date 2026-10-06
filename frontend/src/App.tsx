@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { Layout, Menu, Space, Tag, Typography } from 'antd';
 import type { ReactNode } from 'react';
 import {
-  RobotOutlined, ApiOutlined, ReadOutlined, GlobalOutlined, DatabaseOutlined,
+  RobotOutlined, ApiOutlined, ReadOutlined, GlobalOutlined,
   SmileOutlined, MessageOutlined, SettingOutlined, BookOutlined,
   ShopOutlined, ShoppingOutlined,
 } from '@ant-design/icons';
@@ -13,7 +13,6 @@ import PluginMarketPage from './pages/PluginMarketPage';
 import SkillsPage from './pages/Skills';
 import SkillMarketPage from './pages/SkillMarketPage';
 import ConnectorsPage from './pages/Connectors';
-import StoragePage from './pages/Storage';
 import AvatarModelsPage from './pages/AvatarModels';
 import SettingsPage from './pages/Settings';
 import KnowledgePage from './pages/Knowledge';
@@ -50,7 +49,6 @@ const NAV: NavEntry[] = [
     children: [
       { key: 'avatarModels', icon: <SmileOutlined />, label: 'AI 数字人' },
       { key: 'settings', icon: <SettingOutlined />, label: '设置' },
-      { key: 'storage', icon: <DatabaseOutlined />, label: '存储' },
     ],
   },
 ];
@@ -194,7 +192,6 @@ export default function App() {
           {page === 'knowledge' && (kbDetailId ? <KnowledgeDetailPage kbId={kbDetailId} /> : <KnowledgePage />)}
           {page === 'avatarModels' && <AvatarModelsPage />}
           {page === 'settings' && <SettingsPage />}
-          {page === 'storage' && <StoragePage />}
         </Content>
       </Layout>
     </Layout>

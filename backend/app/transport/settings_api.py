@@ -1,4 +1,4 @@
-"""设置/系统路由：环境变量 + LLM Provider + Langfuse 观测 + 工作区总览 + 健康检查。
+"""设置/系统路由：环境变量 + LLM Provider + Langfuse 观测 + 健康检查。
 
 从 transport/api.py 拆出（P0-2，2026-10-06）——按域拆分，保持端点数不变。
 """
@@ -11,9 +11,6 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.config import settings
-from app.domain.agents.service import agent_service
-from app.domain.plugins.service import plugin_service
-from app.domain.skills.service import skill_service
 from app.infra import env_store
 from app.infra.harness.manager import manager
 
@@ -269,18 +266,3 @@ async def test_langfuse(body: LangfuseTestBody) -> dict:
             status_code=401, detail="Langfuse 凭据校验未通过（Public/Secret Key 或 Host 有误）"
         )
     return {"ok": True, "host": host}
-
-
-@router.get("/workspace")
-async def workspace_overview() -> dict:
-    """工作区与能力总览（控制台「存储」板块）。"""
-    return {
-        "workspace": str(settings.workspace_path),
-        "data_root": str(settings.data_root),
-        "counts": {
-            "experts": len(agent_service.list_all()),
-            "plugins": len(plugin_service.list_all()),
-            "skills": len(skill_service.list_all()),
-            "connectors": len(settings.mcp_servers),
-        },
-    }
