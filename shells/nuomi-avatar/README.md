@@ -63,7 +63,19 @@ npm run dist       # 出安装包：dist/Nuomi-1.0.0-arm64.dmg + .zip
   2. **notarize**：`mac.notarize` 打开 + Apple ID / app-specific password（否则用户首次打开会被 Gatekeeper 拦）；
   3. **自动更新**：`electron-updater` + 更新服务器（`publish` 配置 + 主进程 autoUpdater 接入）；
   4. **可写配置**：打包态 `config.json` 在 `app.asar` 内只读 —— 控制台切模型后无法持久化，
-     需要把配置落到 `app.getPath('userData')`（当前靠 `--nuomi-model=` 参数保证「本次启动能渲染」）。
+     需要把配置落到 `app.getPath('userData')`（当前靠 `--nuomi-model=` 参数保证「本次启动能渲染」）；
+  5. **自带后端**（最根本的一条）：当前产物**不含后端**，`ensureBackend()` 按
+     `path.join(__dirname, '..', '..', 'backend')` 找 venv，而打包态 `__dirname` 在 `app.asar` 内，
+     该路径不存在 → 退回 `python3` 并以不存在的 cwd 启动 → 失败并等满 30s。
+     所以**打包产物只在「后端已经在跑」时可用**（本机日常就是这种情况）。要真正独立运行，
+     需要把 Python 运行时装进包（PyInstaller / embeddable Python + 启动参数），或改成把后端地址
+     指向一个本地/远程常驻服务。
+
+> **决策（2026-10-06，用户拍板）：不做分发。** 没有把糯米发布到其他 Mac 的计划，而发布需要
+> 花钱买 Apple Developer 账号（签名 + 公证），因此上面 **1–3 项（codesign / notarize / 自动更新）
+> 明确不做**，第 5 项也不做。打包链保留的价值是：能在本机验证打包配置、出图标、跑单实例锁与
+> CSP 的真实验证。**日常使用一律 `make start`**（壳 + 自动拉起后端），不走 `.app`。
+> 若将来要做独立 App，从上面第 5 条开始。
 
 ### 配置（config.json）
 

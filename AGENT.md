@@ -115,6 +115,18 @@ SSE 事件协议（当前完整）：`token` / `reasoning` / `tool_call_chunk`�
 - **密钥脱敏与落盘（第 9b/9c 项）**：`GET/PUT /settings/env` 按键名判决敏（`KEY|TOKEN|SECRET|PASSWORD|PWD|CREDENTIAL`），非密钥键照常可读；PUT 收到含 `***` 的值视为「保持原值」，所以前端拿脱敏值回写不会覆盖真 key（与 providers 同语义）。新增 `infra/secret_file.py`：**原子写 + 0600**（临时文件 → fsync → chmod → `os.replace`），四个明文密钥文件（providers/env/langfuse/connectors）全部接入，读时对旧文件补 0600。原实现非原子 + 0644，写一半被杀会截断，而读侧一律静默回退默认值。
 - **顺手修**：知识库索引任务 `asyncio.create_task` 返回值被丢弃（asyncio 只持弱引用，任务可能被 GC；异常只打印 "Task exception was never retrieved"）→ 存强引用 + done-callback 消费异常并记 WARNING。实测确认修复前日志有该警告、修复后变成明确的「文档索引任务失败」告警且文档状态机不变。
 
+## 分发范围决策（2026-10-06 用户拍板）
+
+- **不做分发。** 没有把糯米发布到其他 Mac 的计划；发布需要花钱买 Apple Developer 账号
+  （codesign + notarize），因此**签名 / 公证 / 自动更新 / 首启向导一律不做**，不要再排这些待办。
+- **打包链保留但只作本机验证**：electron-builder 能出 `Nuomi.app`（249MB，asar 24MB）、`npm run icon`
+  能出 icns、单实例锁与 CSP 做过真实验证 —— 这些是有价值的回归手段。但**产物不是可独立运行的应用**：
+  它不含后端，`ensureBackend()` 按 `__dirname/../../backend` 找 venv，打包态 `__dirname` 在 asar 内
+  → 找不到 → 退回 `python3` 失败并等满 30s。所以**打包产物仅在「后端已在跑」时可用**。
+- **日常使用一律 `make start`**（壳启动自动拉起后端），不走 `.app`。
+- 若将来改主意要做独立 App，第一件事不是签名而是**自带 Python 运行时**（PyInstaller / embeddable
+  Python），细节见 `shells/nuomi-avatar/README.md` 的「打包与分发」5 条前置。
+
 ## 审查发现与修正（2026-10-06，独立对抗性审查后）
 
 - **P1 竞态（我引入的，已修）**：第 8a 项把 `plugin_service.sync()` 也丢进了 `asyncio.to_thread`，但 `PluginRegistry` 是进程级单例、`load_all()` 是「先 `clear()` 再逐个注册」→ 工作线程 sync 期间，事件循环上的 `plugin_service.tools()` 会读到**空注册表**。实测并发读观察到 `[0,1,2,3]`，即**该轮对话拿不到任何插件工具且无日志**。修复：**文件操作 offload、注册回到事件循环**（`_import_plugin_from_root` 只落盘返回 plugin_id；`transport/api.py` 的 `_sync_plugin_row` 在循环上 sync）。`tests/test_plugin_import.py` 用「记录两个阶段的线程名」锁死分工，并已验证把 sync 改回 to_thread 该用例立刻失败。
