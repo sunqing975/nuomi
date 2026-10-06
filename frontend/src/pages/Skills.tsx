@@ -222,7 +222,7 @@ export default function SkillsPage() {
               <img src={it.icon_url} alt="" width={24} height={24}
                 style={{ borderRadius: 4, objectFit: 'cover', flexShrink: 0 }} />
             ) : (
-              <span style={{ fontSize: 16, flexShrink: 0 }}>{initialAvatarOf(it.name)}</span>
+              <span style={{ fontSize: 16, flexShrink: 0 }}>{initialAvatarOf(it.name, 24)}</span>
             )}
             <span>{it.name}</span>
             {!enabled && <Tag color="default">已停用</Tag>}
