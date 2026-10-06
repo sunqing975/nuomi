@@ -3,7 +3,7 @@ import {
   Avatar, Button, Card, Input, Modal, Popconfirm, Select, Space, Switch,
   Tag, Typography, Upload, message,
 } from 'antd';
-import { CloudUploadOutlined, DeleteOutlined, GithubOutlined } from '@ant-design/icons';
+import { CloudUploadOutlined, DeleteOutlined, GithubOutlined, ShoppingOutlined } from '@ant-design/icons';
 import {
   del, get, patch, post, upload, type Skill, type SkillPackage,
 } from '../api';
@@ -239,6 +239,7 @@ export default function SkillsPage() {
           onChange={e => setInstalledQuery(e.target.value)}
         />
         <div style={{ flex: 1 }} />
+        <Button type="primary" icon={<ShoppingOutlined />} onClick={() => { window.location.hash = '#skillMarket'; }}>技能市场</Button>
         <Button icon={<GithubOutlined />} onClick={() => setGitOpen(true)}>从 Git 导入</Button>
         <Upload
           accept=".zip"

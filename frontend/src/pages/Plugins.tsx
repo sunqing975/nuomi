@@ -3,7 +3,7 @@ import {
   Avatar, Button, Card, Input, Modal, Popconfirm, Space, Switch, Tag,
   Typography, Upload, message,
 } from 'antd';
-import { CloudUploadOutlined, DeleteOutlined, GithubOutlined, ReloadOutlined } from '@ant-design/icons';
+import { CloudUploadOutlined, DeleteOutlined, GithubOutlined, ReloadOutlined, ShopOutlined } from '@ant-design/icons';
 import { del, get, post, patch, upload, type Plugin } from '../api';
 import EntityGrid from '../components/EntityGrid';
 import PageLayout from '../components/PageLayout';
@@ -131,6 +131,7 @@ export default function PluginsPage() {
       description="给专家挂载工具能力：安装、启停与导入"
       extra={
         <>
+          <Button type="primary" icon={<ShopOutlined />} onClick={() => { window.location.hash = '#pluginMarket'; }}>插件市场</Button>
           <Button icon={<GithubOutlined />} onClick={() => setGitOpen(true)}>从 Git 导入</Button>
           <Upload
             accept=".zip"

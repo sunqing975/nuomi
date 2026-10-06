@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Layout, Menu, Tag, Typography } from 'antd';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { Layout, Menu, Space, Tag, Typography } from 'antd';
 import type { ReactNode } from 'react';
 import {
   RobotOutlined, ApiOutlined, ReadOutlined, GlobalOutlined, DatabaseOutlined,
@@ -38,9 +38,7 @@ const NAV: NavEntry[] = [
     children: [
       { key: 'experts', icon: <RobotOutlined />, label: '专家' },
       { key: 'plugins', icon: <ApiOutlined />, label: '插件' },
-      { key: 'pluginMarket', icon: <ShopOutlined />, label: '插件市场' },
       { key: 'skills', icon: <ReadOutlined />, label: '技能' },
-      { key: 'skillMarket', icon: <ShoppingOutlined />, label: '技能市场' },
       { key: 'connectors', icon: <GlobalOutlined />, label: '连接器' },
       { key: 'knowledge', icon: <BookOutlined />, label: '知识库' },
     ],
@@ -57,18 +55,20 @@ const NAV: NavEntry[] = [
   },
 ];
 
-/** 面包屑：分组 / 页面（chat 为顶级，无分组）——顶栏不再重复页面主标题（主标题在 PageLayout） */
-const BREADCRUMB: Record<string, string> = {};
-for (const n of NAV) {
-  if ('children' in n) {
-    for (const c of n.children) BREADCRUMB[c.key] = `${n.label} / ${c.label}`;
-  } else {
-    BREADCRUMB[n.key] = n.label;
-  }
-}
+/** 市场页：支持 hash 直达与面包屑返回，但不在侧栏导航显示（入口在插件/技能页按钮） */
+const MARKET_PAGES: NavLeaf[] = [
+  { key: 'pluginMarket', icon: <ShopOutlined />, label: '插件市场' },
+  { key: 'skillMarket', icon: <ShoppingOutlined />, label: '技能市场' },
+];
 
-/** 扁平化导航（含 group children），供 hash 路由与标题查找 */
-const ALL_NAV: NavLeaf[] = NAV.flatMap(n => ('children' in n ? n.children : [n]));
+/** 市场页的上级页面（面包屑可点击返回） */
+const PAGE_PARENT: Record<string, string> = {
+  pluginMarket: 'plugins',
+  skillMarket: 'skills',
+};
+
+/** 扁平化导航（含 group children 与市场页），供 hash 路由与标题查找 */
+const ALL_NAV: NavLeaf[] = [...NAV.flatMap(n => ('children' in n ? n.children : [n])), ...MARKET_PAGES];
 
 export default function App() {
   const [page, setPage] = useState('chat');
@@ -107,9 +107,20 @@ export default function App() {
     return () => window.removeEventListener('hashchange', applyHash);
   }, []);
 
-  const breadcrumb = kbDetailId
-    ? `${BREADCRUMB['knowledge'] ?? '知识库'} / 详情`
-    : (BREADCRUMB[page] ?? '');
+  /** 面包屑 crumb 序列：分组(纯文本) / 上级(可点返回) / 当前页(粗体) */
+  const crumbs = useMemo(() => {
+    const pageKey = kbDetailId ? 'knowledge' : page;
+    const parentKey = kbDetailId ? 'knowledge' : PAGE_PARENT[page];
+    const group = NAV.find(
+      g => 'children' in g && g.children.some(c => c.key === pageKey || c.key === parentKey),
+    );
+    const labelOf = (k: string) => ALL_NAV.find(n => n.key === k)?.label ?? k;
+    const out: { label: string; key?: string }[] = [];
+    if (group && 'label' in group) out.push({ label: group.label });
+    if (parentKey) out.push({ label: labelOf(parentKey), key: parentKey });
+    out.push({ label: kbDetailId ? '详情' : labelOf(page) });
+    return out;
+  }, [page, kbDetailId]);
 
   const switchPage = (key: string) => {
     setPage(key);
@@ -146,9 +157,31 @@ export default function App() {
             padding: '0 28px', height: 60,
           }}
         >
-          <Typography.Text style={{ fontSize: 14, color: 'var(--label-2)', fontWeight: 500 }}>
-            {breadcrumb}
-          </Typography.Text>
+          <Space size={8}>
+            {crumbs.map((c, i) => (
+              <Fragment key={`${c.label}-${i}`}>
+                {i > 0 && <Typography.Text type="secondary" style={{ fontSize: 14 }}>/</Typography.Text>}
+                {c.key ? (
+                  <Typography.Link
+                    onClick={() => switchPage(c.key!)}
+                    style={{ fontSize: 14 }}
+                  >
+                    {c.label}
+                  </Typography.Link>
+                ) : (
+                  <Typography.Text
+                    style={{
+                      fontSize: 14,
+                      color: i === crumbs.length - 1 ? 'var(--label-1)' : 'var(--label-2)',
+                      fontWeight: i === crumbs.length - 1 ? 600 : 500,
+                    }}
+                  >
+                    {c.label}
+                  </Typography.Text>
+                )}
+              </Fragment>
+            ))}
+          </Space>
           <Tag color={backendOk === false ? 'red' : backendOk === true ? 'green' : 'default'}>
             {backendOk === false ? '后端离线' : backendOk === true ? '后端在线' : '连接中…'}
           </Tag>
