@@ -561,3 +561,11 @@ SSE 事件协议（当前完整）：`token` / `reasoning` / `tool_call_chunk`�
 - 后端：settings_api.py 删 GET /workspace 端点（唯一消费者为存储页，无测试/壳引用）；
   清理 agent_service/plugin_service/skill_service 死 import
 - 验证：前端 tsc/vitest 60/build 全绿、后端 138 测试、壳重启「糯米启动完成」
+
+## 设置页治理 + 收尾提交（2026-10-06，ace84c8 / 2e2d283）
+
+- **Base URL 列挤在一起**（用户反馈）：列无宽度上限，长 URL + code 不换行撑爆整列
+  → 列宽 280 + ellipsis + 单元格 block/100% + 悬停 tooltip 完整 URL（ace84c8）
+- **模型列不需要显示**（用户）：模型在编辑弹窗里管理，列表展示冗余 → 删表格「模型」列
+  + Tag import；models 字段在弹窗/探测逻辑保留（2e2d283）
+- 本轮前端视觉/信息架构整修收官；用户：「目前感觉没啥问题了。接下来就是 chat 页的优化了」
