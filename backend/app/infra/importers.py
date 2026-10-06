@@ -4,6 +4,11 @@
 工作区 plugins/<id>/ 或 skills/<name>/ → 插件走 plugin_service.sync() 注册，
 技能实时扫描自动可见（无需注册）。
 
+**分层（2026-10-06 修复）**：本模块从 ``app/domain/importer.py`` 迁入 ——
+导入是文件操作机制（解压/clone/复制），不是领域规则，且被 transport 与
+infra/plugins.market 复用；原位置让 infra 反向依赖 domain，属分层违规。
+路径一律走 ``app/storage.paths``（路径解析归 storage）。
+
 安全（zip / git 均是不可信输入）：
 - 路径穿越防护：zip 每个条目 resolve 后必须位于临时根内
 - 总量 / 条目数上限（防 zip 炸弹 / 超大仓库）
@@ -24,8 +29,7 @@ from tempfile import mkdtemp
 
 import yaml
 
-from app.domain.plugins.service import plugin_service
-from app.domain.skills.service import skill_service
+from app.storage.paths import plugins_dir, skills_dir
 
 _MAX_BYTES = 50 * 1024 * 1024  # 解压/clone 总量上限 50MB
 _MAX_ENTRIES = 500  # 条目数上限
@@ -41,6 +45,40 @@ class ZipImportError(ValueError):
 
 class GitImportError(ValueError):
     """git 导入校验失败（调用方转 400）。"""
+
+
+def read_skill_manifest(dir_path: Path) -> dict:
+    """解析 SKILL.md frontmatter（name/description/requires_env），fallback 目录名。
+
+    技能加载机制的唯一实现（2026-10-06 起）：domain/skills 的 ``_read_skill``
+    与导入路径共用这里，避免两份解析漂移。
+    """
+    content = (dir_path / "SKILL.md").read_text(encoding="utf-8")
+    name = dir_path.name
+    description = ""
+    requires_env: list[str] = []
+    if content.startswith("---"):
+        end = content.find("---", 4)
+        if end > 0:
+            try:
+                meta = yaml.safe_load(content[3:end]) or {}
+                slug = str(meta.get("name") or "").strip()
+                if slug and _NAME_RE.match(slug):
+                    name = slug
+                description = str(meta.get("description") or "").strip()
+                raw_env = meta.get("requires_env") or meta.get("requires_api_key") or ""
+                if isinstance(raw_env, str):
+                    requires_env = [x.strip() for x in raw_env.split(",") if x.strip()]
+                elif isinstance(raw_env, list):
+                    requires_env = [str(x).strip() for x in raw_env if str(x).strip()]
+            except yaml.YAMLError:
+                pass
+    return {
+        "name": name,
+        "path": str(dir_path),
+        "description": description,
+        "requires_env": requires_env,
+    }
 
 
 def _safe_extract(data: bytes) -> Path:
@@ -104,24 +142,26 @@ def _import_plugin_from_root(root: Path) -> str:
     entry = str(manifest.get("entry") or "").strip()
     if not entry or not (root / entry).is_file():
         raise ZipImportError(f"plugin.yaml 的 entry 不存在: {entry or '(空)'}")
-    target = plugin_service.plugins_dir() / plugin_id
+    target = plugins_dir() / plugin_id
     if target.exists():
         raise ZipImportError(f"插件已存在: {plugin_id}（请先删除再导入）")
+    target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(root, target, ignore=shutil.ignore_patterns(".git", ".gitkeep"))
     return plugin_id
 
 
 def _import_skill_from_root(root: Path) -> dict:
     """从已就绪的本地根（zip 解压 / git clone）导入技能 → 工作区 skills/<name>/。"""
-    skill = skill_service._read_skill(root)
+    skill = read_skill_manifest(root)
     name = skill["name"]
     if not _NAME_RE.match(name):
         raise ZipImportError("SKILL.md 缺少合法 name frontmatter（仅限字母/数字/_/-）")
-    target = skill_service.skills_dir() / name
+    target = skills_dir() / name
     if target.exists():
         raise ZipImportError(f"技能已存在: {name}（请先删除再导入）")
+    target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(root, target, ignore=shutil.ignore_patterns(".git", ".gitkeep"))
-    return skill_service._read_skill(target)
+    return read_skill_manifest(target)
 
 
 def import_plugin_zip(data: bytes) -> str:

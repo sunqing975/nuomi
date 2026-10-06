@@ -15,9 +15,9 @@ from pathlib import Path
 from app.domain.agents.service import (
     PERSONA_FILES,
     agent_service,
-    agent_workspace_dir,
 )
 from app.storage import db
+from app.storage.paths import agent_workspace_dir
 
 # 导入时随 persona 一并复制的可选文件
 EXTRA_PERSONA_FILES = ("BOOTSTRAP.md", "PROACTIVE.md")

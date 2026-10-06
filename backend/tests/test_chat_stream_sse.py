@@ -21,7 +21,7 @@ def _first_agent(client: TestClient) -> str:
 
 def test_stream_failure_emits_error_frame(client: TestClient, monkeypatch) -> None:
     """流中途抛异常 → 客户端收到 type=error 帧并正常收流（不是静默截断）。"""
-    import app.transport.api as api_mod
+    import app.transport.chat_api as api_mod
 
     async def _boom(*_args, **_kwargs):
         yield 'data: {"type": "token", "content": "部分输出"}\n\n'
@@ -39,7 +39,7 @@ def test_stream_failure_emits_error_frame(client: TestClient, monkeypatch) -> No
 
 
 def test_stream_error_frame_keeps_thread_id(client: TestClient, monkeypatch) -> None:
-    import app.transport.api as api_mod
+    import app.transport.chat_api as api_mod
 
     async def _boom(*_args, **_kwargs):
         raise ValueError("x")
@@ -56,7 +56,7 @@ def test_slow_endpoint_does_not_block_health(client: TestClient, monkeypatch) ->
 
     这是 ``asyncio.to_thread`` 的行为断言——如果哪天改回同步直调，这里会超时失败。
     """
-    import app.domain.importer as importer
+    import app.infra.importers as importer
 
     started = threading.Event()
 

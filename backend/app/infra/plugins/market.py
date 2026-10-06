@@ -1,9 +1,13 @@
 """插件市场：内置 registry（backend/assets/market/）+ 安装 + 插件配置读写。
 
 - 市场清单：``{repo}/backend/assets/market/registry.json``（后续可扩展远程 URL 源）；
-- 安装：下载对应 ``<id>.zip`` → 复用 importer.import_plugin_zip（工作区 plugins/<id>/ + DB 注册）；
+- 安装：下载对应 ``<id>.zip`` → 复用 infra/importers.import_plugin_zip（工作区 plugins/<id>/ + DB 注册）；
 - 配置：插件 ``plugin.yaml`` 声明 ``settings`` 段，控制台动态渲染表单，值存 ``plugins/<id>/config.json``；
 - 服务型插件（kind=service）：后端经 ``synthesize()`` 调用其能力（如 TTS 播报）。
+
+分层（2026-10-06）：本模块是 infra 层，不反向依赖 domain ——
+``list_market`` 的"已安装列表"由 transport 组装传入（installed 参数），
+导入落盘走 ``app.infra.importers``。
 """
 
 from __future__ import annotations
@@ -16,7 +20,6 @@ from pathlib import Path
 import yaml
 
 from app.config import settings
-from app.domain.plugins.service import plugin_service
 
 MARKET_DIR = Path(__file__).resolve().parents[3] / "assets" / "market"
 REGISTRY_FILE = MARKET_DIR / "registry.json"
@@ -34,13 +37,17 @@ def _registry() -> dict:
         return {"plugins": []}
 
 
-def list_market() -> dict:
-    """市场清单 + 已安装状态（installed/enabled/installed_version）。"""
-    installed = {p["plugin_id"]: p for p in plugin_service.list_all()}
+def list_market(installed: list | None = None) -> dict:
+    """市场清单 + 已安装状态（installed/enabled/installed_version）。
+
+    ``installed`` 为已安装插件行（``plugin_id`` → row），由 transport 传入
+    （infra 不反向依赖 domain.plugins.plugin_service）。
+    """
+    installed_map = {p["plugin_id"]: p for p in (installed or [])}
     out = []
     for p in _registry().get("plugins", []):
         item = dict(p)
-        row = installed.get(p["id"])
+        row = installed_map.get(p["id"])
         item["installed"] = row is not None
         item["enabled"] = bool(row["enabled"]) if row else False
         item["installed_version"] = row["version"] if row else None
@@ -52,9 +59,9 @@ def install(plugin_id: str) -> str:
     """从内置市场把插件 zip **落盘**到工作区 plugins/，返回 plugin_id。
 
     不做注册：``PluginRegistry`` 是进程级单例，注册必须回到事件循环做
-    （见 ``domain/importer._import_plugin_from_root`` 的说明）。
+    （见 ``infra/importers._import_plugin_from_root`` 的说明）。
     """
-    from app.domain.importer import import_plugin_zip
+    from app.infra.importers import import_plugin_zip
 
     pkg = MARKET_DIR / f"{plugin_id}.zip"
     if not pkg.is_file():

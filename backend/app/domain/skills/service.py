@@ -6,21 +6,16 @@
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
-import yaml
-
-from app.config import settings
-from app.storage import db
-
-_SKILL_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
+from app.infra.importers import read_skill_manifest
+from app.storage import db, paths
 
 
 class SkillService:
     def skills_dir(self) -> Path:
         """工作区技能目录（{workspace}/skills）。"""
-        d = settings.workspace_path / "skills"
+        d = paths.skills_dir()
         d.mkdir(parents=True, exist_ok=True)
         return d
 
@@ -89,33 +84,11 @@ class SkillService:
 
     @staticmethod
     def _read_skill(dir_path: Path) -> dict:
-        """解析 SKILL.md frontmatter（name/description/requires_env），fallback 目录名。"""
-        content = (dir_path / "SKILL.md").read_text(encoding="utf-8")
-        name = dir_path.name
-        description = ""
-        requires_env: list[str] = []
-        if content.startswith("---"):
-            end = content.find("---", 4)
-            if end > 0:
-                try:
-                    meta = yaml.safe_load(content[3:end]) or {}
-                    slug = str(meta.get("name") or "").strip()
-                    if slug and _SKILL_NAME_RE.match(slug):
-                        name = slug
-                    description = str(meta.get("description") or "").strip()
-                    raw_env = meta.get("requires_env") or meta.get("requires_api_key") or ""
-                    if isinstance(raw_env, str):
-                        requires_env = [x.strip() for x in raw_env.split(",") if x.strip()]
-                    elif isinstance(raw_env, list):
-                        requires_env = [str(x).strip() for x in raw_env if str(x).strip()]
-                except yaml.YAMLError:
-                    pass
-        return {
-            "name": name,
-            "path": str(dir_path),
-            "description": description,
-            "requires_env": requires_env,
-        }
+        """解析 SKILL.md frontmatter（name/description/requires_env），fallback 目录名。
+
+        实现统一在 infra/importers.read_skill_manifest（导入与扫描共用单一来源）。
+        """
+        return read_skill_manifest(dir_path)
 
     def builtin(self) -> list[dict]:
         """harness 包内置技能（只读，随包分发，不可编辑/删除）。

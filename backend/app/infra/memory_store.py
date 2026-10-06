@@ -32,7 +32,7 @@ import re
 import sqlite3
 from pathlib import Path
 
-from app.domain.agents.service import agent_workspace_dir
+from app.storage.paths import agent_workspace_dir
 
 MEMORY_DB_NAME = "memory.sqlite"
 

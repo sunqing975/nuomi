@@ -450,7 +450,7 @@ class ChatSessionService:
         """
         db_paths = [settings.workspace_path / "memory.sqlite"]
         if agent_id:
-            from app.domain.agents.service import agent_workspace_dir
+            from app.storage.paths import agent_workspace_dir
 
             db_paths.insert(0, agent_workspace_dir(agent_id) / "memory.sqlite")
         for db_path in db_paths:

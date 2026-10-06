@@ -15,7 +15,7 @@
   "ui": {
     "intro_text": "你好，我是糯米。",
     "model_type": "vrm",
-    "model_path": "",
+    "model_path": "/Users/superman/Nuomi/models/3D/868274793854709131.vrm",
     "show_chat_box": true,
     "show_model": true,
     "model_x": -56.62978124999995,

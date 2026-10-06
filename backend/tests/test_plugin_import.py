@@ -59,7 +59,7 @@ def test_file_work_is_offloaded_but_registration_stays_on_loop(
     若哪天有人把 `plugin_service.sync()` 也塞进 `asyncio.to_thread`，两者线程相同 →
     本用例失败（那正是注册表被清空的竞态来源）。
     """
-    from app.domain import importer
+    from app.infra import importers as importer
 
     seen: dict[str, str] = {}
     real_sync = plugin_service.sync

@@ -240,7 +240,7 @@ class _FakeAgent:
 
 def test_history_projection_backfill_then_table(client: TestClient, monkeypatch) -> None:
 
-    from app.transport import api as api_mod
+    from app.transport import chat_api as api_mod
 
     aid = _new_agent(client)
     tid = client.post("/api/chat/new", json={"agent_id": aid}).json()["thread_id"]
@@ -273,7 +273,7 @@ def test_history_projection_backfill_then_table(client: TestClient, monkeypatch)
 
 def test_history_projection_after_turn_append(client: TestClient, monkeypatch) -> None:
     """ready 投影下每轮对话增量 append（turn_to_message_inputs 序列化 human+ai）。"""
-    from app.transport import api as api_mod
+    from app.transport import chat_api as api_mod
 
     aid = _new_agent(client)
     tid = client.post("/api/chat/new", json={"agent_id": aid}).json()["thread_id"]

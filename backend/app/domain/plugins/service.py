@@ -23,9 +23,8 @@ from octop_harness.plugins import (
     load_all,
 )
 
-from app.config import settings
 from app.domain.avatar.service import VRM_AVATAR_PLUGIN_ID  # 方案B：共享 AI 数字人插件（动态工具）
-from app.storage import db
+from app.storage import db, paths
 
 # OpenAI 兼容接口（DeepSeek 等）要求工具名只含 [a-zA-Z0-9_-]
 _SLUG_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
@@ -36,7 +35,7 @@ class PluginService:
 
     def plugins_dir(self) -> Path:
         """工作区插件目录（{workspace}/plugins）。"""
-        d = settings.workspace_path / "plugins"
+        d = paths.plugins_dir()
         d.mkdir(parents=True, exist_ok=True)
         return d
 

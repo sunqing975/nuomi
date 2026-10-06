@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Layout, Menu, Tag, Typography } from 'antd';
+import type { ReactNode } from 'react';
 import {
   RobotOutlined, ApiOutlined, ReadOutlined, GlobalOutlined, DatabaseOutlined,
-  SmileOutlined, MessageOutlined, SettingOutlined, BookOutlined, BulbOutlined,
+  SmileOutlined, MessageOutlined, SettingOutlined, BookOutlined,
 } from '@ant-design/icons';
 import ChatPage from './pages/Chat';
 import ExpertsPage from './pages/Experts';
@@ -14,22 +15,45 @@ import AvatarModelsPage from './pages/AvatarModels';
 import SettingsPage from './pages/Settings';
 import KnowledgePage from './pages/Knowledge';
 import KnowledgeDetailPage from './pages/KnowledgeDetail';
-import MemoryPage from './pages/Memory';
 
 const { Sider, Content, Header } = Layout;
 
-const NAV = [
+/**
+ * 导航三分组（P0-6，2026-10-06）：对话 ｜ 能力 ｜ 系统。
+ * 「记忆」不再占平级菜单 —— 它是对话的伴生视图（Chat 页「记忆」抽屉）。
+ */
+interface NavLeaf { key: string; icon: ReactNode; label: string; title: string; [k: `data-${string}`]: any; }
+interface NavGroup { key: string; type: 'group'; label: string; children: NavLeaf[]; }
+type NavEntry = NavLeaf | NavGroup;
+
+const NAV: NavEntry[] = [
   { key: 'chat', icon: <MessageOutlined />, label: '对话', title: '对话' },
-  { key: 'experts', icon: <RobotOutlined />, label: '专家', title: '专家' },
-  { key: 'plugins', icon: <ApiOutlined />, label: '插件', title: '插件（市场 / 已安装管理）' },
-  { key: 'skills', icon: <ReadOutlined />, label: '技能', title: '技能' },
-  { key: 'connectors', icon: <GlobalOutlined />, label: '连接器', title: '连接器（MCP 协议）' },
-  { key: 'knowledge', icon: <BookOutlined />, label: '知识库', title: '知识库 / 文档检索' },
-  { key: 'memory', icon: <BulbOutlined />, label: '记忆', title: '记忆 / 我记住了什么' },
-  { key: 'avatarModels', icon: <SmileOutlined />, label: 'AI 数字人', title: 'AI 数字人模型资产' },
-  { key: 'settings', icon: <SettingOutlined />, label: '设置', title: '设置 / 环境变量' },
-  { key: 'storage', icon: <DatabaseOutlined />, label: '存储', title: '存储 / 总览' },
+  {
+    key: 'abilities',
+    type: 'group',
+    label: '能力',
+    children: [
+      { key: 'experts', icon: <RobotOutlined />, label: '专家', title: '专家' },
+      { key: 'plugins', icon: <ApiOutlined />, label: '插件', title: '插件（市场 / 已安装管理）' },
+      { key: 'skills', icon: <ReadOutlined />, label: '技能', title: '技能 / 技能包' },
+      { key: 'connectors', icon: <GlobalOutlined />, label: '连接器', title: '连接器（MCP 协议）' },
+      { key: 'knowledge', icon: <BookOutlined />, label: '知识库', title: '知识库 / 文档检索' },
+    ],
+  },
+  {
+    key: 'system',
+    type: 'group',
+    label: '系统',
+    children: [
+      { key: 'avatarModels', icon: <SmileOutlined />, label: 'AI 数字人', title: 'AI 数字人模型资产' },
+      { key: 'settings', icon: <SettingOutlined />, label: '设置', title: '设置 / 环境变量' },
+      { key: 'storage', icon: <DatabaseOutlined />, label: '存储', title: '存储 / 总览' },
+    ],
+  },
 ];
+
+/** 扁平化导航（含 group children），供 hash 路由与标题查找 */
+const ALL_NAV: NavLeaf[] = NAV.flatMap(n => ('children' in n ? n.children : [n]));
 
 export default function App() {
   const [page, setPage] = useState('chat');
@@ -42,7 +66,7 @@ export default function App() {
       const h = location.hash.replace('#', '');
       const m = h.match(/^knowledge\/detail\/([^/]+)$/);
       if (m) { setPage('knowledge'); setKbDetailId(m[1]); return; }
-      if (NAV.some(n => n.key === h)) {
+      if (ALL_NAV.some(n => n.key === h)) {
         setPage(h);
         setKbDetailId(null); // 非详情路由一律清详情（detail 格式已在上方提前 return）
       }
@@ -52,7 +76,7 @@ export default function App() {
     return () => window.removeEventListener('hashchange', applyHash);
   }, []);
 
-  const title = kbDetailId ? '知识库详情' : (NAV.find(n => n.key === page)?.title ?? '');
+  const title = kbDetailId ? '知识库详情' : (ALL_NAV.find(n => n.key === page)?.title ?? '');
 
   const switchPage = (key: string) => {
     setPage(key);
@@ -101,7 +125,6 @@ export default function App() {
           {page === 'skills' && <SkillsPage />}
           {page === 'connectors' && <ConnectorsPage />}
           {page === 'knowledge' && (kbDetailId ? <KnowledgeDetailPage kbId={kbDetailId} /> : <KnowledgePage />)}
-          {page === 'memory' && <MemoryPage />}
           {page === 'avatarModels' && <AvatarModelsPage />}
           {page === 'settings' && <SettingsPage />}
           {page === 'storage' && <StoragePage />}

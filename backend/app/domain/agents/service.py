@@ -16,9 +16,10 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from app.config import REPO_ROOT, settings
+from app.config import REPO_ROOT
 from app.domain.agents.seed import default_system_prompt
 from app.storage import db
+from app.storage.paths import agent_workspace_dir
 
 # Agent 运行时状态（对齐 Octop last_state 状态机）
 STATE_STOPPED = "stopped"
@@ -27,11 +28,6 @@ STATE_ERROR = "error"
 
 PERSONA_FILES = ("USER.md", "SOUL.md", "AGENTS.md", "MEMORY.md")
 MANIFEST_RELS = (".octop/manifest.json", "manifest.json")
-
-
-def agent_workspace_dir(agent_id: str) -> Path:
-    """专家级工作区：persona 文件 + 独立记忆/sessions（对齐 octop ~/.octop/agents/<id>/）。"""
-    return settings.data_root / "agent-workspaces" / agent_id
 
 
 def read_agent_manifest(agent_id: str) -> dict:

@@ -166,7 +166,7 @@ def test_chat_route_valid_kb_ok(client: TestClient, kb_pair, stub_llm) -> None:
 
 def test_available_skill_keys_includes_builtin() -> None:
     """per-turn 白名单可用集合须含内置技能（对齐 Octop：catalog 含 builtin 层）。"""
-    from app.transport.api import _available_skill_keys
+    from app.transport.chat_api import _available_skill_keys
 
     keys = _available_skill_keys()
     from app.domain.skills.service import skill_service

@@ -27,7 +27,8 @@ from app.domain.chat.service import (
     turn_to_message_inputs,
 )
 from app.infra.harness.chat import stream_chat, stream_openai_sse
-from app.transport.api import ensure_agent_runtime
+from app.transport.runtime import ensure_agent_runtime
+from app.transport.streaming import SSE_HEADERS, stream_response
 
 router = APIRouter(prefix="/api/v1", tags=["openai"])
 
@@ -90,10 +91,11 @@ async def chat_completions(body: OpenAIChatBody, request: Request) -> StreamingR
     user_text = _last_user_text(body.messages)
     system_prompt = _system_prompt_for(agent)
     include_usage = bool(body.stream_options and body.stream_options.include_usage)
+    # P0-5：先以完整参数构造运行时实例（可能抛 HTTPException，须在 gen 之前完成，
+    # 否则进流后异常只会中断连接）。chat_api 同款根因与处理。
+    ensure_agent_runtime(agent)
 
     async def gen() -> AsyncIterator[str]:
-        ensure_agent_runtime(agent)
-
         async def _persist_turn(turn: dict) -> None:
             """AI 数字人壳对话（thread=desktop）同样写消息投影（M4；失败不影响对话）。"""
             if thread_repo.get("desktop") is None:
@@ -166,6 +168,6 @@ async def chat_completions(body: OpenAIChatBody, request: Request) -> StreamingR
                 yield json.dumps({"error": {"message": message}}, ensure_ascii=False)
 
     media = "text/event-stream" if body.stream else "application/json"
-    return StreamingResponse(
-        gen(), media_type=media, headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    return await stream_response(
+        gen, media_type=media, headers=SSE_HEADERS
     )

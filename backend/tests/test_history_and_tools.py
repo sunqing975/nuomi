@@ -90,7 +90,7 @@ def test_history_pending_path_respects_offset(client: TestClient, monkeypatch) -
             # 假对象会被它静默跳过（投影写 0 行，第二次调用读投影就成空）
             return [HumanMessage(content=f"第{i}条") for i in range(10)]
 
-    import app.transport.api as api_mod
+    import app.transport.chat_api as api_mod
 
     monkeypatch.setattr(api_mod, "ensure_agent_runtime", lambda _row: _FakeAgent())
     aid = client.get("/api/agents").json()[0]["agent_id"]
@@ -151,7 +151,7 @@ def test_tools_and_owners_queries_plugins_once(monkeypatch) -> None:
 
 def test_publish_actions_uses_passed_owner_map() -> None:
     """来源映射是请求局部参数，不再读模块级全局（并发对话会互相覆盖）。"""
-    import app.transport.api as api_mod
+    import app.transport.chat_api as api_mod
 
     async def _events():
         yield {"type": "tool_call", "name": "weather", "args": "{}"}
@@ -174,6 +174,6 @@ def test_publish_actions_uses_passed_owner_map() -> None:
 
 def test_no_module_level_tool_owners_global() -> None:
     """防回退：模块级不应该再有 _TOOL_OWNERS 全局。"""
-    import app.transport.api as api_mod
+    import app.transport.chat_api as api_mod
 
     assert not hasattr(api_mod, "_TOOL_OWNERS")

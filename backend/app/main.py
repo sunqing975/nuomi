@@ -20,10 +20,16 @@ from app.domain.agents.service import agent_service
 from app.infra.harness.manager import manager
 from app.infra.local_guard import LocalGuardMiddleware
 from app.storage.db import init_db
-from app.transport.api import router
+from app.transport.agents_api import router as agents_router
+from app.transport.avatar_api import router as avatar_router
+from app.transport.chat_api import router
+from app.transport.connectors_api import router as connectors_router
 from app.transport.knowledge_api import router as knowledge_router
 from app.transport.memory_api import router as memory_router
 from app.transport.openai_compat import router as openai_router
+from app.transport.plugins_api import router as plugins_router
+from app.transport.settings_api import router as settings_router
+from app.transport.skills_api import router as skills_router
 
 logger = logging.getLogger(__name__)
 
@@ -168,7 +174,13 @@ app.add_middleware(
 # 必须最后注册（Starlette 后注册者在外层），保证任何路由/静态挂在执行前先过守卫。
 app.add_middleware(LocalGuardMiddleware)
 app.include_router(router)
+app.include_router(agents_router)
+app.include_router(avatar_router)
+app.include_router(connectors_router)
 app.include_router(openai_router)
+app.include_router(plugins_router)
+app.include_router(settings_router)
+app.include_router(skills_router)
 app.include_router(knowledge_router)
 app.include_router(memory_router)
 

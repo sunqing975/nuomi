@@ -94,7 +94,7 @@ def stub_llm(monkeypatch):
         yield {"type": "token", "content": "stub"}
         yield {"type": "done", "answer": "stub"}
 
-    import app.transport.api as api_mod
+    import app.transport.chat_api as api_mod
     import app.transport.openai_compat as compat_mod
 
     monkeypatch.setattr(api_mod, "stream_chat", fake_stream)
