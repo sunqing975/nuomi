@@ -90,9 +90,7 @@ def _unique_ids(ids: Sequence[str]) -> list[str]:
     return list(dict.fromkeys(str(kb_id).strip() for kb_id in ids if str(kb_id).strip()))
 
 
-def _format_context(
-    ranked: Sequence[tuple[Any, Hit, Any]], *, char_budget: int
-) -> str:
+def _format_context(ranked: Sequence[tuple[Any, Hit, Any]], *, char_budget: int) -> str:
     sections: list[str] = []
     remaining = char_budget
     for base, hit, document in ranked:

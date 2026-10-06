@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import logging
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -16,10 +18,13 @@ from app.config import REPO_ROOT, settings
 from app.domain.agents.seed import default_system_prompt, default_welcome_message
 from app.domain.agents.service import agent_service
 from app.infra.harness.manager import manager
+from app.infra.local_guard import LocalGuardMiddleware
 from app.storage.db import init_db
 from app.transport.api import router
 from app.transport.knowledge_api import router as knowledge_router
 from app.transport.openai_compat import router as openai_router
+
+logger = logging.getLogger(__name__)
 
 
 def seed_default_agent() -> None:
@@ -50,6 +55,10 @@ def ensure_agent_workspaces() -> None:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     _sync_env_file()  # 应用设置 env（env.json）→ 进程环境，先于一切
+    # harness 文件日志收进数据根（必须在首次构造 HarnessAgent 之前）
+    from app.infra.harness.config import configure_harness_logging
+
+    _safe(configure_harness_logging, "harness 日志目录初始化失败（沿用 harness 默认）")
     init_db()
     seed_default_agent()
     ensure_agent_workspaces()
@@ -57,9 +66,17 @@ async def lifespan(_: FastAPI):
     _sync_plugins()
     _sync_connectors_file()
     _resume_knowledge_index_jobs()
-    _sync_langfuse()
+    _safe(_sync_langfuse, "Langfuse 初始化失败（继续启动，观测未启用）")
     yield
-    manager.close()
+    manager.shutdown()  # 释放实例 + 冲刷 Langfuse（close() 已不再动观测）
+
+
+def _safe(fn: Callable[[], object], message: str) -> None:
+    """启动步骤兜底：单步失败只记日志，不阻断后端启动。"""
+    try:
+        fn()
+    except Exception:
+        logger.exception(message)
 
 
 def _resume_knowledge_index_jobs() -> None:
@@ -81,9 +98,10 @@ def _sync_env_file() -> None:
 
 def _sync_langfuse() -> None:
     """启动时按 {workspace}/langfuse.json 配置 harness Langfuse tracer（未配置则保持停用）。"""
+    from octop_harness.observability.langfuse import LangfuseConfig
+
     from app.infra.harness.langfuse_store import load as load_langfuse_cfg
     from app.infra.harness.manager import manager
-    from octop_harness.observability.langfuse import LangfuseConfig
 
     try:
         manager.set_langfuse(LangfuseConfig(**load_langfuse_cfg()))
@@ -145,6 +163,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# 本机访问守卫（最外层）：Host/Origin 白名单 + /api/* 写操作 token。
+# 必须最后注册（Starlette 后注册者在外层），保证任何路由/静态挂在执行前先过守卫。
+app.add_middleware(LocalGuardMiddleware)
 app.include_router(router)
 app.include_router(openai_router)
 app.include_router(knowledge_router)

@@ -59,3 +59,16 @@ jobs:
       - name: Build（tsc -b && vite build）
         working-directory: frontend
         run: npm run build
+
+  shell:
+    name: Shell（node --check 语法门禁）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Syntax check（壳全部脚本）
+        run: make shell-check

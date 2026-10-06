@@ -72,8 +72,7 @@ def build_knowledge_tools() -> list[StructuredTool]:
             str,
             Field(
                 description=(
-                    "针对所选知识库的聚焦检索串：来自用户问题的关键词、名称与同义词。"
-                    "不是聊天回复。"
+                    "针对所选知识库的聚焦检索串：来自用户问题的关键词、名称与同义词。不是聊天回复。"
                 ),
             ),
         ],

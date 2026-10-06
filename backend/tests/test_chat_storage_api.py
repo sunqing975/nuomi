@@ -124,7 +124,9 @@ def test_chat_new_switch_touch(client: TestClient) -> None:
     assert {s["thread_id"] for s in st["sessions"]} == {tid, tid2}
 
     # switch 回第一个
-    assert client.post("/api/chat/switch", json={"agent_id": aid, "thread_id": tid}).status_code == 200
+    assert (
+        client.post("/api/chat/switch", json={"agent_id": aid, "thread_id": tid}).status_code == 200
+    )
     st = client.get(f"/api/chat/state?agent_id={aid}").json()
     assert st["current"] == tid
     # switch 非法 thread → 404
@@ -180,8 +182,18 @@ def test_migrate_state_file_threads(client: TestClient) -> None:
     old = {
         "thread_id": "legacy:tid1",
         "threads": [
-            {"thread_id": "legacy:tid1", "title": "旧会话", "updated_at": 1700000000000, "agent_id": aid},
-            {"thread_id": "legacy:tid2", "title": "另一个", "updated_at": 1700000001000, "agent_id": aid},
+            {
+                "thread_id": "legacy:tid1",
+                "title": "旧会话",
+                "updated_at": 1700000000000,
+                "agent_id": aid,
+            },
+            {
+                "thread_id": "legacy:tid2",
+                "title": "另一个",
+                "updated_at": 1700000001000,
+                "agent_id": aid,
+            },
         ],
     }
     state.parent.mkdir(parents=True, exist_ok=True)
@@ -214,7 +226,10 @@ class _FakeAgent:
 
         self._msgs = [
             HumanMessage(content="你好"),
-            AIMessage(content="我来查一下", tool_calls=[{"id": "c1", "name": "touch_special", "args": {"x": 1}}]),
+            AIMessage(
+                content="我来查一下",
+                tool_calls=[{"id": "c1", "name": "touch_special", "args": {"x": 1}}],
+            ),
             ToolMessage(content="结果", name="touch_special", tool_call_id="c1"),
             AIMessage(content="完成"),
         ]
@@ -266,11 +281,12 @@ def test_history_projection_after_turn_append(client: TestClient, monkeypatch) -
     monkeypatch.setattr(api_mod, "ensure_agent_runtime", lambda row: _FakeAgent())
     client.get(f"/api/agents/{aid}/chat/history", params={"thread_id": tid})  # backfill → ready
 
-    inputs = turn_to_message_inputs({"user": "再问", "answer": "回答", "reasoning": "", "tool_calls": [], "tool_results": []})
+    inputs = turn_to_message_inputs(
+        {"user": "再问", "answer": "回答", "reasoning": "", "tool_calls": [], "tool_results": []}
+    )
     assert len(inputs) == 2
     assert thread_message_repo.append(tid, inputs) == 2
     assert thread_message_repo.head(tid) == 6  # 4 backfill + 2 增量
 
     # 重复 append 同一 message_id 不重复（本轮无 message_id → 全量追加；此断言验证计数）
     assert thread_message_repo.append(tid, inputs) == 2
-

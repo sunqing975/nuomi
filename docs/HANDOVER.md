@@ -72,6 +72,22 @@ cd shells/nuomi-avatar && npm start
 
 ## 4. API 清单（全部 /api 前缀，见 app/transport/api.py）
 
+> **本机访问守卫（2026-10-06 新增，`app/infra/local_guard.py`）**：所有请求校验 `Host`
+> 白名单（`127.0.0.1`/`localhost`/`::1`，挡 DNS rebinding）；带 `Origin` 时必须是本机来源
+> （`file://` 壳的 `Origin: null` 放行）；`/api/*` 的 **POST/PUT/PATCH/DELETE 必须带
+> `X-Nuomi-Token`**（或 `Authorization: Bearer <token>`），token 每进程随机生成、可用
+> `NUOMI_API_TOKEN` 覆盖，同源 `GET /api/session-token` 获取（该端点连 `null` origin 也拒绝）。
+> 控制台（`api.ts`）与数字人壳（`main.js` IPC → `app.js`）均已自动携带并在 403 时刷新重试。
+> 插件加载已改为 `install_deps=False`（不再让插件隐式 `pip install`）。
+>
+> **2026-10-06 第 1 周变更**：①对话 SSE 异常时补发 `{"type":"error","message":...}` 终止帧
+> （断连会 `aclose` 上游，不再让模型跑完白烧 token）；②`GET|PUT /settings/env` 对疑似密钥
+> 的键名**脱敏返回**（`sk-2***fa1e`），PUT 收到含 `***` 的值按「保持原值」处理（与 providers
+> 同语义）；③providers/env/langfuse/connectors 四个明文密钥文件改为**原子写 + 0600**
+> （`app/infra/secret_file.py`）；④长阻塞操作（git 导入 / FBX 转换 / SkillHub / Provider 探测 /
+> Langfuse 校验 / zip 解包 / 知识库文件 IO）全部 `asyncio.to_thread`；⑤`manager.close()` 不再
+> 清空 Langfuse（生命周期改用 `manager.shutdown()`，仅 lifespan 收尾调用）。
+
 **对话/会话**：`POST /agents/{id}/chat`（SSE，octop 帧，body `{messages, thread_id, skills?, connectors?, knowledge_base_ids?, model?}`——skills: None=全量技能 / [] / [name|slug...] 白名单（含内置技能与已启用技能包内技能，非法名 400）；connectors: None=默认挂载 / [] / [name...] 只挂载；knowledge_base_ids: None/[]=本轮不注入 / [ids...]=只检索这些库（未知 id 400）；model 非法 400；消息必填 min_length=1+strip 校验 422）· `GET /agents/{id}/chat/history`（M4：thread_messages 投影 ready → 读表分页（limit/offset，不依赖 harness 运行时）；pending → checkpointer 读取 + 全量 backfill 投影 + 标记 ready；返回有序 Segment[]）· `GET /chat/state` · `POST /chat/new|switch|touch` · `DELETE /chat/threads/{tid}`（删会话：threads 行 + 消息投影 + projection 状态 + 检查点历史级联）
 
 **专家/插件**：`GET|POST /agents` · `GET|PATCH|DELETE /agents/{id}` · `POST /agents/{id}/start|stop|status` · `GET /plugins` · `POST /plugins/sync` · `POST /plugins/import`（zip）· `POST /plugins/import-git`（git 仓库）· `PATCH /plugins/{id}`（启停）· `DELETE /plugins/{id}`（模型插件 400 拒绝，由AI 数字人删除级联）。**已废除**：`GET|PUT /agents/{id}/plugins`（专家-插件绑定，2026-10-04 解耦删除）

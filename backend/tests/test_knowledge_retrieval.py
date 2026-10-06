@@ -39,7 +39,10 @@ def kb_pair():
     doc_ids: list[str] = []
     for filename, text in docs:
         row = repo.create_document(
-            kb_id=kb_id, filename=filename, content_type="text/markdown", byte_size=len(text.encode())
+            kb_id=kb_id,
+            filename=filename,
+            content_type="text/markdown",
+            byte_size=len(text.encode()),
         )
         from app.infra.knowledge.files import write_document
 
@@ -99,7 +102,8 @@ def test_retrieve_char_budget(kb_pair) -> None:
 def test_citations_marker_roundtrip() -> None:
     body = "检索正文"
     with_marker = append_citations_marker(
-        body, [{"kb_id": "a", "kb_name": "库", "doc_id": "d1", "filename": "f.md", "path": "p/f.md"}]
+        body,
+        [{"kb_id": "a", "kb_name": "库", "doc_id": "d1", "filename": "f.md", "path": "p/f.md"}],
     )
     assert "<!--octop-kb-citations:" in with_marker
     assert strip_citations_marker(with_marker) == body
@@ -116,7 +120,10 @@ def test_tool_description_formatting() -> None:
     none_desc = format_search_knowledge_description([])
     assert "没有可用的知识库" in none_desc
     listed = format_search_knowledge_description(
-        [{"id": "kb1", "name": "产品文档", "description": "Nuomi 产品说明"}, {"id": "kb2", "name": "开发备忘"}]
+        [
+            {"id": "kb1", "name": "产品文档", "description": "Nuomi 产品说明"},
+            {"id": "kb2", "name": "开发备忘"},
+        ]
     )
     assert "产品文档" in listed and "Nuomi 产品说明" in listed and "开发备忘" in listed
 
@@ -144,7 +151,7 @@ def test_chat_route_empty_messages_422(client: TestClient) -> None:
         assert r.status_code == 422, f"messages={bad!r} 应 422"
 
 
-def test_chat_route_valid_kb_ok(client: TestClient, kb_pair) -> None:
+def test_chat_route_valid_kb_ok(client: TestClient, kb_pair, stub_llm) -> None:
     """合法 knowledge_base_ids 通过校验（流式 200，不校验推理内容）。"""
     agents = client.get("/api/agents").json()
     agent = agents[0]

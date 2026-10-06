@@ -22,8 +22,12 @@ backend/data/
 # make 脚本的 PID 与日志
 .logs/
 
+# 测试副作用：octop 以 `:memory:` 作路径时会派生出这个文件
+:memory:*
+
 # vite dev 缓存
 frontend/.vite/
 
 # FBX→VRMA 转换工具链（FBX2glTF 二进制 12MB，可从 GitHub releases 下载，不入库）
 shells/nuomi-avatar/tools/fbx2vrma/FBX2glTF-darwin-x64
+.npm-cache/

@@ -155,7 +155,9 @@ def race_download_sources(
         logger.info("ONNX source probes all failed; falling back to catalog order")
         return list(candidates)
     winner, winner_ttfb = result
-    logger.info("ONNX source race winner=%s ttfb=%.3fs (n=%d)", winner.kind, winner_ttfb, len(candidates))
+    logger.info(
+        "ONNX source race winner=%s ttfb=%.3fs (n=%d)", winner.kind, winner_ttfb, len(candidates)
+    )
     return [winner] + [c for c in candidates if c.kind != winner.kind]
 
 

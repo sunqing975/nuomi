@@ -32,8 +32,6 @@ def stamp_turn_knowledge_config(
     selected_ids = resolve_knowledge_base_ids(explicit_ids)
     configurable = dict(request.get("configurable") or {})
     configurable["knowledge_base_ids"] = selected_ids
-    configurable["knowledge_base_catalog"] = catalog_for_selected_bases(
-        visible_bases, selected_ids
-    )
+    configurable["knowledge_base_catalog"] = catalog_for_selected_bases(visible_bases, selected_ids)
     request["configurable"] = configurable
     return selected_ids

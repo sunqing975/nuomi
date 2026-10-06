@@ -220,14 +220,18 @@ class KnowledgeService:
             path=relative,
         )
 
-    def update_text_document(self, kb_id: str, doc_id: str, *, content: str) -> KnowledgeDocumentRow:
+    def update_text_document(
+        self, kb_id: str, doc_id: str, *, content: str
+    ) -> KnowledgeDocumentRow:
         """覆盖 md/txt 内容并标记 pending（等待重索引）。"""
         document = self._require_document(kb_id, doc_id)
         if document.content_type not in _TEXT_CONTENT_TYPES:
             raise ValueError("unsupported knowledge document content type: not editable text")
         encoded = content.encode("utf-8")
         if len(encoded) > MAX_DOCUMENT_BYTES:
-            raise ValueError(f"knowledge document size exceeds maximum of {MAX_DOCUMENT_BYTES} bytes")
+            raise ValueError(
+                f"knowledge document size exceeds maximum of {MAX_DOCUMENT_BYTES} bytes"
+            )
         write_document(kb_id, document.id, document.filename, encoded)
         self._repo.update_document(
             doc_id,
@@ -252,7 +256,9 @@ class KnowledgeService:
     ) -> KnowledgeDocumentRow:
         base = self.get_base(kb_id)
         if len(content) > MAX_DOCUMENT_BYTES:
-            raise ValueError(f"knowledge document size exceeds maximum of {MAX_DOCUMENT_BYTES} bytes")
+            raise ValueError(
+                f"knowledge document size exceeds maximum of {MAX_DOCUMENT_BYTES} bytes"
+            )
         rel = normalize_kb_path(path or filename)
         name = path_basename(rel)
         if not name:
@@ -298,9 +304,7 @@ class KnowledgeService:
             raise LookupError("knowledge document not found")
         return refreshed
 
-    def rename_document(
-        self, kb_id: str, doc_id: str, *, new_name: str
-    ) -> KnowledgeDocumentRow:
+    def rename_document(self, kb_id: str, doc_id: str, *, new_name: str) -> KnowledgeDocumentRow:
         document = self._require_document(kb_id, doc_id)
         cleaned = (new_name or "").strip()
         if not cleaned or "/" in cleaned or "\\" in cleaned:

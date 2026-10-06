@@ -57,7 +57,9 @@ def import_octop_expert(source_dir: str | Path, name: str | None = None) -> dict
         raise FileNotFoundError(f"源目录不存在: {src}")
     manifest = _read_manifest(src)
     if not manifest:
-        raise ValueError(f"目录中找不到 manifest.json（.octop/manifest.json 或根 manifest.json）: {src}")
+        raise ValueError(
+            f"目录中找不到 manifest.json（.octop/manifest.json 或根 manifest.json）: {src}"
+        )
 
     label = manifest.get("label") or {}
     display = name or _locale(label) or src.name

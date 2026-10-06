@@ -41,10 +41,15 @@ class PluginService:
         return d
 
     def sync(self) -> list[dict]:
-        """扫描并加载工作区 plugins/，同步到 DB（新插件默认启用）。"""
+        """扫描并加载工作区 plugins/，同步到 DB（新插件默认启用）。
+
+        ``install_deps=False``（安全）：不让插件在加载时隐式 ``pip install``
+        ——插件是不可信输入（zip / git / 市场），自动装依赖等于把安装脚本
+        的执行权交给插件作者。需要额外依赖的插件应显式声明并由用户自行安装。
+        """
         plugins_dir = self.plugins_dir()
         dirs = discover_plugin_dirs(plugins_dir)
-        loaded = load_all(plugins_dir) if dirs else []
+        loaded = load_all(plugins_dir, install_deps=False) if dirs else []
         rows = []
         with db.connect() as conn:
             for plugin in loaded:
@@ -81,7 +86,9 @@ class PluginService:
                 n = (1 if list_avatar_actions() else 0) + (1 if list_avatar_expressions() else 0)
                 d["tool_count"] = n if r["enabled"] else 0
             else:
-                d["tool_count"] = sum(1 for t in registry.all_tools() if t.plugin_id == r["plugin_id"])
+                d["tool_count"] = sum(
+                    1 for t in registry.all_tools() if t.plugin_id == r["plugin_id"]
+                )
             out.append(d)
         return out
 
@@ -135,7 +142,7 @@ class PluginService:
         tools = build_plugin_tools(global_plugins=global_enabled)
         tools = tools + self._avatar_dynamic_tools(global_enabled)
         # 同名去重：dict 键覆盖保留最后注册者（与 tool_owners() 的映射一致）
-        seen: dict[str, object] = {}
+        seen: dict[str, StructuredTool] = {}
         for t in tools:
             seen[t.name] = t
         tools = list(seen.values())
@@ -178,7 +185,8 @@ class PluginService:
                     name="do_action",
                     description=(
                         "让AI 数字人做出一个动作（身体动画）。根据对话场景选最合适的动作，"
-                        "可用动作：\n" + "\n".join(f"- {a['name']}：{a['label_zh']}" for a in actions)
+                        "可用动作：\n"
+                        + "\n".join(f"- {a['name']}：{a['label_zh']}" for a in actions)
                     ),
                 )
             )
@@ -237,7 +245,11 @@ def _make_set_expression(expressions: list):
 
     def _set(expression: str) -> str:
         return json.dumps(
-            {"motion": None, "expressions": [expression], "label": labels.get(expression, expression)},
+            {
+                "motion": None,
+                "expressions": [expression],
+                "label": labels.get(expression, expression),
+            },
             ensure_ascii=False,
         )
 

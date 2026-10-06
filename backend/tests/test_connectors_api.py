@@ -85,7 +85,9 @@ def test_mcp_stdio_env_injection() -> None:
         }
     )
     names = [t.name for t in tools]
-    read_env = next((t for t in tools if t.name.startswith("env_probe_") and t.name.endswith("read_env")), None)
+    read_env = next(
+        (t for t in tools if t.name.startswith("env_probe_") and t.name.endswith("read_env")), None
+    )
     assert read_env is not None, f"read_env 工具缺失: {names}"
 
     # spec env 注入

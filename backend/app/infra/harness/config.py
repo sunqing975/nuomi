@@ -21,7 +21,11 @@ def build_providers() -> list[ProviderConfig]:
 
     out: list[ProviderConfig] = []
     for p in load_providers():
-        models = [ModelConfig(id=m["id"], name=m.get("name") or m["id"]) for m in (p.get("models") or []) if m.get("id")]
+        models = [
+            ModelConfig(id=m["id"], name=m.get("name") or m["id"])
+            for m in (p.get("models") or [])
+            if m.get("id")
+        ]
         out.append(
             ProviderConfig(
                 id=p["id"],
@@ -32,6 +36,19 @@ def build_providers() -> list[ProviderConfig]:
             )
         )
     return out
+
+
+def configure_harness_logging() -> Path:
+    """把 octop-harness 的文件日志收进数据根（``{NUOMI_HOME}/logs/octop-harness``）。
+
+    harness 默认写 ``~/.octop-harness/logs``——在 NUOMI_HOME 之外，破坏「单一数据根」
+    的可迁移性；隔离数据根的测试还会因此越界写用户 HOME（无权限时直接 PermissionError）。
+    harness 的 ``ensure_logging()`` 见到已有同包 handler 就复用，所以**必须在首次
+    构造 HarnessAgent 之前调用一次**（main lifespan 里已接线）。
+    """
+    from octop_harness.observability.logging import setup_logging
+
+    return setup_logging(settings.data_root / "logs" / "octop-harness")
 
 
 def build_agent_config(

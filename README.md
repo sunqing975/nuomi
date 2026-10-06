@@ -30,9 +30,16 @@ make web     # 调试控制台（vite dev，:5173，代理 /api → :8000）
 
 ### 对话（SSE 流式）
 
+> 本机回环 API 有写操作鉴权：`/api/*` 的 `POST/PUT/PATCH/DELETE` 需带 `X-Nuomi-Token`，
+> 并校验 `Host`/`Origin` 白名单（见 `backend/app/infra/local_guard.py`）。
+> token 每次进程启动随机生成，同源客户端可从 `GET /api/session-token` 取；控制台与数字人壳已自动携带。
+
 ```bash
+TOKEN=$(curl -s http://127.0.0.1:8000/api/session-token | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')
+
 curl -N -X POST http://127.0.0.1:8000/api/agents/{agent_id}/chat \
   -H "Content-Type: application/json" \
+  -H "X-Nuomi-Token: $TOKEN" \
   -d '{"messages": "你好", "thread_id": "test"}'
 ```
 

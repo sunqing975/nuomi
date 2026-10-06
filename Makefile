@@ -33,7 +33,7 @@ FRONTEND_PORT := 5173
 
 .DEFAULT_GOAL := help
 
-.PHONY: help start stop restart status logs logs-follow desktop web backend frontend test lint typecheck check format format-check build clean
+.PHONY: help start stop restart status logs logs-follow desktop web backend frontend test lint typecheck check format format-check build shell-check clean
 
 help:
 	@echo "糯米 Nuomi 启动/关闭脚本"
@@ -159,24 +159,30 @@ test:
 	@cd $(ROOT)/backend && .venv/bin/python -m pytest -q
 
 # ---- 质量门禁（提交前 make check 全绿） ----
-# 注：layers（check_layering.py）与 test（pytest 用例）尚无脚本/用例（backend 无 tests/），
-# 暂不纳入 check；test 目标保留，待有测试用例后加入 check。
-check: lint format-check typecheck
+# check = 后端 lint + 格式 + 类型 + 测试 + 前端类型&构建 + 壳语法；与 .github/workflows/ci.yml 对齐。
+check: lint format-check typecheck test build shell-check
 
 lint:
-	@cd $(ROOT)/backend && .venv/bin/ruff check app --config pyproject.toml
+	@cd $(ROOT)/backend && .venv/bin/ruff check app tests --config pyproject.toml
 
 format-check:
-	@cd $(ROOT)/backend && .venv/bin/ruff format --check app --config pyproject.toml
+	@cd $(ROOT)/backend && .venv/bin/ruff format --check app tests --config pyproject.toml
 
 format:
-	@cd $(ROOT)/backend && .venv/bin/ruff format app --config pyproject.toml
+	@cd $(ROOT)/backend && .venv/bin/ruff format app tests --config pyproject.toml
 
 typecheck:
 	@cd $(ROOT)/backend && .venv/bin/mypy
 
 build:
 	@cd $(ROOT)/frontend && npm run build
+
+# 壳（Electron）语法门禁：CI 没有壳作业，靠这条兜住语法级回归
+shell-check:
+	@cd $(ROOT)/shells/nuomi-avatar && \
+	  files=$$(find . -name '*.js' -not -path './node_modules/*' -not -path './tools/*'); \
+	  for f in $$files; do node --check "$$f" || exit 1; done; \
+	  echo "✔ 壳语法检查通过（$$(echo "$$files" | wc -l | tr -d ' ') 个文件）"
 
 clean:
 	@rm -f $(SHELL_PID) $(BACKEND_PID) $(FRONTEND_PID) $(SHELL_LOG) $(BACKEND_LOG) $(FRONTEND_LOG)

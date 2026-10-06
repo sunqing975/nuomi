@@ -111,7 +111,9 @@ def test_document_lifecycle(client: TestClient) -> None:
     assert row["content_type"] == "text/markdown"
 
     # 2. 文件夹自动出现（docs/）
-    folders = [d for d in client.get(f"/api/knowledge-bases/{kb_id}/documents").json() if d["is_dir"]]
+    folders = [
+        d for d in client.get(f"/api/knowledge-bases/{kb_id}/documents").json() if d["is_dir"]
+    ]
     assert any(f["path"] == "docs" for f in folders)
 
     # 3. 新建文本 → 索引
@@ -162,7 +164,9 @@ def test_document_lifecycle(client: TestClient) -> None:
 
     # 9. 删除文档 → 404
     assert client.delete(f"/api/knowledge-bases/{kb_id}/documents/{doc['id']}").status_code == 200
-    assert client.get(f"/api/knowledge-bases/{kb_id}/documents/{doc['id']}/preview").status_code == 404
+    assert (
+        client.get(f"/api/knowledge-bases/{kb_id}/documents/{doc['id']}/preview").status_code == 404
+    )
 
     # 10. 删库 → 404
     assert client.delete(f"/api/knowledge-bases/{kb_id}").status_code == 200
@@ -194,9 +198,7 @@ def test_image_rejected_without_ocr(client: TestClient) -> None:
 def test_unknown_kb_or_doc(client: TestClient) -> None:
     assert client.get("/api/knowledge-bases/nope").status_code == 404
     assert client.get("/api/knowledge-bases/nope/documents").status_code == 404
-    assert (
-        client.get("/api/knowledge-bases/nope/documents/x/preview").status_code == 404
-    )
+    assert client.get("/api/knowledge-bases/nope/documents/x/preview").status_code == 404
 
 
 def test_max_documents_enforced(client: TestClient) -> None:
@@ -246,7 +248,7 @@ def test_delete_base_cascades(client: TestClient) -> None:
     assert client.get(f"/api/knowledge-bases/{kb_id}").status_code == 404
 
 
-def test_base_enable_disable(client: TestClient) -> None:
+def test_base_enable_disable(client: TestClient, stub_llm) -> None:
     """库级启停（对齐插件）：PATCH enabled → GET 反映 → 禁用库显式指定 400。"""
     kb = client.post("/api/knowledge-bases", json={"name": "api-test-toggle"}).json()
     kb_id = kb["id"]
