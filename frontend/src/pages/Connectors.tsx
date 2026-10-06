@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  Avatar, Button, Card, Empty, Form, Input, List, Modal, Popconfirm, Select, Space,
+  Avatar, Button, Card, Form, Input, Modal, Popconfirm, Select, Space,
   Tag, Typography, message,
 } from 'antd';
 import { DeleteOutlined, EditOutlined, MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import { del, get, post, put, type ConnectorServer } from '../api';
+import EntityGrid from '../components/EntityGrid';
 import PageLayout from '../components/PageLayout';
 
 interface EnvItem {
@@ -101,7 +102,6 @@ export default function McpPage() {
     const args = (s.args || []).join(' ');
     const envKeys = Object.keys(s.env || {});
     return (
-      <List.Item>
         <Card size="small" style={{ height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
           <Tag color={TRANSPORT_COLOR[t] || 'default'} style={{ position: 'absolute', top: 8, right: 8, margin: 0, fontSize: 11 }}>
             {t}
@@ -145,7 +145,6 @@ export default function McpPage() {
             </Space>
           </div>
         </Card>
-      </List.Item>
     );
   };
 
@@ -157,11 +156,10 @@ export default function McpPage() {
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增连接器</Button>
       }
     >
-      <List
-        grid={{ gutter: 12, xs: 1, sm: 2, md: 3, lg: 3, xl: 4, xxl: 5 }}
-          className="nuomi-grid"
-        dataSource={servers} loading={loading} size="small"
-        locale={{ emptyText: <Empty description="还没有配置连接器" /> }}
+      <EntityGrid
+        items={servers}
+        loading={loading}
+        emptyText="还没有配置连接器"
         renderItem={renderConnector}
       />
       <Card style={{ marginTop: 16 }} size="small">

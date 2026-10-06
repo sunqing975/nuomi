@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  Button, Card, Col, Row, Modal, Form, Input, Space, Switch, Tag, message, Popconfirm,
+  Button, Card, Modal, Form, Input, Space, Switch, Tag, message, Popconfirm,
 } from 'antd';
 import { PlusOutlined, RobotOutlined } from '@ant-design/icons';
 import { get, post, patch, del, type Agent } from '../api';
-import EmptyState from '../components/EmptyState';
+import EntityGrid from '../components/EntityGrid';
 import PageLayout from '../components/PageLayout';
 
 const { TextArea } = Input;
@@ -66,44 +66,46 @@ export default function ExpertsPage({ onBackend }: { onBackend?: (ok: boolean) =
         </Button>
       }
     >
-      <Row gutter={[14, 14]}>
-        {agents.map(a => (
-          <Col xs={24} sm={12} lg={8} xl={6} key={a.agent_id}>
-            <Card loading={loading} styles={{ body: { display: 'flex', flexDirection: 'column', gap: 10 } }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{
-                  width: 40, height: 40, borderRadius: '50%',
-                  background: a.color || '#f59e0b', color: 'var(--surface)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20,
-                }}>
-                  {a.icon_name === 'cat' ? '🐱' : <RobotOutlined />}
-                </div>
-                <div>
-                  <div style={{ fontWeight: 600 }}>{a.name}</div>
-                  <Space size={4}>
-                    <Tag>{a.kind || 'expert'}</Tag>
-                    {a.last_state === 'running' && <Tag color="green">运行中</Tag>}
-                  </Space>
-                </div>
+      <EntityGrid
+        items={agents}
+        loading={loading}
+        minWidth={300}
+        emptyText="还没有专家，点「新建专家」创建第一个"
+        renderItem={a => (
+          <Card
+            size="small"
+            styles={{ body: { display: 'flex', flexDirection: 'column', gap: 10, height: '100%' } }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{
+                width: 40, height: 40, borderRadius: '50%',
+                background: a.color || 'var(--accent)', color: 'var(--surface)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20,
+              }}>
+                {a.icon_name === 'cat' ? '🐱' : <RobotOutlined />}
               </div>
-              <div style={{ color: 'var(--label-2)', fontSize: 13, minHeight: 36 }}>
-                {a.description || '暂无描述'}
+              <div>
+                <div style={{ fontWeight: 600 }}>{a.name}</div>
+                <Space size={4}>
+                  <Tag>{a.kind || 'expert'}</Tag>
+                  {a.last_state === 'running' && <Tag color="green">运行中</Tag>}
+                </Space>
               </div>
-              <Space wrap>
-                <Switch checked={a.enabled} onChange={() => toggleEnabled(a)} checkedChildren="启用" unCheckedChildren="停用" />
-                <Button size="small" onClick={() => startAgent(a)}>{a.last_state === 'running' ? '重启实例' : '启动实例'}</Button>
-                <Button size="small" onClick={() => { setEditing(a); form.setFieldsValue(a); setCreateOpen(true); }}>编辑</Button>
-                <Popconfirm title={`删除「${a.name}」？`} onConfirm={async () => { await del(`/agents/${a.agent_id}`); message.success('已删除'); load(); }}>
-                  <Button size="small" danger>删除</Button>
-                </Popconfirm>
-              </Space>
-            </Card>
-          </Col>
-        ))}
-      </Row>
-      {!loading && agents.length === 0 && (
-        <EmptyState description="还没有专家，点「新建专家」创建第一个" style={{ padding: '32px 0' }} />
-      )}
+            </div>
+            <div style={{ color: 'var(--label-2)', fontSize: 13, minHeight: 36 }}>
+              {a.description || '暂无描述'}
+            </div>
+            <Space wrap>
+              <Switch checked={a.enabled} onChange={() => toggleEnabled(a)} checkedChildren="启用" unCheckedChildren="停用" />
+              <Button size="small" onClick={() => startAgent(a)}>{a.last_state === 'running' ? '重启实例' : '启动实例'}</Button>
+              <Button size="small" onClick={() => { setEditing(a); form.setFieldsValue(a); setCreateOpen(true); }}>编辑</Button>
+              <Popconfirm title={`删除「${a.name}」？`} onConfirm={async () => { await del(`/agents/${a.agent_id}`); message.success('已删除'); load(); }}>
+                <Button size="small" danger>删除</Button>
+              </Popconfirm>
+            </Space>
+          </Card>
+        )}
+      />
 
       {/* 创建 / 编辑 */}
       <Modal

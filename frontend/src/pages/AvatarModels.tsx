@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  Alert, Button, Card, Col, Empty, Popconfirm, Row, Space, Switch, Tag, Typography, Upload, message,
+  Alert, Button, Card, Popconfirm, Space, Switch, Tag, Typography, Upload, message,
 } from 'antd';
 import {
   CheckCircleFilled, DeleteOutlined, LoadingOutlined, PlayCircleOutlined, SmileOutlined, UploadOutlined,
 } from '@ant-design/icons';
 import { del, get, post, put, upload, type AvatarModel, type AvatarModelsResponse } from '../api';
+import EntityGrid from '../components/EntityGrid';
 import PageLayout from '../components/PageLayout';
 
 export default function AvatarModelsPage() {
@@ -157,7 +158,7 @@ export default function AvatarModelsPage() {
       <Card
         size="small"
         style={{ marginBottom: 16 }}
-        title={<b style={{ fontSize: 14 }}>导入资产</b>}
+        title="导入资产"
       >
         <Space wrap>
           <Upload
@@ -204,7 +205,7 @@ export default function AvatarModelsPage() {
       <Card
         size="small"
         style={{ marginBottom: 16 }}
-        title={<b style={{ fontSize: 14 }}><SmileOutlined /> 动作资产（全局共享，所有 VRM 模型通用）</b>}
+        title={<span><SmileOutlined /> 动作资产（全局共享，所有 VRM 模型通用）</span>}
       >
         {actions.length === 0 ? (
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
@@ -243,98 +244,97 @@ export default function AvatarModelsPage() {
         )}
       </Card>
 
-      {models.length === 0 && <Empty description="3D/ 目录下没有可用的 VRM AI 数字人形象" />}
-
-      <Row gutter={[14, 14]} className="nuomi-grid">
-        {models.map(m => {
+      <EntityGrid
+        items={models}
+        minWidth={340}
+        emptyText="3D/ 目录下没有可用的 VRM AI 数字人形象"
+        renderItem={m => {
           const isActive = m.id === active;
           const hasCapability = m.motions.length > 0 || m.expressions.length > 0;
           return (
-            <Col xs={24} sm={12} lg={8} key={m.id}>
-              <Card
-                size="small"
-                hoverable
-                style={{
-                  height: '100%',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  borderColor: isActive ? '#f59e0b' : undefined,
-                  boxShadow: isActive ? '0 0 0 2px rgba(245,158,11,.18)' : undefined,
-                }}
-                onClick={() => switchModel(m)}
-                title={
-                  <span>
-                    {isActive && <CheckCircleFilled style={{ color: 'var(--accent)', marginRight: 6 }} />}
-                    {m.id}
-                  </span>
-                }
-                extra={
-                  <span onClick={e => e.stopPropagation()}>
-                    {switching === m.id && (
-                      <Typography.Text type="warning" style={{ fontSize: 12, marginRight: 8 }}>
-                        <LoadingOutlined /> 分析中…
-                      </Typography.Text>
-                    )}
-                    {switching !== m.id && isActive && (
-                      <Typography.Text type="success" style={{ fontSize: 12, marginRight: 8 }}>使用中</Typography.Text>
-                    )}
-                    {switching !== m.id && !isActive && hasCapability && (
-                      <Typography.Text type="secondary" style={{ fontSize: 12, marginRight: 8 }}>点击切换</Typography.Text>
-                    )}
-                    {switching !== m.id && !isActive && !hasCapability && (
-                      <Tag color="default" style={{ marginRight: 8 }}>无动作/表情</Tag>
-                    )}
-                    {m.builtin && (
-                      <Tag color="blue" style={{ marginRight: 8 }}>内置</Tag>
-                    )}
-                    {!m.builtin && (
-                      <Popconfirm
-                        title="删除AI 数字人？"
-                        description="将删除AI 数字人资产与对应插件（不可恢复）；删除使用中的AI 数字人会自动切换"
-                        okText="删除" cancelText="取消"
-                        onConfirm={() => removeModel(m)}
-                      >
-                        <DeleteOutlined
-                          style={{ color: '#dc2626', fontSize: 14 }}
-                        />
-                      </Popconfirm>
-                    )}
-                  </span>
-                }
+            <Card
+              size="small"
+              hoverable
+              style={{
+                height: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                borderColor: isActive ? 'var(--accent)' : undefined,
+                boxShadow: isActive ? '0 0 0 2px rgba(245,158,11,.18)' : undefined,
+              }}
+              onClick={() => switchModel(m)}
+              title={
+                <span>
+                  {isActive && <CheckCircleFilled style={{ color: 'var(--accent)', marginRight: 6 }} />}
+                  {m.id}
+                </span>
+              }
+              extra={
+                <span onClick={e => e.stopPropagation()}>
+                  {switching === m.id && (
+                    <Typography.Text type="warning" style={{ fontSize: 12, marginRight: 8 }}>
+                      <LoadingOutlined /> 分析中…
+                    </Typography.Text>
+                  )}
+                  {switching !== m.id && isActive && (
+                    <Typography.Text type="success" style={{ fontSize: 12, marginRight: 8 }}>使用中</Typography.Text>
+                  )}
+                  {switching !== m.id && !isActive && hasCapability && (
+                    <Typography.Text type="secondary" style={{ fontSize: 12, marginRight: 8 }}>点击切换</Typography.Text>
+                  )}
+                  {switching !== m.id && !isActive && !hasCapability && (
+                    <Tag color="default" style={{ marginRight: 8 }}>无动作/表情</Tag>
+                  )}
+                  {m.builtin && (
+                    <Tag color="blue" style={{ marginRight: 8 }}>内置</Tag>
+                  )}
+                  {!m.builtin && (
+                    <Popconfirm
+                      title="删除AI 数字人？"
+                      description="将删除AI 数字人资产与对应插件（不可恢复）；删除使用中的AI 数字人会自动切换"
+                      okText="删除" cancelText="取消"
+                      onConfirm={() => removeModel(m)}
+                    >
+                      <DeleteOutlined
+                        style={{ color: '#dc2626', fontSize: 14 }}
+                      />
+                    </Popconfirm>
+                  )}
+                </span>
+              }
+            >
+              <Typography.Paragraph
+                type="secondary"
+                style={{ fontSize: 12, marginBottom: 10, wordBreak: 'break-all' }}
               >
-                <Typography.Paragraph
-                  type="secondary"
-                  style={{ fontSize: 12, marginBottom: 10, wordBreak: 'break-all' }}
-                >
-                  {m.path}
-                </Typography.Paragraph>
+                {m.path}
+              </Typography.Paragraph>
 
-                {m.expressions.length > 0 && (
-                  <div style={{ marginBottom: 8 }}>
-                    <Typography.Text strong style={{ fontSize: 12 }}>表情 </Typography.Text>
-                    {m.expressions_have_data === false && (
-                      <Typography.Text type="warning" style={{ fontSize: 12 }}>
-                        ⚠ 该模型无表情变形数据（binds 空），预览/对话表情不会变化，请更换带表情的 VRM
-                      </Typography.Text>
-                    )}
-                    {m.expressions.map(e => (
-                      <Tag key={e} color="purple" style={{ marginBottom: 4 }}>
-                        {e}
-                        {isActive && m.expressions_have_data !== false && (
-                          <PlayCircleOutlined
-                            style={{ marginLeft: 5, color: '#7c3aed', cursor: 'pointer' }}
-                            onClick={ev => { ev.stopPropagation(); preview('expression', e); }}
-                          />
-                        )}
-                      </Tag>
-                    ))}
-                  </div>
-                )}
-              </Card>
-            </Col>
+              {m.expressions.length > 0 && (
+                <div style={{ marginBottom: 8 }}>
+                  <Typography.Text strong style={{ fontSize: 12 }}>表情 </Typography.Text>
+                  {m.expressions_have_data === false && (
+                    <Typography.Text type="warning" style={{ fontSize: 12 }}>
+                      ⚠ 该模型无表情变形数据（binds 空），预览/对话表情不会变化，请更换带表情的 VRM
+                    </Typography.Text>
+                  )}
+                  {m.expressions.map(e => (
+                    <Tag key={e} color="purple" style={{ marginBottom: 4 }}>
+                      {e}
+                      {isActive && m.expressions_have_data !== false && (
+                        <PlayCircleOutlined
+                          style={{ marginLeft: 5, color: '#7c3aed', cursor: 'pointer' }}
+                          onClick={ev => { ev.stopPropagation(); preview('expression', e); }}
+                        />
+                      )}
+                    </Tag>
+                  ))}
+                </div>
+              )}
+            </Card>
           );
-        })}
-      </Row>
+        }}
+      />
     </PageLayout>
   );
 }

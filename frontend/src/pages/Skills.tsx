@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Avatar, Button, Card, Empty, Input, List, Modal, Popconfirm, Select, Space, Switch, Tabs,
+  Avatar, Button, Card, Input, Modal, Popconfirm, Select, Space, Switch, Tabs,
   Tag, Typography, Upload, message,
 } from 'antd';
 import { CloudUploadOutlined, DeleteOutlined, DownloadOutlined, GithubOutlined, ReloadOutlined } from '@ant-design/icons';
 import {
   del, get, patch, post, upload, type Skill, type SkillHubItem, type SkillPackage,
 } from '../api';
+import EntityGrid from '../components/EntityGrid';
 import PageLayout from '../components/PageLayout';
 
 export default function SkillsPage() {
@@ -207,7 +208,6 @@ export default function SkillsPage() {
     const isSkill = it.kind === 'skill' && it.ref;
     const isPackage = it.kind === 'package' && it.ref;
     return (
-      <List.Item>
         <Card size="small" style={{ height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
           <Tag color={meta.color} style={{ position: 'absolute', top: 8, right: 8, margin: 0, fontSize: 11 }}>
             {meta.label}
@@ -279,7 +279,6 @@ export default function SkillsPage() {
             ) : null}
           </div>
         </Card>
-      </List.Item>
     );
   };
 
@@ -296,7 +295,6 @@ export default function SkillsPage() {
     const name = item.display_name || item.slug;
     const desc = item.summary || item.description || '—';
     return (
-      <List.Item>
         <Card size="small" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
           <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
             {item.icon_url ? (
@@ -334,7 +332,6 @@ export default function SkillsPage() {
             </Button>
           </div>
         </Card>
-      </List.Item>
     );
   };
 
@@ -400,11 +397,10 @@ export default function SkillsPage() {
                     autoFocus
                   />
                 </Modal>
-                <List
-                  grid={{ gutter: 12, xs: 1, sm: 2, md: 3, lg: 3, xl: 4, xxl: 5 }}
-          className="nuomi-grid"
-                  dataSource={installedItems} loading={loading} size="small"
-                  locale={{ emptyText: <Empty description="没有匹配的已安装项" /> }}
+                <EntityGrid
+                  items={installedItems}
+                  loading={loading}
+                  emptyText="没有匹配的已安装项"
                   renderItem={renderInstalledItem}
                 />
               </>
@@ -434,11 +430,10 @@ export default function SkillsPage() {
                     { key: 'skillsets', label: '技能包（技能集）' },
                   ]}
                 />
-                <List
-                  grid={{ gutter: 12, xs: 1, sm: 2, md: 3, lg: 3, xl: 4, xxl: 5 }}
-          className="nuomi-grid"
-                  dataSource={hubItems} loading={hubLoading} size="small"
-                  locale={{ emptyText: <Empty description="暂无结果，换个关键词试试" /> }}
+                <EntityGrid
+                  items={hubItems}
+                  loading={hubLoading}
+                  emptyText="暂无结果，换个关键词试试"
                   renderItem={renderHubItem}
                 />
               </Card>

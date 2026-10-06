@@ -115,6 +115,18 @@ describe('EntityGrid', () => {
     );
     expect(screen.getByText('去导入')).toBeTruthy();
   });
+
+  it('loading 时显示居中 Spin 而非网格', () => {
+    const { container } = render(
+      <EntityGrid
+        items={items}
+        loading
+        renderItem={(it) => <div key={it.id}>{it.id}</div>}
+      />,
+    );
+    expect(container.querySelector('.ant-spin')).toBeTruthy();
+    expect(screen.queryByText('a')).toBeNull();
+  });
 });
 
 describe('PageLayout', () => {

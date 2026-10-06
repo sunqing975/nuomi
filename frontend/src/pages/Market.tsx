@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Button, Card, Empty, Space, Tag, Typography, message } from 'antd';
+import { Button, Card, Space, Tag, Typography, message } from 'antd';
 import { CheckCircleOutlined, DownloadOutlined } from '@ant-design/icons';
 import { get, post } from '../api';
+import EntityGrid from '../components/EntityGrid';
 
 interface MarketItem {
   id: string;
@@ -59,17 +60,19 @@ export default function MarketPage({ onInstalled }: MarketProps = {}) {
 
   return (
     <div>
-      <Typography.Title level={4} style={{ marginTop: 0 }}>
-        {market?.name || '插件市场'}
-      </Typography.Title>
-      <Typography.Paragraph type="secondary" style={{ marginBottom: 20 }}>
-        从市场安装插件：安装后出现在「插件」列表，带配置项的插件会在「设置」中出现对应配置页。
+      <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
+        {market?.name
+          ? `来自「${market.name}」市场：安装后出现在「插件」列表，带配置项的插件会在「设置」中出现对应配置页。`
+          : '从市场安装插件：安装后出现在「插件」列表，带配置项的插件会在「设置」中出现对应配置页。'}
       </Typography.Paragraph>
-      {!loading && (!market?.plugins?.length) && <Empty description="市场暂无插件" />}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 16 }}>
-        {(market?.plugins ?? []).map((item) => (
+      <EntityGrid
+        items={market?.plugins ?? []}
+        loading={loading}
+        emptyText="市场暂无插件"
+        renderItem={(item) => (
           <Card
             key={item.id}
+            size="small"
             title={
               <Space>
                 <span>{item.name}</span>
@@ -106,8 +109,8 @@ export default function MarketPage({ onInstalled }: MarketProps = {}) {
                 </Button>
               )}
           </Card>
-        ))}
-      </div>
+        )}
+      />
     </div>
   );
 }

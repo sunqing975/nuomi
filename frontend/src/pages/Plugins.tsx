@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  Avatar, Button, Card, Empty, Input, List, Modal, Popconfirm, Space, Switch, Tag,
+  Avatar, Button, Card, Input, Modal, Popconfirm, Space, Switch, Tag,
   Typography, Upload, message,
 } from 'antd';
 import { CloudUploadOutlined, DeleteOutlined, GithubOutlined, ReloadOutlined, ShopOutlined } from '@ant-design/icons';
 import { del, get, post, patch, upload, type Plugin } from '../api';
+import EntityGrid from '../components/EntityGrid';
 import MarketPage from './Market';
 import PageLayout from '../components/PageLayout';
 
@@ -81,8 +82,7 @@ export default function PluginsPage() {
   const renderPlugin = (p: Plugin) => {
     const color = AVATAR_COLORS[(p.plugin_id.charCodeAt(0) || 0) % AVATAR_COLORS.length];
     return (
-      <List.Item>
-        <Card size="small" style={{ height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+      <Card size="small" style={{ height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
           <Tag color="blue" style={{ position: 'absolute', top: 8, right: 8, margin: 0, fontSize: 11 }}>
             {p.kind || 'tool'}
           </Tag>
@@ -116,7 +116,6 @@ export default function PluginsPage() {
             </Space>
           </div>
         </Card>
-      </List.Item>
     );
   };
 
@@ -171,11 +170,10 @@ export default function PluginsPage() {
           autoFocus
         />
       </Modal>
-      <List
-        grid={{ gutter: 12, xs: 1, sm: 2, md: 3, lg: 3, xl: 4, xxl: 5 }}
-          className="nuomi-grid"
-        dataSource={plugins} loading={loading} size="small"
-        locale={{ emptyText: <Empty description="还没有插件，可导入或重新扫描" /> }}
+      <EntityGrid
+        items={plugins}
+        loading={loading}
+        emptyText="还没有插件，可导入或重新扫描"
         renderItem={renderPlugin}
       />
       <Typography.Paragraph type="secondary" style={{ marginTop: 10, fontSize: 12 }}>
