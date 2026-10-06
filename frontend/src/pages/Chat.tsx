@@ -425,7 +425,7 @@ export default function ChatPage() {
           selectedModel={selectedModel}
           modelOptions={modelOptions}
           interrupted={interrupted}
-          onSend={text => stream.send(text)}
+          onSend={text => { setInput(''); stream.send(text); }}
           onStop={stream.stop}
           onToggleSkill={toggleSkill}
           onToggleSkillPackage={toggleSkillPackage}
