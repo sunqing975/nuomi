@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import {
-  Button, Checkbox, Form, Input, Modal, Select, Space, Switch, Table, Tabs, Tag, Typography, message,
+  Button, Checkbox, Form, Input, Modal, Select, Space, Switch, Table, Tabs, Typography, message,
 } from 'antd';
 import {
   PlusOutlined, SaveOutlined, DeleteOutlined, EyeOutlined, EyeInvisibleOutlined, ApiOutlined,
@@ -215,14 +215,6 @@ function ProvidersTab() {
         >
           {v}
         </Typography.Text>
-      ),
-    },
-    {
-      title: '模型', dataIndex: 'models',
-      render: (models: { id: string }[]) => (
-        <Space size={4} wrap>
-          {(models || []).map(m => <Tag key={m.id} color="blue" style={{ margin: 0 }}>{m.id}</Tag>)}
-        </Space>
       ),
     },
     {
