@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  Alert, Button, Card, Popconfirm, Space, Switch, Tag, Typography, Upload, message,
+  Alert, Button, Card, Popconfirm, Space, Switch, Tag, Tooltip, Typography, Upload, message,
 } from 'antd';
 import {
   CheckCircleFilled, DeleteOutlined, LoadingOutlined, PlayCircleOutlined, SmileOutlined, UploadOutlined,
@@ -134,27 +134,21 @@ export default function AvatarModelsPage() {
       title="AI 数字人"
       description="管理数字人形象、动作与表情：导入即用，对话时用语言驱动"
       extra={
-        <Switch
-          checked={avatarEnabled}
-          loading={toggling}
-          onChange={togglePet}
-          checkedChildren="开"
-          unCheckedChildren="关"
-        />
+        <Tooltip
+          title={avatarEnabled
+            ? '关闭将销毁数字人窗口并停用动作 / 表情能力，后端对话不受影响'
+            : '开启后恢复数字人窗口与动作 / 表情能力'}
+        >
+          <Switch
+            checked={avatarEnabled}
+            loading={toggling}
+            onChange={togglePet}
+            checkedChildren="开"
+            unCheckedChildren="关"
+          />
+        </Tooltip>
       }
     >
-      <Card
-        size="small"
-        style={{ marginBottom: 16 }}
-        title="使用说明"
-      >
-        <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 0 }}>
-          {avatarEnabled
-            ? '数字人窗口显示中（开关在页面右上角）。关闭将销毁窗口并停用动作 / 表情能力，后端对话不受影响，可随时重新开启。'
-            : '数字人窗口已完全停止（释放资源），动作 / 表情能力已停用。开启后恢复，后端对话不受影响。'}
-        </Typography.Paragraph>
-      </Card>
-
       <Card
         size="small"
         style={{ marginBottom: 16 }}

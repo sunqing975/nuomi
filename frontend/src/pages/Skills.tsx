@@ -248,11 +248,7 @@ export default function SkillsPage() {
             ) : (
               <span style={{ color: 'var(--label-3)', fontSize: 12 }}>包级整体启停</span>
             )}
-            {it.kind === 'builtin' ? (
-              <Typography.Text style={{ fontSize: 11, color: 'var(--label-3)' }}>
-                lang: {it.lang || '—'}
-              </Typography.Text>
-            ) : isSkill ? (
+            {it.kind === 'builtin' ? null : isSkill ? (
               <Space size={4}>
                 <Switch size="small" checked={it.enabled}
                   onChange={v => toggleSkill(it.ref as Skill, v)} />
@@ -441,11 +437,6 @@ export default function SkillsPage() {
           },
         ]}
       />
-      <Typography.Paragraph type="secondary" style={{ marginTop: 10, fontSize: 12 }}>
-        技能目录：<Typography.Text code>工作区/skills/&lt;技能名&gt;/SKILL.md</Typography.Text>；
-        技能包目录：<Typography.Text code>工作区/skill_packages/&lt;包名&gt;/skills/&lt;技能名&gt;/</Typography.Text>。
-        内置技能（apple-notes / plan / 提醒 等）随 harness 注入专家。
-      </Typography.Paragraph>
     </PageLayout>
   );
 }

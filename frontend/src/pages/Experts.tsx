@@ -85,13 +85,10 @@ export default function ExpertsPage({ onBackend }: { onBackend?: (ok: boolean) =
               }}>
                 {a.icon_name === 'cat' ? '🐱' : <RobotOutlined />}
               </div>
-              <div>
-                <div style={{ fontWeight: 600 }}>{a.name}</div>
-                <Space size={4}>
-                  <Tag>{a.kind || 'expert'}</Tag>
-                  {a.last_state === 'running' && <Tag color="green">运行中</Tag>}
-                </Space>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</div>
               </div>
+              {a.last_state === 'running' && <Tag color="green">运行中</Tag>}
             </div>
             <div style={{ color: 'var(--label-2)', fontSize: 13, minHeight: 36 }}>
               {a.description || '暂无描述'}

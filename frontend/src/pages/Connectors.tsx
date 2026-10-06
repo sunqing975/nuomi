@@ -164,14 +164,6 @@ export default function McpPage() {
         emptyText="还没有配置连接器"
         renderItem={renderConnector}
       />
-      <Card style={{ marginTop: 16 }} size="small">
-        <Typography.Text strong>如何接入连接器</Typography.Text>
-        <Typography.Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0, fontSize: 13, lineHeight: 1.8 }}>
-          在本页直接新增 / 编辑 / 删除。配置持久化在本机数据目录（重启不丢）。
-          对话时工具名带 <Typography.Text code>{'{连接器名}_'}</Typography.Text> 前缀，自动对专家可用；
-          增删改后下次对话生效。本地进程方式需要在「命令」中指定可执行文件。
-        </Typography.Paragraph>
-      </Card>
 
       <Modal
         title={editing ? `编辑连接器：${editing.name}` : '新建连接器'}

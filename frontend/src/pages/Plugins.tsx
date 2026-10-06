@@ -176,10 +176,6 @@ export default function PluginsPage() {
         emptyText="还没有插件，可导入或重新扫描"
         renderItem={renderPlugin}
       />
-      <Typography.Paragraph type="secondary" style={{ marginTop: 10, fontSize: 12 }}>
-        插件目录：<Typography.Text code>工作区/plugins/</Typography.Text>（plugin.yaml + main.py）。
-        全局启停对所有专家生效；专家级绑定在「专家」页配置。
-      </Typography.Paragraph>
     </PageLayout>
   );
 }
