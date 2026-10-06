@@ -465,3 +465,11 @@ SSE 事件协议（当前完整）：`token` / `reasoning` / `tool_call_chunk`�
 - **细节决策**：Skills 页导入按钮保留在"已安装" tab 工具栏（tab 内操作不上提页头）；Chat 页不动（对话主界面已有 SectionToolbar，页头式骨架不适用）；分类 Tag（蓝/紫/绿）是语义色不是主色，保留
 - **验证**：tsc 过、vitest 59 全绿（components.test 新增 PageLayout 3 条：渲染/宽度约束 wide/缺省区块）、npm run build 成功、后端 /api/health + /console/ 200、壳重启"糯米启动完成"
 - **遗留（L2 待做，等用户确认节奏）**：网格三套（Row/Col、List grid、Card 堆叠）统一；空态三种收敛；卡片语汇统一；品牌亮档点缀的应用面；L3 细节工艺（hover 反馈/间距节奏/字体层级）
+
+## 前端视觉优化 L2 视觉统一（2026-10-06，commit 11202ca，端到端验证通过）
+
+- **背景**：L1（页头骨架 + 主色）完成后用户继续 L2。审计遗留三大粗糙源：网格三套（Row/Col、List grid、手写 grid）、空态三种（locale emptyText / 手写 Empty / Card 包 Empty）、卡片语汇不统一（size、手写加粗标题、硬编码色）
+- **L2 内容**：① EntityGrid 增强：新增 `loading` prop（居中 Spin），网格/加载/空态一体化（此前 P0-3 抽了 EntityGrid 但没有任何页面在用——历史欠账，本轮铺开）；② 网格三套归一：Experts/Knowledge/AvatarModels 的 Row/Col、Plugins/Skills/Connectors 的 List grid、Market 手写 grid div 全部换成 EntityGrid（auto-fill minmax 自适应 + 等高），并去掉卡片无谓的 List.Item 包裹；③ 空态统一全部走 EntityGrid emptyText / EmptyState；④ 卡片语汇统一：全部卡片 size="small"，AvatarModels 去掉手写 `<b>` 加粗标题、选中态 borderColor 硬编码 #f59e0b → var(--accent)，Experts 头像底色硬编码 → var(--accent)，Market 去掉 Modal 内重复 level-4 大标题（市场名合进描述）
+- **死代码清理（用户偏好当场清）**：index.css 的 `.nuomi-grid` 等高 hack 规则（List/Row 时代遗留，兼容两种挂载的 hack）全量删除——页面已无引用（EntityGrid CSS grid 天然等高）
+- **验证**：tsc 过、vitest 60 全绿（新增 EntityGrid loading 1 条）、npm run build 成功、后端 /api/health + /console/ 200、壳重启"糯米启动完成"；提交未包含 shells/nuomi-avatar/config.json（壳运行时写入 avatar_enabled 状态的现场改动，不混入）
+- **遗留（L3 待做，等用户确认节奏）**：hover 反馈/间距节奏/字体层级/选中态微交互等细节工艺；antd Modal/Form/Table 等表单语汇未动；Chat 对话页未做视觉统一（全宽主界面，L1/L2 未触碰）
