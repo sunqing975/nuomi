@@ -227,14 +227,12 @@ export function SegmentView({ seg }: { seg: Segment }) {
 /** 消息气泡：左侧助手（分段渲染）/ 右侧用户（纯文本）
  *
  * 气泡样式常量导出给 MessageList（流式块复用同一视觉，不出现两套气泡）。
- * 全站基准：助手=surface 白底细边框（克制），用户=primary 实色白字（强归属）；
+ * 全站基准：助手正文无框无底（纯文字，克制），用户=primary 实色白字（强归属）；
  * 头像 32px：助手主色淡底+主色图标，用户 primary 底+白图标。
  */
 export const assistantBubbleStyle: CSSProperties = {
-  padding: '8px 12px',
-  borderRadius: '4px 12px 12px 12px',
-  background: 'var(--surface)',
-  border: '1px solid var(--line-3)',
+  fontSize: 14,
+  lineHeight: 1.6,
   color: 'var(--label-1)',
 };
 export const userBubbleStyle: CSSProperties = {
