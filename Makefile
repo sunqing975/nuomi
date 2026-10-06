@@ -6,7 +6,7 @@
 #   make web          调试形态：后端:8000 + 控制台前端:5173（浏览器调试用）
 #
 # 常用：
-#   make start       启动AI 数字人壳（默认形态，日常用这个）
+#   make start       启动AI 数字人壳（默认形态，日常用这个；会先构建前端，见下）
 #   make stop        停止AI 数字人壳 / web 模式
 #   make status      查看运行状态
 #   make logs        查看最近日志
@@ -17,6 +17,15 @@
 #   make build       前端构建（tsc + vite build）
 #
 # 进程管理：PID 与日志落在 .logs/（已 gitignore），端口占用则跳过启动。
+#
+# 启动链与前端构建的关系（重要）：
+#   壳的控制面板不是 vite dev server，而是后端 StaticFiles 挂载的 frontend/dist
+#   （backend/app/main.py 挂 /console），且 dist/ 被 gitignore、不入库。
+#   所以 desktop/build 是强依赖：全新克隆没有 dist，main.py 会退回 frontend/ 源码根，
+#   /console/ 返回的是源码 index.html（引用 /src/main.tsx → 404），控制面板白屏；
+#   改了前端不 build 则是「web 对、桌面壳不对」的经典假绿。
+#   这里选择每次启动都构建（build 是 .PHONY + desktop 的 make 前置依赖，
+#   make 的前置依赖先于 recipe 执行），用几秒构建时间换掉「忘记 build」这类坑。
 # =============================================================================
 
 SHELL         := /bin/bash
@@ -33,12 +42,12 @@ FRONTEND_PORT := 5173
 
 .DEFAULT_GOAL := help
 
-.PHONY: help start stop restart status logs logs-follow desktop web backend frontend test lint typecheck check format format-check build shell-check clean
+.PHONY: help start stop restart status logs logs-follow desktop web backend frontend test lint typecheck check format format-check build frontend-test shell-check clean
 
 help:
 	@echo "糯米 Nuomi 启动/关闭脚本"
 	@echo ""
-	@echo "  make start          启动AI 数字人壳（默认形态；依赖后端 :$(BACKEND_PORT)）"
+	@echo "  make start          启动AI 数字人壳（默认形态；会先构建前端；依赖后端 :$(BACKEND_PORT)）"
 	@echo "  make stop           停止AI 数字人壳 / web 模式"
 	@echo "  make restart        重启"
 	@echo "  make status         查看运行状态"
@@ -56,7 +65,8 @@ help:
 # ---- AI 数字人壳（默认形态） ----
 start: desktop
 
-desktop:
+# 前置依赖 build：壳加载的是 backend 挂载的 frontend/dist，先构建再启动（理由见文件头注释）。
+desktop: build
 	@mkdir -p $(LOGDIR)
 	@if [ -f $(SHELL_PID) ] && kill -0 $$(cat $(SHELL_PID)) 2>/dev/null; then \
 		echo "⚠ AI 数字人壳已在运行 (PID $$(cat $(SHELL_PID)))，先 make stop 再启动"; \
@@ -160,7 +170,7 @@ test:
 
 # ---- 质量门禁（提交前 make check 全绿） ----
 # check = 后端 lint + 格式 + 类型 + 测试 + 前端类型&构建 + 壳语法；与 .github/workflows/ci.yml 对齐。
-check: lint format-check typecheck test build shell-check
+check: lint format-check typecheck test build frontend-test shell-check
 
 lint:
 	@cd $(ROOT)/backend && .venv/bin/ruff check app tests --config pyproject.toml
@@ -175,7 +185,21 @@ typecheck:
 	@cd $(ROOT)/backend && .venv/bin/mypy
 
 build:
+	@if [ ! -d $(ROOT)/frontend/node_modules ]; then \
+		echo "✘ 前端依赖未安装（frontend/node_modules 不存在），无法构建 dist"; \
+		echo "  请先执行：cd frontend && npm ci"; \
+		exit 1; \
+	fi
 	@cd $(ROOT)/frontend && npm run build
+
+# 前端单测（vitest + jsdom）：XSS 净化、SSE 分帧、引用标记解析、流式片段合并
+frontend-test:
+	@if [ ! -d $(ROOT)/frontend/node_modules ]; then \
+		echo "✘ 前端依赖未安装，无法跑前端测试"; \
+		echo "  请先执行：cd frontend && npm ci"; \
+		exit 1; \
+	fi
+	@cd $(ROOT)/frontend && npm run test:run
 
 # 壳（Electron）语法门禁：CI 没有壳作业，靠这条兜住语法级回归
 shell-check:

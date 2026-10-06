@@ -11,19 +11,46 @@
 | 形象层（AI 数字人壳） | shells/nuomi-avatar/（基于 nuomi-avatar，MIT） | 纯表现层：three.js + VRM 3D 渲染、情绪表情、流式字幕、工具执行状态；大脑全在 backend（详见 [shells/nuomi-avatar/README.md](shells/nuomi-avatar/README.md)） |
 | 存储 | SQLite | agents/threads/thread_messages 投影表（对齐 Octop schema，已建成） |
 
-> **AI 数字人模型版权说明**：VRM 模型资产在工作区 `models/3D/`（本机 `/Users/superman/Nuomi/models/3D/`），不入库。
+> **AI 数字人模型版权说明**：VRM 模型资产在工作区（数据根）的 `models/3D/`，不入库。
+> 数据根默认 macOS `~/Library/Application Support/Nuomi`（其它平台 `~/.nuomi`），可用 `.env` 里的 `NUOMI_HOME` 覆盖。
 > 用户自导入模型按各自 License 使用（示例模型 6309260419351179234.vrm 为 CC0）；
 > 若需分发项目请使用宽松 License 的模型。动作资产为 Mixamo 导出的 `.vrma` 动画文件（`shells/nuomi-avatar/assets/animations/`）。
 
 ## 快速开始
+
+依赖不入库，全新克隆后先装依赖（Python 3.11/3.12 + [uv](https://docs.astral.sh/uv/)，Node.js 20+，CI 用 22）：
+
+```bash
+cd backend && uv sync && cd ..                    # 后端 venv → backend/.venv（uv 管理，无 pip）
+cd frontend && npm ci && cd ..                    # 控制台前端构建依赖
+cd shells/nuomi-avatar && npm install && cd ..    # AI 数字人壳（Electron）
+```
+
+配置 LLM：把**仓库根**的 `.env.example` 复制为**仓库根**的 `.env`，填上 `LLM_API_KEY`：
+
+```bash
+cp .env.example .env
+```
+
+> 为什么是仓库根、不是 `backend/.env`：`backend/app/config.py` 用 `REPO_ROOT = Path(__file__).resolve().parents[2]`
+> （该文件 → `backend/app/config.py` 往上两级 = 仓库根）定位 `env_file`，**只读 `<仓库根>/.env`**；
+> 而壳/uvicorn 的工作目录都是 `backend/`，很容易想当然地把 `.env` 放进去 —— 那样会被静默忽略，
+> 表现为「配了 key 却提示未设置」。也可以完全不写 `.env`，改在控制台「设置 → 大模型」页配置 Provider
+> （`<数据根>/providers.json` 为运行时权威）。
+
+启动：
 
 ```bash
 make start   # 一键启动 AI 数字人壳（Electron 数字人窗口 + 控制面板），后端自动拉起（ensureBackend）
 make web     # 调试控制台（vite dev，:5173，代理 /api → :8000）
 ```
 
-首次使用需配置 LLM：复制 `backend/.env.example` 为 `backend/.env` 设置 `DEEPSEEK_API_KEY`（或任意 OpenAI 兼容 key），
-或在控制台「设置 → 大模型」页面配置 Provider（`工作区/providers.json` 为运行时权威）。
+> `make start` / `make desktop` 会**先执行 `make build` 构建前端**再拉起壳。原因：壳的控制面板不是 vite dev
+> server，而是后端 StaticFiles 挂载的 `frontend/dist`（`/console/`，见 `backend/app/main.py`），而 `dist/`
+> 被 gitignore、不入库 —— 全新克隆没有 `dist` 时，`main.py` 会退回 `frontend/` 源码根，`/console/` 返回源码
+> `index.html`（它引用 `/src/main.tsx` → 404），控制面板白屏；改了前端忘了 build，则会出现「浏览器（vite dev）
+> 里对、桌面壳里不对」。所以这条依赖写成了 Makefile 的强前置（`desktop: build`），用几秒构建时间换掉这两类坑。
+> `make web` 走 vite dev 免构建；但若要在浏览器里访问 `http://127.0.0.1:8000/console/`，仍需先 `make build`。
 
 - 控制面板：http://127.0.0.1:8000/console/（壳内嵌窗口 / 浏览器访问均可）
 - AI 数字人开关：控制台「AI 数字人」页，关闭即销毁数字人窗口（开关联动 vrm-avatar 插件启停）
@@ -52,6 +79,10 @@ curl -N -X POST http://127.0.0.1:8000/api/agents/{agent_id}/chat \
 cd backend && .venv/bin/python probe_harness.py   # harness 冒烟：DeepSeek 对话 + Octop 插件加载
 ```
 
+会真实调用一次 LLM（需 `.env` 里有可用 key）。其中「Octop 插件加载」一节需要一个 Octop 源码 checkout
+提供示例插件：默认取 nuomi 仓库的同级目录 `../Octop`，也可用 `OCTOP_SRC=/path/to/Octop` 指定；
+找不到时该节打印 `[skip]` 并继续验证对话链路。
+
 ## 架构
 
 ```
@@ -72,4 +103,7 @@ transport（FastAPI 路由） → domain（领域服务） → infra/harness（�
 
 ## 许可证
 
-MIT（octop-harness 与 nuomi-avatar 均为开源依赖）
+本项目以 MIT 许可证开源，全文见仓库根的 [LICENSE](LICENSE)（Copyright (c) 2026 Nuomi contributors）。
+
+依赖与第三方资产按各自的 License 使用：octop-harness、nuomi-avatar 均为开源依赖；
+VRM 模型与 `.vrma` 动作资产见上文「AI 数字人模型版权说明」。

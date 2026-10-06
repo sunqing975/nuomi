@@ -6,7 +6,8 @@
 
 source_dir 示例：
     ~/.octop/agents/1KMDWV/                 # 已安装的 octop 专家 workspace
-    /Users/superman/projects/code/Octop/src/octop/infra/agents/experts/library/ai-coding-coach
+    $OCTOP_SRC/src/octop/infra/agents/experts/library/ai-coding-coach
+                                            # Octop 源码仓库内的专家库（OCTOP_SRC 指向该仓库根，默认同级 ../Octop）
 
 说明：复制 persona 文件（USER/SOUL/AGENTS/MEMORY/BOOTSTRAP/PROACTIVE.md）、
 manifest、skills/ 与 agents/（子智能体）到 nuomi 专家 workspace
