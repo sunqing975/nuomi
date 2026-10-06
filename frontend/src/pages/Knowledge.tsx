@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  Button, Card, Dropdown, Input, Modal, Popconfirm, Space, Switch, Tag,
+  Button, Card, Input, Modal, Popconfirm, Space, Switch, Tag,
   Tooltip, Typography, message,
 } from 'antd';
 import {
-  BookOutlined, DeleteOutlined, DownOutlined, PlusOutlined, SettingOutlined,
+  BookOutlined, DeleteOutlined, PlusOutlined, SettingOutlined,
 } from '@ant-design/icons';
 import {
   knowledgeApi, type KnowledgeBase, type KnowledgeCapability,
@@ -114,16 +114,12 @@ export default function KnowledgePage() {
             }
             extra={
               <Space size={4}>
-                <Dropdown
-                  menu={{
-                    items: [
-                      { key: 'open', label: '进入详情', onClick: () => openDetail(kb) },
-                      { key: 'rename', label: '重命名', onClick: () => { setRenameTarget(kb); setRenameName(kb.name); setRenameOpen(true); } },
-                    ],
-                  }}
+                <Button
+                  size="small" type="text"
+                  onClick={e => { e.stopPropagation(); setRenameTarget(kb); setRenameName(kb.name); setRenameOpen(true); }}
                 >
-                  <Button size="small" type="text" icon={<DownOutlined />} onClick={e => e.stopPropagation()} />
-                </Dropdown>
+                  重命名
+                </Button>
                 <Popconfirm
                   title={`删除知识库「${kb.name}」？`}
                   description="将删除全部文档、索引与文件，不可恢复"

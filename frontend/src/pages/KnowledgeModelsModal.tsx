@@ -86,10 +86,15 @@ export default function KnowledgeModelsModal({ open, onClose, capability, onChan
   };
 
   const presets = capability?.presets_meta ?? [];
-  const modelOptions = presets
-    .filter(p => p.supported)
-    .map(p => ({ value: p.id, label: p.id }));
   const current = capability?.model ?? '';
+  const localIds = capability?.local_models ?? [];
+  // 只能切换已下载的模型；当前模型未下载时以禁用占位显示（提示先下载）
+  const modelOptions = [
+    ...(current && !localIds.includes(current)
+      ? [{ value: current, label: `${current}（未下载，请先下载）`, disabled: true }]
+      : []),
+    ...localIds.map(id => ({ value: id, label: id })),
+  ];
 
   const sizeLabel = (gb: number | null) =>
     gb == null ? '' : ` · ${gb < 1 ? `${Math.round(gb * 1024)}MB` : `${gb.toFixed(1)}GB`}`;
