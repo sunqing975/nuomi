@@ -37,12 +37,6 @@ export default function ExpertsPage({ onBackend }: { onBackend?: (ok: boolean) =
     load();
   };
 
-  const startAgent = async (a: Agent) => {
-    await post(`/agents/${a.agent_id}/start`);
-    message.success('实例已启动');
-    load();
-  };
-
   const saveAgent = async (values: Partial<Agent>) => {
     if (editing) {
       await patch(`/agents/${editing.agent_id}`, values);
@@ -95,7 +89,6 @@ export default function ExpertsPage({ onBackend }: { onBackend?: (ok: boolean) =
             </div>
             <Space wrap>
               <Switch checked={a.enabled} onChange={() => toggleEnabled(a)} checkedChildren="启用" unCheckedChildren="停用" />
-              <Button size="small" onClick={() => startAgent(a)}>{a.runtime === 'running' ? '重启实例' : '启动实例'}</Button>
               <Button size="small" onClick={() => { setEditing(a); form.setFieldsValue(a); setCreateOpen(true); }}>编辑</Button>
               <Popconfirm title={`删除「${a.name}」？`} onConfirm={async () => { await del(`/agents/${a.agent_id}`); message.success('已删除'); load(); }}>
                 <Button size="small" danger>删除</Button>
