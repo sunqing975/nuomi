@@ -509,3 +509,10 @@ SSE 事件协议（当前完整）：`token` / `reasoning` / `tool_call_chunk`�
 - **背景**：用户问专家卡两个「启动」（Switch 启停 + 启动实例按钮）是否合理。核实后端：① `enabled`（Switch）= DB 配置总闸，停用则 chat/start 均 400；② `POST /agents/{id}/start` = ensure_agent_runtime（manager 单例缓存命中即 no-op）+ 写 last_state=running——**「重启实例」名不副实（从不真正重建）**；③ 对话端点每次自动 ensure_agent_runtime 拉起实例 → 手动预热冗余
 - **落地**：删前端 startAgent 函数与按钮；专家卡操作区 = 启用/停用 Switch + 编辑 + 删除，运行中 tag（实时 runtime）保留；后端 start/stop 端点**保留**（对外 API 契约：HANDOVER 文档化 + tests/test_agent_runtime_entry.py 回归锁定 workspace 落点，删除会破坏契约与测试）
 - **验证**：前端 tsc/vitest 60/build 全绿、后端+壳重启「糯米启动完成」
+
+## 消除「双标题」：顶栏改面包屑（2026-10-06，commit 5787757）
+
+- **问题**：用户截图指出专家页顶部有两个「专家」标题——App Header 左侧 Typography.Title(level=4) 显示当前页 title，Content 内 PageLayout 页头又是同一标题（含描述+新建按钮），重复
+- **修复（大厂模式）**：主标题唯一化给 PageLayout；Header 左侧改为面包屑「能力 / 专家」（chat 顶级显示「对话」，知识库详情显示「能力 / 知识库 / 详情」），右侧「后端在线」Tag 保留
+- **清理**：NavLeaf.title 字段废弃（原顶栏标题专用），9 个 NAV 条目 title 值全删；面包屑由 BREADCRUMB 常量（NAV 展开时拼 group.label / label）驱动
+- **验证**：前端 tsc/vitest 60/build 全绿、壳重启「糯米启动完成」
