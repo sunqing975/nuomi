@@ -473,3 +473,16 @@ SSE 事件协议（当前完整）：`token` / `reasoning` / `tool_call_chunk`�
 - **死代码清理（用户偏好当场清）**：index.css 的 `.nuomi-grid` 等高 hack 规则（List/Row 时代遗留，兼容两种挂载的 hack）全量删除——页面已无引用（EntityGrid CSS grid 天然等高）
 - **验证**：tsc 过、vitest 60 全绿（新增 EntityGrid loading 1 条）、npm run build 成功、后端 /api/health + /console/ 200、壳重启"糯米启动完成"；提交未包含 shells/nuomi-avatar/config.json（壳运行时写入 avatar_enabled 状态的现场改动，不混入）
 - **遗留（L3 待做，等用户确认节奏）**：hover 反馈/间距节奏/字体层级/选中态微交互等细节工艺；antd Modal/Form/Table 等表单语汇未动；Chat 对话页未做视觉统一（全宽主界面，L1/L2 未触碰）
+
+## 前端视觉优化 L3 细节工艺 + 全站文案优化（2026-10-06，commit 2312dd8，端到端验证通过）
+
+- **L3 视觉**：全部管理页卡片统一 `hoverable`（Experts/Plugins/Skills×2/Connectors/Market；Knowledge/AvatarModels 此前已有），hover 阴影反馈一致
+- **文案优化（用户偏好硬约束落实：连接器命名，不向用户暴露 MCP 等协议术语）**：
+  - **Connectors 页 MCP 术语全清**：页头描述「接入 MCP 服务器」→「接入外部服务器能力」；「如何接入」卡片删除 MCP 协议/langchain-mcp-adapters/data_root connectors.json/NUOMI_CONNECTORS 首次播种等内部细节（播种机制保留在 AGENT.md 层面，不进用户文案）；传输方式选项 stdio/sse/http 标签中文化（本地进程/HTTP 流/HTTP，**value 不变**，后端字段不受影响）；卡片 transport 徽标显示中文名（TRANSPORT_LABEL 映射）；校验消息中文化；「新增连接器」→「新建连接器」统一动词
+  - **AvatarModels**：页头描述/使用说明卡/Alert 去 vrm-avatar、.vrma、LLM 术语并精简（「AI 数字人」重复 4 次→1 次）；修复「对AI 数字人」「所有AI 数字人」中英混排缺空格；blend shape → 形象自带预设；「自动转 VRMA」→「自动转换」
+  - **App 导航** tooltip「连接器（MCP 协议）」→「连接器（外部服务器接入）」
+  - **Plugins**：描述「工具由 LLM 按需调用」→「AI 按需调用」；页脚删 ctx.tool 术语
+  - **Knowledge/Experts/Settings** 页头描述精简；Knowledge 空态「点击右上角」→「点「新建知识库」创建」
+- **保留（刻意不动的）**：Storage 表现层接入协议说明（开发者技术页，SSE/API 端点保留）；Settings Tab 内 Provider 字段名（配置标识，改名会破坏字段语义）；SkillHub/Mixamo 品牌名
+- **验证**：tsc 过、vitest 60 全绿、build 成功、后端 /api/health + /console/ 200、壳重启「糯米启动完成」；未提交 shells/nuomi-avatar/config.json（壳运行时状态写入 avatar_enabled，与代码无关）
+- **经验**：MCP 术语中文化只动「用户可见文案层」（label/description/徽标），协议字段值（transport: stdio/sse/http）与 API 契约不动——展示层翻译、数据层不动，避免破坏前后端契约
