@@ -65,7 +65,7 @@ export default function AvatarModelsPage() {
 
   const importFbx = async (file: File) => {
     setImportingFbx(true);
-    message.loading({ content: `正在转换「${file.name}」→ VRMA（首次约 10~30s）…`, key: 'fbx-convert', duration: 0 });
+    message.loading({ content: `正在转换「${file.name}」→ 动作（首次约 10~30s）…`, key: 'fbx-convert', duration: 0 });
     try {
       const d = await upload<{ ok: boolean; action: string }>('/avatar/animations/import', file);
       message.destroy('fbx-convert');
@@ -132,7 +132,7 @@ export default function AvatarModelsPage() {
   return (
     <PageLayout
       title="AI 数字人"
-      description="数字人模型资产（VRM）、动作表情与开关：对AI 数字人说话即可驱动"
+      description="管理数字人形象、动作与表情：导入即用，对话时用语言驱动"
       extra={
         <Switch
           checked={avatarEnabled}
@@ -150,8 +150,8 @@ export default function AvatarModelsPage() {
       >
         <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 0 }}>
           {avatarEnabled
-            ? 'AI 数字人窗口显示中（开关在页面右上角）。关闭将销毁AI 数字人窗口（释放资源）并停用AI 数字人动作/表情插件（vrm-avatar），后端对话能力不受影响，可随时重新开启。'
-            : 'AI 数字人窗口已完全停止（释放资源），AI 数字人动作/表情插件已停用（LLM 不再调用动作工具）。开启后恢复AI 数字人插件。'}
+            ? '数字人窗口显示中（开关在页面右上角）。关闭将销毁窗口并停用动作 / 表情能力，后端对话不受影响，可随时重新开启。'
+            : '数字人窗口已完全停止（释放资源），动作 / 表情能力已停用。开启后恢复，后端对话不受影响。'}
         </Typography.Paragraph>
       </Card>
 
@@ -178,11 +178,11 @@ export default function AvatarModelsPage() {
             disabled={importingFbx}
           >
             <Button icon={importingFbx ? <LoadingOutlined /> : <UploadOutlined />} loading={importingFbx}>
-              导入动作（Mixamo FBX，自动转 VRMA）
+              导入动作（Mixamo FBX，自动转换）
             </Button>
           </Upload>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            VRM 直接成为可选模型；FBX 转换后数字人窗口自动注册新动作，LLM 即可调用。均无需重启。
+            VRM 直接成为可选形象；FBX 转换后自动注册新动作，AI 即可调用。均无需重启。
           </Typography.Text>
         </Space>
       </Card>
@@ -191,13 +191,12 @@ export default function AvatarModelsPage() {
         type="info"
         showIcon
         style={{ marginBottom: 16 }}
-        message="AI 数字人模型资产（工作区 models/3D/，VRM）"
+        message="数字人模型资产（工作区 models/3D/）"
         description={
           <span style={{ fontSize: 13 }}>
-            所有AI 数字人共用同一套动作/表情插件（vrm-avatar）：动作来自 Mixamo 动画（.vrma），
-            表情来自当前模型的 blend shape。对AI 数字人说「给我比个心」「笑一个」，
-            LLM 会调用动态装配的动作/表情工具来驱动AI 数字人。切模型 / 新增动画无需重启。
-            <b> 使用中的模型支持表情预览（▶），点击即在数字人窗口实播。</b>
+            所有数字人共用同一套动作 / 表情能力：动作来自 Mixamo 动画，表情来自当前形象自带的预设。
+            对数字人说「给我比个心」「笑一个」，AI 会自动调用动作 / 表情来驱动数字人。
+            切换形象 / 新增动作无需重启。使用中的形象支持表情预览（▶），点击即在窗口实播。
           </span>
         }
       />
@@ -205,11 +204,11 @@ export default function AvatarModelsPage() {
       <Card
         size="small"
         style={{ marginBottom: 16 }}
-        title={<span><SmileOutlined /> 动作资产（全局共享，所有 VRM 模型通用）</span>}
+        title={<span><SmileOutlined /> 动作资产（全局共享，所有数字人通用）</span>}
       >
         {actions.length === 0 ? (
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            暂无动作资产，可在上方「导入资产」导入 Mixamo FBX 自动转 VRMA
+            暂无动作资产，可在上方「导入资产」导入 Mixamo FBX 动作
           </Typography.Text>
         ) : (
           <div>
@@ -238,7 +237,7 @@ export default function AvatarModelsPage() {
               </Tag>
             ))}
             <Typography.Text type="secondary" style={{ display: 'block', fontSize: 12, marginTop: 6 }}>
-              动作是全局资产：导入一次，所有 VRM 模型都可调用；删除后数字人页面自动刷新。
+              动作是全局资产：导入一次，所有数字人都可调用；删除后数字人页面自动刷新。
             </Typography.Text>
           </div>
         )}

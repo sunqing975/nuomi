@@ -82,7 +82,7 @@ export default function PluginsPage() {
   const renderPlugin = (p: Plugin) => {
     const color = AVATAR_COLORS[(p.plugin_id.charCodeAt(0) || 0) % AVATAR_COLORS.length];
     return (
-      <Card size="small" style={{ height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+      <Card size="small" hoverable style={{ height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
           <Tag color="blue" style={{ position: 'absolute', top: 8, right: 8, margin: 0, fontSize: 11 }}>
             {p.kind || 'tool'}
           </Tag>
@@ -122,7 +122,7 @@ export default function PluginsPage() {
   return (
     <PageLayout
       title="插件"
-      description="已安装插件的管理：全局启停对所有专家生效，工具由 LLM 按需调用"
+      description="插件全局启停：对所有专家生效，AI 按需调用"
       extra={
         <>
           <Button type="primary" icon={<ShopOutlined />} onClick={() => setMarketOpen(true)}>插件市场</Button>
@@ -177,7 +177,7 @@ export default function PluginsPage() {
         renderItem={renderPlugin}
       />
       <Typography.Paragraph type="secondary" style={{ marginTop: 10, fontSize: 12 }}>
-        插件目录：<Typography.Text code>工作区/plugins/</Typography.Text>（plugin.yaml + main.py，ctx.tool 注册工具）。
+        插件目录：<Typography.Text code>工作区/plugins/</Typography.Text>（plugin.yaml + main.py）。
         全局启停对所有专家生效；专家级绑定在「专家」页配置。
       </Typography.Paragraph>
     </PageLayout>

@@ -94,7 +94,7 @@ export default function KnowledgePage() {
   return (
     <PageLayout
       title="知识库"
-      description="文档检索知识库：上传文件 / 新建文本后，对话侧按库注入检索"
+      description="文档知识库：上传文件或新建文本，对话时按库检索引用"
       extra={
         <>
           <Button icon={<SettingOutlined />} onClick={() => setModelsOpen(true)}>管理模型…</Button>
@@ -113,7 +113,7 @@ export default function KnowledgePage() {
       <EntityGrid
         items={bases}
         minWidth={340}
-        emptyText="还没有知识库，点击右上角「新建知识库」开始"
+        emptyText="还没有知识库，点「新建知识库」创建"
         renderItem={kb => (
           <Card
             size="small"

@@ -208,7 +208,7 @@ export default function SkillsPage() {
     const isSkill = it.kind === 'skill' && it.ref;
     const isPackage = it.kind === 'package' && it.ref;
     return (
-        <Card size="small" style={{ height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+        <Card size="small" hoverable style={{ height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
           <Tag color={meta.color} style={{ position: 'absolute', top: 8, right: 8, margin: 0, fontSize: 11 }}>
             {meta.label}
           </Tag>
@@ -295,7 +295,7 @@ export default function SkillsPage() {
     const name = item.display_name || item.slug;
     const desc = item.summary || item.description || '—';
     return (
-        <Card size="small" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+        <Card size="small" hoverable style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
           <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
             {item.icon_url ? (
               <img src={item.icon_url} alt="" width={40} height={40}

@@ -23,6 +23,8 @@ interface McpFormValues {
 
 const AVATAR_COLORS = ['#f59e0b', '#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
 const TRANSPORT_COLOR: Record<string, string> = { stdio: 'blue', sse: 'green', http: 'purple' };
+/** 传输方式的中文展示名（值仍是协议层字段，仅用户可见文案中文化） */
+const TRANSPORT_LABEL: Record<string, string> = { stdio: '本地进程', sse: 'HTTP 流', http: 'HTTP' };
 
 export default function McpPage() {
   const [servers, setServers] = useState<ConnectorServer[]>([]);
@@ -102,9 +104,9 @@ export default function McpPage() {
     const args = (s.args || []).join(' ');
     const envKeys = Object.keys(s.env || {});
     return (
-        <Card size="small" style={{ height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+        <Card size="small" hoverable style={{ height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
           <Tag color={TRANSPORT_COLOR[t] || 'default'} style={{ position: 'absolute', top: 8, right: 8, margin: 0, fontSize: 11 }}>
-            {t}
+            {TRANSPORT_LABEL[t] || t}
           </Tag>
           <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', paddingRight: 44 }}>
             <Avatar size={40} style={{ backgroundColor: color, flexShrink: 0 }}>
@@ -151,9 +153,9 @@ export default function McpPage() {
   return (
     <PageLayout
       title="连接器"
-      description="接入 MCP 服务器：工具以「{连接器名}_」前缀自动对专家可用，增删改后下次对话生效"
+      description="接入外部服务器能力：工具以「{连接器名}_」前缀自动对专家可用，增删改后下次对话生效"
       extra={
-        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增连接器</Button>
+        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建连接器</Button>
       }
     >
       <EntityGrid
@@ -165,17 +167,14 @@ export default function McpPage() {
       <Card style={{ marginTop: 16 }} size="small">
         <Typography.Text strong>如何接入连接器</Typography.Text>
         <Typography.Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0, fontSize: 13, lineHeight: 1.8 }}>
-          在本页直接新增/编辑/删除（MCP 协议，langchain-mcp-adapters 格式，stdio 需 command）。
-          配置持久化在 <Typography.Text code>data_root/connectors.json</Typography.Text>（重启不丢）；
-          仓库根 <Typography.Text code>.env</Typography.Text> 的{' '}
-          <Typography.Text code>NUOMI_CONNECTORS</Typography.Text> 仅作首次播种（无 json 时生效）。
+          在本页直接新增 / 编辑 / 删除。配置持久化在本机数据目录（重启不丢）。
           对话时工具名带 <Typography.Text code>{'{连接器名}_'}</Typography.Text> 前缀，自动对专家可用；
-          增删改后下次对话生效。
+          增删改后下次对话生效。本地进程方式需要在「命令」中指定可执行文件。
         </Typography.Paragraph>
       </Card>
 
       <Modal
-        title={editing ? `编辑连接器：${editing.name}` : '新增连接器'}
+        title={editing ? `编辑连接器：${editing.name}` : '新建连接器'}
         open={modalOpen}
         onOk={save}
         onCancel={() => setModalOpen(false)}
@@ -194,12 +193,12 @@ export default function McpPage() {
           >
             <Input placeholder="如 pet_mood" disabled={!!editing} />
           </Form.Item>
-          <Form.Item name="transport" label="传输" rules={[{ required: true }]}>
+          <Form.Item name="transport" label="传输方式" rules={[{ required: true }]}>
             <Select
               options={[
-                { value: 'stdio', label: 'stdio（本地子进程）' },
-                { value: 'sse', label: 'sse（HTTP 流）' },
-                { value: 'http', label: 'http' },
+                { value: 'stdio', label: '本地进程（本机运行）' },
+                { value: 'sse', label: 'HTTP 流（实时推送）' },
+                { value: 'http', label: 'HTTP' },
               ]}
             />
           </Form.Item>
@@ -208,7 +207,7 @@ export default function McpPage() {
             rules={[({ getFieldValue }) => ({
               validator: (_, v) => (
                 getFieldValue('transport') === 'stdio' && !(v || '').trim()
-                  ? Promise.reject(new Error('stdio 传输需要 command'))
+                  ? Promise.reject(new Error('本地进程方式需要填写命令'))
                   : Promise.resolve()
               ),
             })]}
@@ -220,7 +219,7 @@ export default function McpPage() {
           </Form.Item>
           <Form.Item label="环境变量" style={{ marginBottom: 4 }}>
             <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 8 }}>
-              注入到 MCP 子进程（stdio 传输生效）；值仅存本机 connectors.json，不在卡片上显示。
+              注入到连接器进程（本地进程方式生效）；值仅存本机，不在卡片上显示。
             </Typography.Paragraph>
             <Form.List name="env">
               {(fields, { add, remove }) => (

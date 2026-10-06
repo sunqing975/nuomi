@@ -59,7 +59,7 @@ export default function ExpertsPage({ onBackend }: { onBackend?: (ok: boolean) =
   return (
     <PageLayout
       title="专家"
-      description="管理专家角色、人设与实例（记忆按会话隔离，对话侧按专家选择）"
+      description="管理专家角色、人设与运行实例"
       extra={
         <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); form.resetFields(); setCreateOpen(true); }}>
           新建专家
@@ -74,6 +74,7 @@ export default function ExpertsPage({ onBackend }: { onBackend?: (ok: boolean) =
         renderItem={a => (
           <Card
             size="small"
+            hoverable
             styles={{ body: { display: 'flex', flexDirection: 'column', gap: 10, height: '100%' } }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

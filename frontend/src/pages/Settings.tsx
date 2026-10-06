@@ -584,7 +584,7 @@ export default function SettingsPage() {
   return (
     <PageLayout
       title="设置"
-      description="大模型 Provider、环境变量、遥测（Langfuse）与插件自定义配置"
+      description="大模型服务、环境变量、遥测与插件自定义配置"
     >
       <Tabs defaultActiveKey="models" items={items} />
     </PageLayout>

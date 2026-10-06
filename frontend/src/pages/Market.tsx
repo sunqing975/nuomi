@@ -73,6 +73,7 @@ export default function MarketPage({ onInstalled }: MarketProps = {}) {
           <Card
             key={item.id}
             size="small"
+            hoverable
             title={
               <Space>
                 <span>{item.name}</span>
