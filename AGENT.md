@@ -551,3 +551,13 @@ SSE 事件协议（当前完整）：`token` / `reasoning` / `tool_call_chunk`�
 - **模型弹窗**：删「知识库功能」启停 Switch（用户：不需要知识库功能开关）；就绪状态并入嵌入模型行
 - **下拉空数据根因**：后端 `list_onnx_catalog_models()` 条目缺 `supported` 字段 → 前端 `presets.filter(p => p.supported)` 全过滤 → 补 `supported: True`（目录模型有 fallback 源均可下载）；实测 presets_meta 36 项 supported: true
 - **验证**：前端 tsc/vitest 60/build 全绿、后端 138 测试、壳重启「糯米启动完成」
+
+## 删除「存储」页（2026-10-06，commit 39ea8f7）
+
+- 用户：「存储这个页目前没有意思，是不是可以删除了」→ 删除
+- 页面内容：统计数字（专家/插件/技能/连接器计数）+ 工作区/数据根路径 + 表现层接入协议说明
+  （SSE 事件流、docs/avatar-protocol.md 等内部术语，违反「不暴露协议术语」产品约定）
+- 前端：App.tsx 删 import/NAV storage 项/路由渲染；删 Storage.tsx；api.ts 删 WorkspaceOverview 死类型
+- 后端：settings_api.py 删 GET /workspace 端点（唯一消费者为存储页，无测试/壳引用）；
+  清理 agent_service/plugin_service/skill_service 死 import
+- 验证：前端 tsc/vitest 60/build 全绿、后端 138 测试、壳重启「糯米启动完成」
