@@ -199,6 +199,7 @@ OpenAI 兼容：`app/transport/openai_compat.py`（`/v1/chat/completions`，mode
   - 数字人事件队列满**静默丢最新** → 改丢最旧 + 计数 + 限频告警；SSE 长连接加 15s 心跳注释帧
   - 历史分页两条路径语义不一致（pending/backfill 忽略 offset 且投影为空时回落重算）→ 统一为倒序分页 + `limit/offset` 校验
   - 顺手：`sync()` 清理"目录已消失"的残留插件行（原只 INSERT OR IGNORE，手动删目录会留幽灵条目）
+- [x] **模拟 MES 连接器（2026-10-07，制造业作品集起步）**：`scripts/gen_mes_data.py`（模拟 CNC 机加工 MES 库，90 天/异常注入/固定 seed 可复现）+ `connectors/mes_connector.py`（只读 MCP server，6 个只读工具，SQLite `mode=ro`，`MES_DB_PATH` 可切真实库）+ 登记 `数据根/connectors.json` 的 `mes` 连接器；SSE 对话端到端实测两场景（问数回答与连接器返回逐项核验一致；主动组合 5 工具做良率/设备/OEE 分析），详见 AGENT.md 对应节
 
 ### 8.2 仍待办（按"对单机日用的实际影响"排序）
 

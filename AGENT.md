@@ -589,3 +589,17 @@ SSE 事件协议（当前完整）：`token` / `reasoning` / `tool_call_chunk`�
   内容区第一行 flex 挤右侧
 - 改：技能页按钮 + file input 移入 PageLayout extra，删除内容区 flex 行；与插件页形态一致
 - 验证：tsc/vitest 60/build 全绿，壳重启「糯米启动完成」
+
+## 模拟 MES 连接器端到端落地（2026-10-07，制造业作品集起步）
+
+- **背景**：用户计划入行制造业，产品下一步往「和制造业系统联动」走；拍板先做**个人入行作品集**（不改产品形态、不做 B 端变形），默认场景机加工（CNC）
+- **新增两个组件（backend/frontend/shell 核心代码零改动）**：
+  - `scripts/gen_mes_data.py`：模拟 MES 数据生成器（CNC 场景，90 天，固定 seed 可复现，`--end-date` 可固定某次生成；schema 仿真实 MES：equipment/work_orders/work_reports/quality_events/equipment_events；注入异常：A-01 刀具磨损良率跳水（近 14~12 天）、B-02 冷却液高温报警（近 6 天）；排产量按设备节拍 65%~90% 约束，保证 OEE 性能率 <1 贴近真实）
+  - `connectors/mes_connector.py`：只读 MES 连接器（MCP server stdio，6 个只读工具：get_daily_production / get_yield_trend / get_alarms / get_equipment_status / get_work_orders / get_oee_summary；SQLite `mode=ro` 打开双保险；`MES_DB_PATH` env 可指向真实库，接真实系统只改这个）
+  - `scripts/check_mes_connector.py`：MCP 客户端验证脚本（拉起连接器逐工具调用）
+- **登记**：写 `数据根/connectors.json` 的 `mes` 连接器（stdio，command=backend/.venv/bin/python，args=连接器绝对路径）；重启后端生效（`/api/connectors` 可见）
+- **端到端实测（2026-10-07，SSE 对话挂载 connectors=["mes"]）**：
+  ①「昨天A线生产情况」→ 糯米调 mes_get_daily_production + mes_get_alarms，结构化回答（A 线良率 98.51%、停机 38min、报警 AL-510×2），**回答数字与连接器返回值逐项核验一致**；
+  ②「今天设备状态 + 一周良率趋势」→ 糯米主动组合 5 个工具，给出专业级分析（B 线良率降但零停机 → 判断工艺/刀具/来料侧而非设备；OEE 短板在性能率；10-04 无数据 → 报表缺口）
+- **踩坑**：①工具参数名 `date` 遮蔽 `datetime.date` → 日期参数统一命名 `query_date`；②`Path(__file__).parents[1]` 在 connectors/ 下解析错位 → 默认库用 `Path(__file__).parent / "data" / "mes.db"`；③FastMCP 新版 `list_tools()` 返回 `ListToolsResult` 需取 `.tools`；④模拟数据要按设备节拍约束排产量，否则 OEE 性能率 >1
+- **顺手清理**：uv.lock 曾缺 octop-harness 记录导致 venv 空装，`uv sync` 重新对齐后 venv 完整（octop-harness 1.0.1）

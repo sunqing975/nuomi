@@ -84,6 +84,19 @@ cd backend && .venv/bin/python probe_harness.py   # harness 冒烟：DeepSeek �
 提供示例插件：默认取 nuomi 仓库的同级目录 `../Octop`，也可用 `OCTOP_SRC=/path/to/Octop` 指定；
 找不到时该节打印 `[skip]` 并继续验证对话链路。
 
+### 模拟 MES 连接器（可选演示数据）
+
+「糯米 × 制造业系统联动」作品集的演示链路，不依赖任何真实工厂系统：
+
+```bash
+python3 scripts/gen_mes_data.py      # 生成模拟 CNC 机加工 MES 库（connectors/data/mes.db，90 天，固定 seed 可复现）
+backend/.venv/bin/python scripts/check_mes_connector.py   # MCP 客户端验证 6 个只读工具
+```
+
+在控制台「连接器」页新建 `mes` 连接器：传输方式=**本地进程**，命令=`backend/.venv/bin/python`，
+参数=`connectors/mes_connector.py`；对话时挂载即可问「昨天 A 线生产情况」「设备状态 / 良率趋势」。
+接真实工厂系统：把环境变量 `MES_DB_PATH` 指向真实 MES 只读数据库即可，连接器代码不动。
+
 ## 架构
 
 ```

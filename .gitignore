@@ -31,3 +31,6 @@ frontend/.vite/
 # FBX→VRMA 转换工具链（FBX2glTF 二进制 12MB，可从 GitHub releases 下载，不入库）
 shells/nuomi-avatar/tools/fbx2vrma/FBX2glTF-darwin-x64
 .npm-cache/
+
+# 模拟 MES 演示数据（生成物，scripts/gen_mes_data.py 可复现）
+connectors/data/
