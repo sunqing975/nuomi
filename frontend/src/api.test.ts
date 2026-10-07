@@ -85,4 +85,29 @@ describe('feedChatStream · SSE 分帧', () => {
     ].join('\n'));
     expect(parsed.events).toEqual([{ type: 'token', content: 'ok' }]);
   });
+
+  it('透出 approval_requested 审批帧（含 request 卡片数据）', () => {
+    const parsed = feedChatStream(
+      '',
+      [
+        'data: {"type":"tool_call_chunk","name":"mes_submit_work_report","args":"{\\"work_order_id\\":\\"WO-A-2026-0071\\"}"}',
+        'data: {"type":"approval_requested","request_id":"abc123","request":{"action_requests":[{"name":"mes_submit_work_report","args":{"work_order_id":"WO-A-2026-0071","quantity":50}}]}}',
+        'data: {"type":"done"}',
+        '',
+      ].join('\n'),
+    );
+    expect(parsed.events).toEqual([
+      { type: 'tool_call', name: 'mes_submit_work_report', content: '{"work_order_id":"WO-A-2026-0071"}', plugin_id: undefined },
+      {
+        type: 'approval_requested',
+        request_id: 'abc123',
+        request: {
+          action_requests: [
+            { name: 'mes_submit_work_report', args: { work_order_id: 'WO-A-2026-0071', quantity: 50 } },
+          ],
+        },
+      },
+      { type: 'done' },
+    ]);
+  });
 });

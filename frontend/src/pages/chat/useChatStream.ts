@@ -11,7 +11,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { message } from 'antd';
 
-import { chatStream, post, type ChatEvent, type ChatMessage, type Segment } from '../../api';
+import {
+  chatApproval, chatStream, post,
+  type ApprovalRequest, type ChatEvent, type ChatMessage, type Segment,
+} from '../../api';
 import { appendStreamSegment } from '../../utils/streamSegments';
 
 /** 模型「自动」哨兵值：发送时不传 model（null），由后端按 agent 默认模型解析（对齐 Octop AUTO 语义） */
@@ -33,6 +36,14 @@ export function nextSegmentId(): string {
 export interface InterruptedTurn {
   text: string;
   threadId: string;
+}
+
+/** HITL 人工审批状态（对话暂停，等待用户在审批卡片上 approve/reject） */
+export interface ApprovalState {
+  requestId: string;
+  threadId: string;
+  request: ApprovalRequest;
+  pending: boolean;
 }
 
 export interface UseChatStreamOptions {
@@ -66,6 +77,7 @@ export function useChatStream(opts: UseChatStreamOptions) {
   const [sending, setSending] = useState(false);
   const [streamSegments, setStreamSegments] = useState<Segment[]>([]);
   const [interrupted, setInterrupted] = useState<InterruptedTurn | null>(null);
+  const [approval, setApproval] = useState<ApprovalState | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   /** 卸载标记：卸载触发的 abort 不该给已销毁的页面弹提示/写状态 */
   const unmountedRef = useRef(false);
@@ -78,7 +90,10 @@ export function useChatStream(opts: UseChatStreamOptions) {
   }, []);
 
   /** 清空流式片段（切会话/切专家/删会话时） */
-  const clearStream = useCallback(() => setStreamSegments([]), []);
+  const clearStream = useCallback(() => {
+    setStreamSegments([]);
+    setApproval(null);
+  }, []);
 
   /** 停止生成：中断流式请求（后端同时收到断连，停止这一轮）。 */
   const stop = useCallback(() => {
@@ -107,6 +122,7 @@ export function useChatStream(opts: UseChatStreamOptions) {
       abortRef.current = controller;
       let gotDone = false;
       let gotError = false;
+      let gotApproval = false;
       let streamError = '';
       let stopped = false;
       // 流式片段按真实到达顺序累积：相邻同类合并（思考累积思考、正文累积正文）。
@@ -152,6 +168,15 @@ export function useChatStream(opts: UseChatStreamOptions) {
             // 「未收到完成帧」（那句还与本事实相反：帧其实收到了）。
             gotError = true;
             streamError = e.content || '未知错误';
+          } else if (e.type === 'approval_requested') {
+            // HITL 暂停：对话流结束，等待用户审批（不落消息、不弹中断提示）
+            gotApproval = true;
+            setApproval({
+              requestId: e.request_id || '',
+              threadId: tid,
+              request: e.request || {},
+              pending: false,
+            });
           }
         }, opts, controller.signal);
       } catch (err) {
@@ -163,7 +188,8 @@ export function useChatStream(opts: UseChatStreamOptions) {
       } finally {
         // 没有 done 也没有 error：连接被中断。已生成的片段必须落成消息，
         // 否则半截回复停在流式气泡里、刷新即消失（原实现只清 streamSegments）。
-        if (!gotDone && !gotError) {
+        // HITL 审批暂停（gotApproval）不算中断——审批卡片接管，续流由 submitApproval 处理。
+        if (!gotDone && !gotError && !gotApproval) {
           if (segs.length) {
             if (!segs.some(s => s.type === 'text')) pushSeg({ id: nextSegmentId(), type: 'text', content: '' });
             setMessages([...next, { role: 'assistant', segments: segs }]);
@@ -190,5 +216,89 @@ export function useChatStream(opts: UseChatStreamOptions) {
     [agentId, activeThread, messages, setMessages, selectedSkills, selectedConnectors, selectedModel, selectedKnowledgeBaseIds, sending, onSessionChanged],
   );
 
-  return { sending, streamSegments, interrupted, send, stop, clearStream, setInterrupted };
+  /**
+   * 提交 HITL 人工审批（approve/reject）并续跑被暂停的对话。
+   *
+   * 审批前的片段（tool_call 卡片等）保留在 streamSegments 里，续流事件
+   * （token / tool_result / done）继续累积到同一批，done 后落成完整
+   * assistant 消息。拒绝时 harness 返回错误 ToolMessage，LLM 会就拒绝
+   * 结果继续组织回复（不写入任何数据）。
+   */
+  const submitApproval = useCallback(
+    async (decision: 'approve' | 'reject', reason?: string) => {
+      if (!agentId || !approval) return;
+      const tid = approval.threadId;
+      setApproval(p => (p ? { ...p, pending: true } : p));
+      const controller = new AbortController();
+      // 审批前已流式累积的片段（当前 streamSegments）继续合并，不另起一批
+      let segs: Segment[] = streamSegments;
+      const pushSeg = (s: Segment) => {
+        segs = appendStreamSegment(segs, s);
+        setStreamSegments(segs);
+      };
+      let gotDone = false;
+      let gotError = false;
+      let streamError = '';
+      try {
+        await chatApproval(agentId, tid, decision, (e: ChatEvent) => {
+          if (e.type === 'token' && e.content) {
+            pushSeg({ id: nextSegmentId(), type: 'text', content: e.content });
+          } else if (e.type === 'reasoning' && e.content) {
+            pushSeg({ id: nextSegmentId(), type: 'reasoning', content: e.content });
+          } else if (e.type === 'tool_call') {
+            pushSeg({ id: nextSegmentId(), type: 'tool_call', name: e.name, args: e.content, plugin_id: e.plugin_id });
+          } else if (e.type === 'tool_result') {
+            pushSeg({ id: nextSegmentId(), type: 'tool_result', name: e.name, content: e.detail, plugin_id: e.plugin_id });
+          } else if (e.type === 'done') {
+            gotDone = true;
+            if (!segs.some(s => s.type === 'text')) pushSeg({ id: nextSegmentId(), type: 'text', content: '' });
+            const finalMsg: ChatMessage = { role: 'assistant', segments: segs };
+            setMessages([...messages, finalMsg]);
+            setStreamSegments([]);
+            setApproval(null);
+            // 审批续跑后 touch（标题保持用户原话，不覆盖）
+            post('/chat/touch', { agent_id: agentId, thread_id: tid, title: '' }).catch(() => {});
+            onSessionChanged?.();
+          } else if (e.type === 'error') {
+            gotError = true;
+            streamError = e.content || '未知错误';
+          } else if (e.type === 'approval_requested') {
+            // 续流中再次命中审批（罕见）：刷新卡片继续等审批
+            setApproval({
+              requestId: e.request_id || '',
+              threadId: tid,
+              request: e.request || {},
+              pending: false,
+            });
+          }
+        }, reason ? { message: reason } : undefined, controller.signal);
+      } catch (err) {
+        if ((err as Error).name !== 'AbortError') {
+          message.error(`审批提交失败：${(err as Error).message}`);
+        }
+      } finally {
+        if (!gotDone && !gotError) {
+          // 无终态：连接中断，审批卡片保留可重试
+          setApproval(p => (p ? { ...p, pending: false } : p));
+        } else if (gotError) {
+          setApproval(null);
+          setStreamSegments([]);
+          if (!unmountedRef.current) message.error(`审批后生成失败：${streamError}`);
+        }
+      }
+    },
+    [agentId, approval, messages, onSessionChanged, streamSegments],
+  );
+
+  return {
+    sending,
+    streamSegments,
+    interrupted,
+    approval,
+    send,
+    stop,
+    clearStream,
+    setInterrupted,
+    submitApproval,
+  };
 }

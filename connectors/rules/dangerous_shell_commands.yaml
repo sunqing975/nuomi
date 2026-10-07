@@ -1,0 +1,20 @@
+# MES 写操作审批规则（自定义）
+# =========================================================================
+# 说明：octop-harness 的 RuleBasedToolGuardian 按固定文件名加载规则
+# （目录内查找 dangerous_shell_commands.yaml），故沿用该文件名；
+# 本文件内容与官方 shell 危险命令规则无关，只承载糯米 mes 连接器的
+# 写操作审批策略。
+#
+# 生效条件：HarnessAgentConfig.tool_guard_mode = "require_approval" 时，
+# 命中 MEDIUM/HIGH/CRITICAL 的工具调用会暂停并等待人工审批（HITL）。
+# 文件名与结构约定变更需同步核对 octop_harness/security/tool_guard/。
+
+- id: MES_WRITE_NEEDS_APPROVAL
+  tools: [mes_submit_work_report]
+  params: [work_order_id]
+  category: resource_abuse
+  severity: HIGH
+  patterns:
+    - ".+"
+  description: "MES 报工写操作（mes_submit_work_report）需人工审批"
+  remediation: "人工批准后执行；拒绝则丢弃并返回拒绝信息"

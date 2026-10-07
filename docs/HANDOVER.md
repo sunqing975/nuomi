@@ -200,6 +200,7 @@ OpenAI 兼容：`app/transport/openai_compat.py`（`/v1/chat/completions`，mode
   - 历史分页两条路径语义不一致（pending/backfill 忽略 offset 且投影为空时回落重算）→ 统一为倒序分页 + `limit/offset` 校验
   - 顺手：`sync()` 清理"目录已消失"的残留插件行（原只 INSERT OR IGNORE，手动删目录会留幽灵条目）
 - [x] **模拟 MES 连接器（2026-10-07，制造业作品集起步）**：`scripts/gen_mes_data.py`（模拟 CNC 机加工 MES 库，90 天/异常注入/固定 seed 可复现）+ `connectors/mes_connector.py`（只读 MCP server，6 个只读工具，SQLite `mode=ro`，`MES_DB_PATH` 可切真实库）+ 登记 `数据根/connectors.json` 的 `mes` 连接器；SSE 对话端到端实测两场景（问数回答与连接器返回逐项核验一致；主动组合 5 工具做良率/设备/OEE 分析），详见 AGENT.md 对应节
+- [x] **写路径 + HITL 人工审批（2026-10-07，HANDOVER #10 落地）**：连接器新增写工具 `mes_submit_work_report`/`mes_list_work_reports`（写独立台账库 `data/mes_operations.db`，与只读快照物理隔离，读库仍 `mode=ro`）；审批规则 `connectors/rules/dangerous_shell_commands.yaml`（规则 `MES_WRITE_NEEDS_APPROVAL`，HIGH）；后端 `build_agent_config` 默认开 `tool_guard_enabled=True/mode="require_approval"`（默认规则目录=仓库 connectors/rules），`chat.py` 译 `HITL_REQUIRED→approval_requested` 暂停流 + 新增 `resume_chat`，`chat_api.py` 新增 `POST /api/agents/{id}/chat/approval`；前端审批卡片（ApprovalCard + useChatStream.submitApproval）；端到端实测：报工触发审批帧（含 HIGH 风险说明）→ approve 续跑落库 +1 → reject 不落库 → 只读回归无审批。验证脚本 `scripts/e2e_hitl_test.py`
 
 ### 8.2 仍待办（按"对单机日用的实际影响"排序）
 
@@ -214,7 +215,7 @@ OpenAI 兼容：`app/transport/openai_compat.py`（`/v1/chat/completions`，mode
 | 7 | 专家级默认绑定 | ⬜ 对齐 octop agents 表 `skill_package_ids`/`knowledge_base_ids`/`mcp_servers` 三列 | 加绑定列 + 对话默认注入（per-turn 可覆盖；知识库仍显式指定才注入） |
 | 8 | `prompt_files` 注入 | ⬜ octop manifest 声明的非标准文件（IDENTITY/HEARTBEAT 等）已复制但不注入 | 内容合并进注入或 system_prompt |
 | 9 | octop WS 迁移 | ⏸ 事件帧已对齐，通道仍 HTTP SSE | 注意 python websockets 连 8088 WS 恒 403（§6） |
-| 10 | HITL 工具审批流 | ⏸ 当前不启用 | harness 自带 HumanInTheLoopMiddleware，有高风险工具再开 |
+| 10 | HITL 工具审批流 | ✅ 已落地（2026-10-07，MES 写路径） | harness `ToolGuardMiddleware`（`build_agent_config` 默认 `tool_guard_enabled=True` / `mode="require_approval"` / `rules_dir=仓库根/connectors/rules`）；写工具命中 HIGH 即 `interrupt` → 后端译 `approval_requested` 帧 → 前端审批卡片 → `POST /chat/approval` 续跑（approve 执行 / reject 丢弃）；规则文件名为 harness 固定的 `dangerous_shell_commands.yaml`（自定义目录替代内置，不含 shell 规则） |
 
 ### 8.3 明确不做（用户拍板，别再排）
 

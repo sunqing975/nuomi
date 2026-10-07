@@ -38,6 +38,11 @@ def build_providers() -> list[ProviderConfig]:
     return out
 
 
+# 工具护栏默认规则目录：仓库 connectors/rules（mes 写操作审批规则；不启用内置 shell 规则）
+_REPO_ROOT = Path(__file__).resolve().parents[4]
+_DEFAULT_TOOL_GUARD_RULES_DIR = _REPO_ROOT / "connectors" / "rules"
+
+
 def configure_harness_logging() -> Path:
     """把 octop-harness 的文件日志收进数据根（``{NUOMI_HOME}/logs/octop-harness``）。
 
@@ -61,6 +66,9 @@ def build_agent_config(
     skills_disabled: frozenset[str] = frozenset(),
     mcp_server_configs: dict | None = None,
     mcp_default_servers: list[str] | None = None,
+    tool_guard_enabled: bool = True,
+    tool_guard_mode: str = "require_approval",
+    tool_guard_rules_dir: str | Path | None = None,
 ) -> HarnessAgentConfig:
     """构造单个 Agent 的运行时配置（工作区按 harness init_workspace 布局）。
 
@@ -72,6 +80,8 @@ def build_agent_config(
     与 KnowledgeSearchHintMiddleware（每轮改写工具描述；无选中库时隐藏工具）。
     skills_dir / skills_disabled：自定义技能目录与禁用集合。
     mcp_server_configs / mcp_default_servers：MCP 服务器（对话请求经 mcp_use_default 启用）。
+    tool_guard_enabled / mode / rules_dir：工具调用护栏。mode="require_approval" 时，
+    命中 connectors/rules 审批规则的写工具（mes_submit_work_report）暂停等人工审批（HITL）。
     """
     init_workspace(workspace_dir, language="zh", include_md_files=False, include_skills=True)
     providers = build_providers()
@@ -79,6 +89,7 @@ def build_agent_config(
     if providers and providers[0].models:
         default_model = f"{providers[0].id}/{providers[0].models[0].id}"
     tools, middleware = _knowledge_capabilities(plugin_tools)
+    resolved_rules_dir = tool_guard_rules_dir or _DEFAULT_TOOL_GUARD_RULES_DIR
     return HarnessAgentConfig(
         name=name,
         workspace_dir=workspace_dir,
@@ -92,6 +103,9 @@ def build_agent_config(
         skills_disabled=skills_disabled,
         mcp_server_configs=mcp_server_configs or {},
         mcp_default_servers=mcp_default_servers,
+        tool_guard_enabled=tool_guard_enabled,
+        tool_guard_mode=tool_guard_mode,
+        tool_guard_rules_dir=resolved_rules_dir,
     )
 
 

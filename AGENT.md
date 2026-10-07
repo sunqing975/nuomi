@@ -603,3 +603,19 @@ SSE 事件协议（当前完整）：`token` / `reasoning` / `tool_call_chunk`�
   ②「今天设备状态 + 一周良率趋势」→ 糯米主动组合 5 个工具，给出专业级分析（B 线良率降但零停机 → 判断工艺/刀具/来料侧而非设备；OEE 短板在性能率；10-04 无数据 → 报表缺口）
 - **踩坑**：①工具参数名 `date` 遮蔽 `datetime.date` → 日期参数统一命名 `query_date`；②`Path(__file__).parents[1]` 在 connectors/ 下解析错位 → 默认库用 `Path(__file__).parent / "data" / "mes.db"`；③FastMCP 新版 `list_tools()` 返回 `ListToolsResult` 需取 `.tools`；④模拟数据要按设备节拍约束排产量，否则 OEE 性能率 >1
 - **顺手清理**：uv.lock 曾缺 octop-harness 记录导致 venv 空装，`uv sync` 重新对齐后 venv 完整（octop-harness 1.0.1）
+
+## 写路径 + HITL 人工审批（2026-10-07，HANDOVER #10 落地）
+
+- **背景**：用户拍板做「带护栏的写操作」作为作品集最深的展示——连接器不再只读，报工写入走 harness 原生 HITL（Human-In-The-Loop）人工审批
+- **连接器侧（新增写路径，读库不动）**：
+  - `mes_submit_work_report(work_order_id, quantity, operator, note)`：写**独立操作台账库** `connectors/data/mes_operations.db`（表 work_reports：work_order_id/quantity CHECK>0/operator/note/submitted_at），与只读 MES 快照物理隔离；读库仍 `mode=ro`（写不进去，双保险）
+  - `mes_list_work_reports(limit=20)`：读回台账做闭环核验
+- **审批规则（harness 原生 ToolGuard）**：
+  - `connectors/rules/dangerous_shell_commands.yaml`：单规则 `MES_WRITE_NEEDS_APPROVAL`（tools:[mes_submit_work_report], params:[work_order_id], severity HIGH, patterns:[".+"]）；**文件名是 harness 固定要求**（RuleBasedToolGuardian 只读 `dangerous_shell_commands.yaml`），自定义目录替代内置（不启用内置 shell 规则，行为最小化）
+  - 后端 `config.py::build_agent_config` 默认 `tool_guard_enabled=True / mode="require_approval" / rules_dir=仓库根/connectors/rules` → ToolGuardMiddleware 装配进 agent 中间件链（SkillFilter 之后）；命中 HIGH/MEDIUM/CRITICAL → `interrupt(hitl_request)` 暂停图
+- **后端翻译与续跑**：
+  - `chat.py`：`_translate_events` 新增 `HITL_REQUIRED→approval_requested`（含 request_id/action_requests/review_configs），`stream_chat` 收到即暂停（不投影/不发 done/不广播完成）；`resume_chat(thread_id, decisions)` 走 `agent.resume_hitl`（`Command(resume={"decisions": ...})`），续跑事件同构翻译；`stream_octop_sse` 透出 approval_requested 帧
+  - `chat_api.py`：`POST /api/agents/{agent_id}/chat/approval`（body: thread_id + decision: approve|reject + message?；校验 agent/thread 归属 403；复用 /chat 投影与 SSE 出口）
+- **前端审批卡片**：`ApprovalCard.tsx`（工具名 + 参数 JSON + 批准/拒绝按钮 + 可选拒绝理由），Chat.tsx 在消息流与输入框之间渲染；`useChatStream.ts` 新增 approval state 与 `submitApproval`（续流累积到现有片段、done 后落消息）；api.ts 新增 `chatApproval`
+- **端到端实测（2026-10-07，`scripts/e2e_hitl_test.py`）**：报工触发审批帧（action_requests 含 HIGH 风险描述与参数）→ **approve** 续跑 done + 写库 +1 → **reject** 续跑 done + 写库不变 → 只读路径回归无审批帧。前端 61 测试 + typecheck 全绿
+- **踩坑**：①模型（deepseek）常先探索不直接调写工具 → 测试用硬指令措辞「直接执行 mes_submit_work_report(...)」稳定触发；②ask_user_question 也是 harness 原生 HITL（模型主动澄清也走 approval_requested，链路复用同一套审批 API）；③harness agent 无公开 middleware 属性，护栏行为用 ToolGuardMiddleware.awrap_tool_call 单元级验证（interrupt 分支正确）

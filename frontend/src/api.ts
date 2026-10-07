@@ -199,14 +199,24 @@ export interface ProvidersResponse {
 
 // ---------- 对话（octop 原生事件帧 SSE） ----------
 
+/** HITL 人工审批请求（对话暂停，前端应展示审批卡片） */
+export interface ApprovalRequest {
+  action_requests?: { name?: string; args?: Record<string, unknown>; description?: string }[];
+  review_configs?: { action_name?: string; allowed_decisions?: string[] }[];
+}
+
 export interface ChatEvent {
   /** error：后端流中途失败时补发的终止帧（没有它只会看到截断流） */
-  type: 'token' | 'reasoning' | 'tool_call' | 'tool_result' | 'done' | 'error';
+  type: 'token' | 'reasoning' | 'tool_call' | 'tool_result' | 'done' | 'error' | 'approval_requested';
   content?: string;
   name?: string;
   detail?: string;
   /** 工具来源插件 id（后端 _publish_actions 附加，同名工具可辨识） */
   plugin_id?: string;
+  /** approval_requested：审批请求 id（续跑时回传） */
+  request_id?: string;
+  /** approval_requested：审批卡片数据（工具名/参数/描述） */
+  request?: ApprovalRequest;
 }
 
 export interface ToolEvent {
@@ -441,6 +451,8 @@ export function feedChatStream(buf: string, chunk: string): { events: ChatEvent[
         args?: string;
         plugin_id?: string;
         messages?: { name?: string; content?: string; plugin_id?: string }[];
+        request_id?: string;
+        request?: ApprovalRequest;
       };
       if (ev.type === 'token' && ev.content) {
         events.push({ type: 'token', content: ev.content });
@@ -453,6 +465,12 @@ export function feedChatStream(buf: string, chunk: string): { events: ChatEvent[
         events.push({ type: 'tool_result', name: m?.name, detail: m?.content, plugin_id: m?.plugin_id });
       } else if (ev.type === 'error') {
         events.push({ type: 'error', content: ev.message });
+      } else if (ev.type === 'approval_requested') {
+        events.push({
+          type: 'approval_requested',
+          request_id: ev.request_id,
+          request: ev.request,
+        });
       } else if (ev.type === 'done') {
         events.push({ type: 'done' });
       }
@@ -479,6 +497,47 @@ export async function chatStream(
     method: 'POST',
     headers: { ...(await authHeaders()), 'Content-Type': 'application/json' },
     body: JSON.stringify({ messages, thread_id: threadId, ...opts }),
+    signal,
+  });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try { detail = (await res.json()).detail || detail; } catch { /* keep */ }
+    throw new Error(detail);
+  }
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let buf = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const parsed = feedChatStream(buf, decoder.decode(value, { stream: true }));
+    buf = parsed.buf;
+    for (const e of parsed.events) onEvent(e);
+  }
+}
+
+/**
+ * HITL 人工审批：续跑被暂停的对话（approve 放行写工具 / reject 拒绝）。
+ *
+ * 返回与对话同构的 SSE 事件流（token / tool_result / done），调用方用与
+ * chatStream 相同的 onEvent 继续消费。
+ */
+export async function chatApproval(
+  agentId: string,
+  threadId: string,
+  decision: 'approve' | 'reject',
+  onEvent: (e: ChatEvent) => void,
+  opts?: { message?: string },
+  signal?: AbortSignal,
+): Promise<void> {
+  const res = await authedFetch(`/api/agents/${agentId}/chat/approval`, {
+    method: 'POST',
+    headers: { ...(await authHeaders()), 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      thread_id: threadId,
+      decision,
+      ...(opts?.message ? { message: opts.message } : {}),
+    }),
     signal,
   });
   if (!res.ok) {

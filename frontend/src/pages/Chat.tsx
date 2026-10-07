@@ -21,6 +21,7 @@ import {
 } from '../api';
 import EmptyState from '../components/EmptyState';
 import SectionToolbar from '../components/SectionToolbar';
+import ApprovalCard from './chat/ApprovalCard';
 import Composer from './chat/Composer';
 import MessageList from './chat/MessageList';
 import { loadPluginUiRegistry } from './chat/MessageBubble';
@@ -168,7 +169,9 @@ export default function ChatPage() {
     selectedKnowledgeBaseIds,
     onSessionChanged: refreshState,
   });
-  const { sending, streamSegments, interrupted } = stream;
+  const { sending, streamSegments, interrupted, approval, submitApproval } = stream;
+  // 对话忙碌态 = 流式发送中 ∪ 审批待决/提交中（期间禁止发新消息/切会话/删会话）
+  const busy = sending || Boolean(approval);
 
   /**
    * 清空当前会话视图（切会话/切专家/删会话）。
@@ -285,7 +288,7 @@ export default function ChatPage() {
   }, [messages, streamSegments, sending]);
 
   const newSession = async () => {
-    if (!agentId || sending) return;
+    if (!agentId || busy) return;
     try {
       await post('/chat/new', { agent_id: agentId });
       const st = await get<ChatState>(`/chat/state?agent_id=${agentId}`);
@@ -298,7 +301,7 @@ export default function ChatPage() {
   };
 
   const switchSession = async (tid: string) => {
-    if (tid === activeThread || sending) return;
+    if (tid === activeThread || busy) return;
     try {
       await post('/chat/switch', { agent_id: agentId, thread_id: tid });
       setActiveThread(tid);
@@ -310,7 +313,7 @@ export default function ChatPage() {
   };
 
   const deleteSession = async (tid: string) => {
-    if (!agentId || sending) return;
+    if (!agentId || busy) return;
     try {
       await del(`/chat/threads/${encodeURIComponent(tid)}?agent_id=${agentId}`);
       const st = await get<ChatState>(`/chat/state?agent_id=${agentId}`);
@@ -361,9 +364,9 @@ export default function ChatPage() {
           placeholder="选择专家"
           options={agents.map(a => ({ value: a.agent_id, label: a.name }))}
           onChange={setAgentId}
-          disabled={sending}
+          disabled={busy}
         />
-        <Button icon={<PlusOutlined />} onClick={newSession} disabled={!agentId || sending} block>
+        <Button icon={<PlusOutlined />} onClick={newSession} disabled={!agentId || busy} block>
           新建会话
         </Button>
         <div style={{ fontSize: 12, color: 'var(--label-3)', fontWeight: 600 }}>会话记录</div>
@@ -390,7 +393,7 @@ export default function ChatPage() {
           subtitle={messages.length > 0 ? `${messages.length} 条消息` : undefined}
           extra={
             <>
-              <Button size="small" icon={<HistoryOutlined />} onClick={() => setTrajectoryOpen(true)} disabled={sending}>
+              <Button size="small" icon={<HistoryOutlined />} onClick={() => setTrajectoryOpen(true)} disabled={busy}>
                 轨迹
               </Button>
               <Button size="small" icon={<BulbOutlined />} onClick={() => setMemoryOpen(true)} disabled={!agentId}>
@@ -408,10 +411,18 @@ export default function ChatPage() {
           onBodyScroll={onBodyScroll}
         />
 
+        {approval && (
+          <ApprovalCard
+            approval={approval}
+            onApprove={() => submitApproval('approve')}
+            onReject={reason => submitApproval('reject', reason)}
+          />
+        )}
+
         <Composer
           input={input}
           setInput={setInput}
-          sending={sending}
+          sending={busy}
           agentId={agentId}
           skills={skills}
           builtinSkills={builtinSkills}

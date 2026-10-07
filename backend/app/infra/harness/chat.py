@@ -27,6 +27,103 @@ from app.infra.harness.manager import manager
 logger = logging.getLogger(__name__)
 
 
+def _flush_pending_tools(pending: dict) -> list[dict]:
+    """把当前累积的 tool_call 分块固化成完整调用，并清空累加器。
+
+    必须在 flush 时就归档（`turn_tool_calls`）——原先只在流末尾从
+    `pending_tools` 取，而 TOOL_RESULT 分支每次都会 `clear()`，导致
+    done 时为空的 tool_calls 写进投影：对话历史里工具步骤时有时无
+    （首次 backfill 有、之后增量追加没有）。
+    """
+    flushed: list[dict] = []
+    for idx in sorted(pending):
+        slot = pending[idx]
+        flushed.append(
+            {
+                "id": slot["id"] or f"call_{idx}",
+                "name": slot["name"],
+                "args": slot["args"],
+            }
+        )
+    pending.clear()
+    return flushed
+
+
+async def _translate_events(events, state: dict) -> AsyncGenerator[dict, None]:
+    """把 harness 协议事件翻译成 nuomi 内部事件（token/tool/usage/approval）。
+
+    HITL 命中时透出 ``approval_requested`` 后**立即终止**（不产生 done）——
+    该轮对话暂停等待人工审批，后续由 ``resume_chat`` 续跑同一轮。
+    """
+    async for event in events:
+        ev_type = event.get("type")
+        kind = getattr(ev_type, "value", ev_type)
+
+        if kind == AgentEventType.TOKEN.value and event.get("content"):
+            state["text_parts"].append(event["content"])
+            yield {"type": "token", "content": event["content"]}
+        elif kind == AgentEventType.REASONING.value and event.get("content"):
+            state["reasoning_parts"].append(event["content"])
+            yield {"type": "reasoning", "content": event["content"]}
+        elif kind == AgentEventType.TOOL_CALL_CHUNK.value:
+            # 聚合工具调用分块（name 首个 chunk 携带，args 分块累积）
+            idx = event.get("index", 0)
+            slot = state["pending_tools"].setdefault(
+                idx, {"id": event.get("id", ""), "name": "", "args": ""}
+            )
+            if event.get("name"):
+                slot["name"] = event["name"]
+            if event.get("args"):
+                slot["args"] += event["args"]
+        elif kind == AgentEventType.TOOL_RESULT.value:
+            # 工具结果到达 = 本轮工具调用已提交，先 flush 完整 tool_call 事件
+            for call in _flush_pending_tools(state["pending_tools"]):
+                state["turn_tool_calls"].append(call)
+                yield {
+                    "type": "tool_call",
+                    "name": call["name"],
+                    "args": call["args"],
+                    "id": call["id"],
+                }
+            for m in event.get("messages") or []:
+                content = getattr(m, "content", None)
+                if content:
+                    key = (getattr(m, "name", None), str(content)[:200])
+                    if key in state["seen_tool_results"]:
+                        break  # langgraph 会对同一工具结果重复发事件，去重
+                    state["seen_tool_results"].add(key)
+                    state["tool_results"].append(
+                        {
+                            "name": getattr(m, "name", None) or "",
+                            "content": str(content)[:500],
+                        }
+                    )
+                    yield {
+                        "type": "tool_result",
+                        "name": getattr(m, "name", None),
+                        "content": str(content)[:500],
+                    }
+                    break  # messages 可能含多个带 content 的消息，只透出首个结果
+        elif kind == AgentEventType.USAGE.value:
+            yield {
+                "type": "usage",
+                **{
+                    k: v
+                    for k, v in (event.get("usage") or {}).items()
+                    if k in ("input_tokens", "output_tokens")
+                },
+            }
+        elif kind == AgentEventType.HITL_REQUIRED.value:
+            # 人工审批请求：透出审批卡片数据并终止本轮（对话暂停，等审批 API 续跑）
+            yield {
+                "type": "approval_requested",
+                "request_id": uuid.uuid4().hex,
+                "request": event.get("request") or {},
+                "thread_id": state["thread_id"],
+            }
+            return
+
+
 def _stamp_knowledge(request_kwargs: dict, *, explicit_ids: list[str] | None) -> None:
     """知识库启用时写入本轮 configurable（显式指定才注入，无默认打开一说）。
 
@@ -115,98 +212,30 @@ async def stream_chat(
     # Langfuse trace metadata（user/thread/agent；启用时注入，未启用原样返回）
     request = manager.enrich_request(request)
 
-    text_parts: list[str] = []
-    reasoning_parts: list[str] = []
-    seen_tool_results: set[tuple] = set()
-    pending_tools: dict[int, dict] = {}  # index -> {id, name, args}（聚合分块）
-    turn_tool_calls: list[dict] = []  # 本轮**全部**工具调用（flush 即归档，见下）
-    tool_results: list[dict] = []  # 本轮工具结果（name/content），供 turn 投影
+    state: dict = {
+        "thread_id": thread_id,
+        "text_parts": [],
+        "reasoning_parts": [],
+        "seen_tool_results": set(),
+        "pending_tools": {},
+        "turn_tool_calls": [],
+        "tool_results": [],
+    }
+    paused = False
+    async for ev in _translate_events(agent.stream(request), state):
+        if ev.get("type") == "approval_requested":
+            paused = True
+            yield ev
+            break
+        yield ev
+    if paused:
+        # HITL 暂停：不投影、不发 done、不广播完成（对话在等人工审批，resume_chat 续跑）
+        return
 
-    def _flush_pending_tools() -> list[dict]:
-        """把当前累积的 tool_call 分块固化成完整调用，并清空累加器。
-
-        必须在 flush 时就归档（`turn_tool_calls`）——原先只在流末尾从
-        `pending_tools` 取，而 TOOL_RESULT 分支每次都会 `clear()`，导致
-        done 时为空的 tool_calls 写进投影：对话历史里工具步骤时有时无
-        （首次 backfill 有、之后增量追加没有）。
-        """
-        flushed: list[dict] = []
-        for idx in sorted(pending_tools):
-            slot = pending_tools[idx]
-            flushed.append(
-                {
-                    "id": slot["id"] or f"call_{idx}",
-                    "name": slot["name"],
-                    "args": slot["args"],
-                }
-            )
-        pending_tools.clear()
-        return flushed
-
-    async for event in agent.stream(request):
-        ev_type = event.get("type")
-        kind = getattr(ev_type, "value", ev_type)
-
-        if kind == AgentEventType.TOKEN.value and event.get("content"):
-            text_parts.append(event["content"])
-            yield {"type": "token", "content": event["content"]}
-        elif kind == AgentEventType.REASONING.value and event.get("content"):
-            # 深度思考（reasoner 模型）：单独事件流，不计入正文 answer
-            reasoning_parts.append(event["content"])
-            yield {"type": "reasoning", "content": event["content"]}
-        elif kind == AgentEventType.TOOL_CALL_CHUNK.value:
-            # 聚合工具调用分块（name 首个 chunk 携带，args 分块累积）
-            idx = event.get("index", 0)
-            slot = pending_tools.setdefault(
-                idx, {"id": event.get("id", ""), "name": "", "args": ""}
-            )
-            if event.get("name"):
-                slot["name"] = event["name"]
-            if event.get("args"):
-                slot["args"] += event["args"]
-        elif kind == AgentEventType.TOOL_RESULT.value:
-            # 工具结果到达 = 本轮工具调用已提交，先 flush 完整 tool_call 事件
-            for call in _flush_pending_tools():
-                turn_tool_calls.append(call)
-                yield {
-                    "type": "tool_call",
-                    "name": call["name"],
-                    "args": call["args"],
-                    "id": call["id"],
-                }
-            for m in event.get("messages") or []:
-                content = getattr(m, "content", None)
-                if content:
-                    key = (getattr(m, "name", None), str(content)[:200])
-                    if key in seen_tool_results:
-                        break  # langgraph 会对同一工具结果重复发事件，去重
-                    seen_tool_results.add(key)
-                    tool_results.append(
-                        {
-                            "name": getattr(m, "name", None) or "",
-                            "content": str(content)[:500],
-                        }
-                    )
-                    yield {
-                        "type": "tool_result",
-                        "name": getattr(m, "name", None),
-                        "content": str(content)[:500],
-                    }
-                    break  # messages 可能含多个带 content 的消息，只透出首个结果
-        elif kind == AgentEventType.USAGE.value:
-            yield {
-                "type": "usage",
-                **{
-                    k: v
-                    for k, v in (event.get("usage") or {}).items()
-                    if k in ("input_tokens", "output_tokens")
-                },
-            }
-
-    answer = "".join(text_parts).strip()
+    answer = "".join(state["text_parts"]).strip()
     yield {"type": "done", "answer": answer}
     # 流结束时仍有未 flush 的分块（LLM 中断/异常等）→ 一并归档，避免丢工具调用
-    turn_tool_calls.extend(_flush_pending_tools())
+    state["turn_tool_calls"].extend(_flush_pending_tools(state["pending_tools"]))
     # 事件广播：对话完成（订阅者如 TTS 播报 / 记忆归档 / 观测在插件侧处理，
     # 对话流不写任何业务逻辑；订阅者异常由事件总线隔离，不阻断对话）。
     event_bus.emit(
@@ -220,15 +249,90 @@ async def stream_chat(
                 {
                     "user": messages,
                     "answer": answer,
-                    "reasoning": "".join(reasoning_parts).strip(),
+                    "reasoning": "".join(state["reasoning_parts"]).strip(),
                     # 本轮全部工具调用（flush 时归档，非从 pending_tools 现取）
-                    "tool_calls": turn_tool_calls,
-                    "tool_results": tool_results,
+                    "tool_calls": state["turn_tool_calls"],
+                    "tool_results": state["tool_results"],
                 }
             )
         except Exception:
             logger.exception("turn 消息投影写入失败（不影响对话）")
     # Langfuse trace 落盘（启用时；flush 失败静默，不阻断对话结果）
+    manager.flush_langfuse()
+
+
+async def resume_chat(
+    thread_id: str,
+    decisions: list[dict],
+    *,
+    agent_id: str,
+    name: str,
+    system_prompt: str,
+    workspace_dir=None,
+    plugin_tools: list | None = None,
+    skills_dir=None,
+    skills_disabled: frozenset[str] = frozenset(),
+    mcp_server_configs: dict | None = None,
+    mcp_default_servers: list[str] | None = None,
+    on_turn_complete=None,
+) -> AsyncGenerator[dict, None]:
+    """人工审批后继续被暂停的对话（HITL resume）。
+
+    与 stream_chat 同构：取同一 agent 实例（缓存命中参数被忽略），以
+    Command(resume=decisions) 续跑被 interrupt 暂停的 graph，翻译出 nuomi
+    内部事件流（含最终的 done 与投影）。审批拒绝时 harness 直接产出错误
+    ToolMessage，本层与正常工具结果同路径透出。
+    """
+    agent = manager.get_agent(
+        agent_id,
+        name=name,
+        system_prompt=system_prompt,
+        workspace_dir=workspace_dir,
+        plugin_tools=plugin_tools,
+        skills_dir=skills_dir,
+        skills_disabled=skills_disabled,
+        mcp_server_configs=mcp_server_configs,
+        mcp_default_servers=mcp_default_servers,
+    )
+    state: dict = {
+        "thread_id": thread_id,
+        "text_parts": [],
+        "reasoning_parts": [],
+        "seen_tool_results": set(),
+        "pending_tools": {},
+        "turn_tool_calls": [],
+        "tool_results": [],
+    }
+    paused = False
+    async for ev in _translate_events(agent.resume_hitl(thread_id, decisions), state):
+        if ev.get("type") == "approval_requested":
+            paused = True
+            yield ev
+            break
+        yield ev
+    if paused:
+        return
+
+    answer = "".join(state["text_parts"]).strip()
+    yield {"type": "done", "answer": answer}
+    state["turn_tool_calls"].extend(_flush_pending_tools(state["pending_tools"]))
+    event_bus.emit(
+        Events.conversation_completed, thread_id=thread_id, answer=answer, agent_id=agent_id
+    )
+    if on_turn_complete is not None:
+        try:
+            # user 传 None：turn_to_message_inputs 对空 user 安全，避免重复插入用户消息
+            await on_turn_complete(
+                {
+                    "user": None,
+                    "answer": answer,
+                    "reasoning": "".join(state["reasoning_parts"]).strip(),
+                    "tool_calls": state["turn_tool_calls"],
+                    "tool_results": state["tool_results"],
+                }
+            )
+        except Exception:
+            logger.exception("turn 消息投影写入失败（不影响对话）")
     manager.flush_langfuse()
 
 
@@ -360,6 +464,16 @@ async def stream_octop_sse(
                 {
                     "type": "tts",
                     "audio_url": ev.get("audio_url", ""),
+                    "thread_id": thread_id,
+                }
+            )
+        elif t == "approval_requested":
+            # HITL 人工审批请求（对话暂停，前端应展示审批卡片）
+            yield format_sse(
+                {
+                    "type": "approval_requested",
+                    "request_id": ev.get("request_id", ""),
+                    "request": ev.get("request") or {},
                     "thread_id": thread_id,
                 }
             )

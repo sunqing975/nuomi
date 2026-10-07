@@ -97,6 +97,14 @@ backend/.venv/bin/python scripts/check_mes_connector.py   # MCP 客户端验证 
 参数=`connectors/mes_connector.py`；对话时挂载即可问「昨天 A 线生产情况」「设备状态 / 良率趋势」。
 接真实工厂系统：把环境变量 `MES_DB_PATH` 指向真实 MES 只读数据库即可，连接器代码不动。
 
+**写路径 + 人工审批（HITL）**：连接器还带一个报工写工具（`mes_submit_work_report`，写入独立的
+`connectors/data/mes_operations.db` 台账库）。报工是高风险写操作，糯米侧默认**每次都要人工批准**才执行——
+对话中让糯米报工会先弹审批卡片（显示工具与参数），点「批准」才落库，点「拒绝」则丢弃，全程有据可查：
+```bash
+python3 scripts/e2e_hitl_test.py      # 端到端验证：触发审批 → 批准落库 → 拒绝不落库 → 只读回归
+```
+演示话术：`帮我把工单 WO-A-2026-0011 报工，完工数量 60 件`（对话会暂停等你在卡片上批准/拒绝）。
+
 ## 架构
 
 ```

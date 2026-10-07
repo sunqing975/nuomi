@@ -16,6 +16,7 @@ import asyncio
 import json
 import logging
 from contextlib import aclosing
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
@@ -38,7 +39,12 @@ from app.domain.plugins.service import plugin_service
 from app.domain.skillpackages.service import skill_package_service
 from app.domain.skills.service import skill_service
 from app.infra.avatar_events import avatar_events
-from app.infra.harness.chat import format_sse, stream_chat, stream_octop_sse
+from app.infra.harness.chat import (
+    format_sse,
+    resume_chat,
+    stream_chat,
+    stream_octop_sse,
+)
 from app.transport.runtime import all_skills_dirs, ensure_agent_runtime
 from app.transport.streaming import SSE_HEADERS, stream_response
 
@@ -458,6 +464,103 @@ async def chat(agent_id: str, body: ChatBody, request: Request) -> StreamingResp
 
     # 结构性保证（P0-5）：校验全部在 gen 之前完成（见函数体上方），
     # StreamingResponse 统一走 stream_response 出口 —— gen 内不再允许抛 HTTPException。
+    return await stream_response(
+        gen,
+        media_type="text/event-stream",
+        headers=SSE_HEADERS,
+    )
+
+
+class ChatApprovalBody(BaseModel):
+    """HITL 人工审批：approve 放行写工具 / reject 拒绝（可附理由）。"""
+
+    thread_id: str
+    decision: Literal["approve", "reject"]
+    message: str | None = None
+
+
+@router.post("/agents/{agent_id}/chat/approval")
+async def chat_approval(
+    agent_id: str, body: ChatApprovalBody, request: Request
+) -> StreamingResponse:
+    """HITL 人工审批：续跑被暂停的对话，返回与对话同构的 SSE 事件流。
+
+    approve：harness 放行被 interrupt 挂起的工具调用（写入真实执行）；
+    reject：harness 返回错误 ToolMessage（写操作不执行）。两者都会让
+    LLM 在下一轮继续组织回复（token / tool_result / done 正常回流）。
+    会话归属校验：thread 已存在时 agent_id 必须一致，避免跨 Agent 续跑。
+    """
+    agent_row = agent_service.get(agent_id)
+    if agent_row is None:
+        raise HTTPException(status_code=404, detail="Agent 不存在")
+    if not agent_row.get("enabled"):
+        raise HTTPException(status_code=400, detail="Agent 已停用")
+    thread = thread_repo.get(body.thread_id)
+    if thread is not None and str(thread.get("agent_id", "")) != str(agent_id):
+        raise HTTPException(status_code=403, detail="会话不属于该 Agent")
+    decisions: list[dict] = [{"type": body.decision}]
+    if body.message:
+        decisions[0]["message"] = body.message
+
+    async def gen():
+        tools, tool_owners = plugin_service.tools_and_owners()
+        from app.domain.avatar.service import load_avatar_instructions
+
+        system_prompt = agent_row["system_prompt"] or ""
+        avatar_instructions = load_avatar_instructions()
+        if avatar_instructions:
+            system_prompt = system_prompt.rstrip() + "\n\n" + avatar_instructions
+
+        avatar_events.publish_status("thinking")
+
+        async def _persist_turn(turn: dict) -> None:
+            """本轮消息写入 thread_messages 投影（M4；失败不影响对话）。"""
+            if thread_repo.get(body.thread_id) is None:
+                thread_repo.insert(body.thread_id, agent_id, title="")
+            if thread_message_repo.projection_status(body.thread_id) != PROJ_READY:
+                return
+            inputs = turn_to_message_inputs(turn)
+            if inputs:
+                thread_message_repo.append(body.thread_id, inputs)
+
+        frames = stream_octop_sse(
+            _publish_actions(
+                resume_chat(
+                    body.thread_id,
+                    decisions,
+                    agent_id=agent_id,
+                    name=agent_row["name"],
+                    system_prompt=system_prompt,
+                    workspace_dir=ensure_agent_workspace(agent_id, agent_row["name"]),
+                    plugin_tools=tools,
+                    skills_dir=all_skills_dirs(),
+                    skills_disabled=skill_service.disabled_set(),
+                    mcp_server_configs=settings.mcp_servers,
+                    mcp_default_servers=list(settings.mcp_servers.keys()) or None,
+                    on_turn_complete=_persist_turn,
+                ),
+                tool_owners,
+            ),
+            thread_id=body.thread_id,
+        )
+        try:
+            async with aclosing(frames) as stream:
+                async for frame in stream:
+                    if await request.is_disconnected():
+                        break
+                    yield frame
+        except Exception as exc:
+            logger.exception("审批续流异常（thread=%s）", body.thread_id)
+            yield format_sse(
+                {
+                    "type": "error",
+                    "message": str(exc) or exc.__class__.__name__,
+                    "thread_id": body.thread_id,
+                }
+            )
+        finally:
+            avatar_events.publish_status("idle")
+
     return await stream_response(
         gen,
         media_type="text/event-stream",
