@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Literal
 
 from octop_harness import HarnessAgentConfig, init_workspace
 from octop_harness.config import ModelConfig, ProviderConfig
@@ -67,7 +68,7 @@ def build_agent_config(
     mcp_server_configs: dict | None = None,
     mcp_default_servers: list[str] | None = None,
     tool_guard_enabled: bool = True,
-    tool_guard_mode: str = "require_approval",
+    tool_guard_mode: Literal["block", "warn", "require_approval"] = "require_approval",
     tool_guard_rules_dir: str | Path | None = None,
 ) -> HarnessAgentConfig:
     """构造单个 Agent 的运行时配置（工作区按 harness init_workspace 布局）。

@@ -4,7 +4,9 @@
     {"type": "token",       "content": "你"}
     {"type": "tool_call",   "name": "touch_special", "args": "{}", "id": "call_0"}
     {"type": "tool_result", "name": "touch_special", "content": "..."}
-    {"type": "usage",       "input_tokens": 1, "output_tokens": 2}
+    {"type": "usage",       "input_tokens": 1, "uncached_input_tokens": 1,
+                            "cache_read_tokens": 0, "cache_write_tokens": 0,
+                            "output_tokens": 2, "reasoning_tokens": 0, "total_tokens": 3}
     {"type": "done",        "answer": "完整回复"}
 
 对外统一输出 OpenAI Chat Completions 格式（stream_openai_sse），
@@ -25,6 +27,19 @@ from app.infra.events import Events, event_bus
 from app.infra.harness.manager import manager
 
 logger = logging.getLogger(__name__)
+
+# usage 事件透传白名单：对齐 octop normalize_usage_metadata 的规范化键。
+# cache_read_tokens = 前缀缓存命中（DeepSeek prompt_cache_hit_tokens / OpenAI cached_tokens 归一化），
+# uncached_input_tokens = 未命中部分——P0 缓存可观测（2026-10-08）的核心字段。
+_USAGE_KEYS = (
+    "input_tokens",
+    "uncached_input_tokens",
+    "cache_read_tokens",
+    "cache_write_tokens",
+    "output_tokens",
+    "reasoning_tokens",
+    "total_tokens",
+)
 
 
 def _flush_pending_tools(pending: dict) -> list[dict]:
@@ -107,11 +122,7 @@ async def _translate_events(events, state: dict) -> AsyncGenerator[dict, None]:
         elif kind == AgentEventType.USAGE.value:
             yield {
                 "type": "usage",
-                **{
-                    k: v
-                    for k, v in (event.get("usage") or {}).items()
-                    if k in ("input_tokens", "output_tokens")
-                },
+                **{k: v for k, v in (event.get("usage") or {}).items() if k in _USAGE_KEYS},
             }
         elif kind == AgentEventType.HITL_REQUIRED.value:
             # 人工审批请求：透出审批卡片数据并终止本轮（对话暂停，等审批 API 续跑）
@@ -374,11 +385,13 @@ async def stream_openai_sse(
             }
             yield _openai_chunk(cid, model, {"tool_calls": [tool]})
         elif t == "usage":
-            usage = {k: v for k, v in ev.items() if k in ("input_tokens", "output_tokens")}
+            usage = {k: v for k, v in ev.items() if k in _USAGE_KEYS}
         elif t == "done":
             yield _openai_chunk(cid, model, {}, finish="stop")
             if include_usage and usage:
-                yield f"data: {json.dumps({'id': cid, 'object': 'chat.completion.chunk', 'model': model, 'choices': [], 'usage': {'prompt_tokens': usage.get('input_tokens', 0), 'completion_tokens': usage.get('output_tokens', 0), 'total_tokens': usage.get('input_tokens', 0) + usage.get('output_tokens', 0)}}, ensure_ascii=False)}\n\n"
+                input_tokens = usage.get("input_tokens", 0)
+                output_tokens = usage.get("output_tokens", 0)
+                yield f"data: {json.dumps({'id': cid, 'object': 'chat.completion.chunk', 'model': model, 'choices': [], 'usage': {'prompt_tokens': input_tokens, 'completion_tokens': output_tokens, 'total_tokens': input_tokens + output_tokens, 'prompt_tokens_details': {'cached_tokens': usage.get('cache_read_tokens', 0)}}}, ensure_ascii=False)}\n\n"
             yield "data: [DONE]\n\n"
 
 
@@ -452,9 +465,7 @@ async def stream_octop_sse(
             yield format_sse(
                 {
                     "type": "usage",
-                    "usage": {
-                        k: v for k, v in ev.items() if k in ("input_tokens", "output_tokens")
-                    },
+                    "usage": {k: v for k, v in ev.items() if k in _USAGE_KEYS},
                     "node": "model",
                     "thread_id": thread_id,
                 }

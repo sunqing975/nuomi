@@ -3,13 +3,22 @@ name = "nuomi-backend"
 version = "0.13.0"
 description = "糯米 · 桌面 AI 人格工作台（octop-harness 为机制基础库，业务层自己写）"
 readme = "README.md"
-requires-python = ">=3.11,<3.13"
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     # Agent 运行时：octop-harness（机制基础库，v0.13 起不再自研 engine）。
     # harness 依赖 langchain>=1.5 / langgraph<2 / deepagents / octop-memory，版本由它约束。
     "octop-harness>=1.0.0",
+    # Langfuse 观测：nuomi 设置页「测试连接」直接 import（transport/settings_api.py），
+    # 且 octop-harness 的 observability extra 也要求它——必须显式声明，不能靠 optional extra
+    # （2026-10-07 uv sync 重对齐后 venv 丢过 langfuse，导致 5 个 langfuse 测试全挂）。
+    "langfuse>=4.9.0",
+    # 知识库本地嵌入：onnx_service/onnx_catalog 用 fastembed 加载推理，
+    # onnx_download 用 huggingface_hub 拉模型——都是运行时依赖，
+    # 之前 ad-hoc 安装不在锁文件里，一 uv sync 就被清掉（与 langfuse 同类问题）。
+    "fastembed>=0.3",
+    "huggingface_hub>=0.23",
     "pydantic-settings>=2.4",
     "python-dotenv>=1.0",
 ]

@@ -10,7 +10,6 @@ import asyncio
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from app.config import settings
 from app.infra import env_store
 from app.infra.harness.manager import manager
 

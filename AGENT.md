@@ -33,6 +33,15 @@
 - **Octop 专家导入（2026-10-04 A2）**：`backend/scripts/import_octop_expert.py <source_dir> [--name 名]` 或 `POST /api/agents/import {source_dir}`；源 = `~/.octop/agents/<id>/`（已装）或 Octop 源码 `experts/library/<id>/`（模板）；复制 persona（含 BOOTSTRAP/PROACTIVE）+ skills/ + agents/（子智能体）+ manifest 到新专家 workspace，DB 注册（system_prompt 兜底、icon/color/welcome 取 manifest；**记忆不复制，从零开始**）。实测导入 general-assistant（小通·通用助手，4b97d68b698e）对话正常。
 - **糯米人设变更（2026-10-04，用户拍板）**：猫 → 人工智能助手。experts/nuomi/ 全改 AI 助手（IDENTITY.md 删除、并入 USER.md「关于我」；MEMORY.md 新建）；DB system_prompt 降为兜底短句「你是糯米，住在用户电脑里的人工智能助手。中文回答，简洁友好。」（详细 persona 走文件注入）；全部会话与记忆已清空（备份 /tmp/memory-20261004.bak.sqlite、/tmp/nuomi-20261004.bak.db）。记忆由 harness `___atoms` 表承载（`nuomi_*` 表是废弃空表、facts 表无代码读写），清空后从零重建。
 
+- **缓存经济性作为架构约束（2026-10-08，架构决策）**：请求缓存键 = 前缀字节流（DeepSeek/OpenAI 自动前缀缓存、无手动断点；仅 Anthropic 有 cache_control 断点），前缀任一字节漂移 → 整段缓存失效。DeepSeek 价目（以官方页为准，2026-05 起 v4-flash）：命中 0.02 元/百万 vs 未命中 1 元/百万 tokens，**命中 ≈ 未命中 1/50**。nuomi 是单用户桌面应用——跨用户共享缓存键无意义，**经济性来自同一专家、同一会话内的前缀复用**（轮次越长历史占比越大，且工具结果在历史中占比高，命中复利显著）。由此确立「稳定前缀 / 动态后缀」为 prompt 组装的前置约束：
+  - **布局约定**（落点 `infra/harness/config.py::build_agent_config` + `init_workspace` persona 注入）：稳定前缀 = 全局人格模板 → 专家 persona（USER/SOUL/AGENTS.md）→ 工具定义 → 技能注入；动态后缀 = 轮次变量（当前时间等**绝不进前缀**，否则每轮换键）→ 本轮知识库配置（configurable）→ 历史消息（checkpointer 字节回放，须与上次发送一致）→ 用户消息。二值条件（语言/模式）不拼前缀（N 个二值条件 = 2^N 种缓存键；单用户影响小，原则立住）。
+  - **工具定义 = 缓存键的粗粒度维度（2026-10-08 用户补充）**：工具定义在请求中先于对话历史（前缀头部区），**工具集变化会连带失效其后的 system prompt + 全部历史**——工具集字节稳定性是最高杠杆。工具集变化分两类：
+    - ① **能力集变更（用户显式动作，预期换键）**：插件启停（`plugins.enabled` → `build_plugin_tools`）、连接器挂载（per-turn mcp_servers）、技能白名单（per-turn skills → SkillFilterMiddleware）、知识库启用集合——能力变了缓存键就该变，变更那一轮全价重算属正常，之后同集合继续累积。**实践规则：同一会话内能力选择跨轮次保持稳定（不频繁切能力 chips），能力变更批量做而非每轮做**；不同能力组合 = 不同缓存键，属预期。
+    - ② **每轮隐式漂移（无用户变更却改字节，最坏情况，要消灭）**：`KnowledgeSearchHintMiddleware` 每轮改写 `search_knowledge` 工具描述（`infra/knowledge/hint.py::_with_enriched_tool_description`）→ 选中库集合不变也每轮改字节 → 前缀永远累积不起来。**规则：工具描述改写按「启用库集合」memoize，集合不变则字节不变**；工具列表排序固定（按 id，不依赖注册/迭代顺序）。
+  - **子 Agent 字节级对齐（未来条款）**：当前单 agent（octop LangChain Deep Agents 循环，无子 agent/旁路）；未来引入子 agent 时，其 system prompt + 工具定义 + 思考配置必须与父 agent 共享字节一致前缀，差异全放尾部（参照 Claude Code 实践）。
+  - **工具结果替换字符串冻结**：现状已正确——`infra/harness/chat.py::_translate_events` 展示层截断 500 字，checkpointer 存全量原始字节，回放字节 = 原始字节；未来做长历史压缩/摘要时，摘要串必须**确定性生成 + 持久化在消息对象里**（重启回放同一字节），不得每次重新生成。
+  - **待办**：P0 ✅（2026-10-08 已做，见「P0 缓存命中率可观测」）；P1 工具描述改写 memoize + 工具列表稳定排序 + 核验 persona/历史回放字节稳定。
+
 ## 架构（v0.13）
 
 ```
@@ -619,3 +628,13 @@ SSE 事件协议（当前完整）：`token` / `reasoning` / `tool_call_chunk`�
 - **前端审批卡片**：`ApprovalCard.tsx`（工具名 + 参数 JSON + 批准/拒绝按钮 + 可选拒绝理由），Chat.tsx 在消息流与输入框之间渲染；`useChatStream.ts` 新增 approval state 与 `submitApproval`（续流累积到现有片段、done 后落消息）；api.ts 新增 `chatApproval`
 - **端到端实测（2026-10-07，`scripts/e2e_hitl_test.py`）**：报工触发审批帧（action_requests 含 HIGH 风险描述与参数）→ **approve** 续跑 done + 写库 +1 → **reject** 续跑 done + 写库不变 → 只读路径回归无审批帧。前端 61 测试 + typecheck 全绿
 - **踩坑**：①模型（deepseek）常先探索不直接调写工具 → 测试用硬指令措辞「直接执行 mes_submit_work_report(...)」稳定触发；②ask_user_question 也是 harness 原生 HITL（模型主动澄清也走 approval_requested，链路复用同一套审批 API）；③harness agent 无公开 middleware 属性，护栏行为用 ToolGuardMiddleware.awrap_tool_call 单元级验证（interrupt 分支正确）
+
+## P0 缓存命中率可观测（2026-10-08）
+
+- **目标**：把缓存命中/未命中带出到对话 usage 事件，先量化命中率再决定 P1 投入（见「缓存经济性作为架构约束」决策的待办）
+- **实现**：
+  - `infra/harness/chat.py`：新增 `_USAGE_KEYS` 白名单（对齐 octop `normalize_usage_metadata` 的规范化键），usage 事件透传 `uncached_input_tokens / cache_read_tokens / cache_write_tokens / reasoning_tokens / total_tokens`（此前只留 input/output，DeepSeek 的 `prompt_cache_hit_tokens` 被归一化成 `cache_read_tokens` 后即被丢弃）；`stream_openai_sse` 的 usage chunk 按 OpenAI 线格式带 `prompt_tokens_details.cached_tokens`（无缓存字段兜底 0，不破坏兼容）；`stream_octop_sse` usage 帧同步透传
+  - 测试 `tests/test_usage_cache_passthrough.py`（4 例，合成事件，锁内部事件/OpenAI SSE/octop SSE 三条链路）
+  - 顺手清理：`settings_api.py` 未使用的 `from app.config import settings`（ruff F401，HEAD 遗留死代码）；`config.py` `tool_guard_mode` 收窄为 Literal（harness 1.0.1 签名收紧后的 mypy 遗留报错）；**依赖声明补全**——`langfuse / fastembed / huggingface_hub` 之前都是 ad-hoc 安装、不在 pyproject/锁文件里，一 `uv sync` 就被清掉（langfuse 丢 → 5 个 langfuse 测试挂；fastembed/huggingface_hub 丢 → 知识库检索测试挂），现已全部声明进 `backend/pyproject.toml` 并重生成 uv.lock（新旧锁解析版本一致，仅格式重排）；`requires-python` 收窄为 `>=3.12,<3.13`（octop-harness 1.0.1 硬要求 >=3.12，README「3.11/3.12」同步改为 3.12）
+- **实测（真实 DeepSeek 两轮同线程对话）**：第二轮 usage `input_tokens=11371 = cache_read 11136（命中 97.9%）+ uncached 235`，另 `reasoning_tokens=16`——缓存字段完整穿过 langchain→harness 归一化；单会话内前缀稳定性现状良好（工具描述每轮改写的风险面另见 P1）
+- **Langfuse 边界**：harness 的 Langfuse 回调按 langchain 协议记录 usage；DeepSeek 不返回 `prompt_tokens_details` 时 usage_metadata 不含缓存明细，缓存命中指标以 nuomi usage 事件为权威（本机 Langfuse 未启用，trace 内字段未验证；如需 Langfuse 原生缓存指标另议）

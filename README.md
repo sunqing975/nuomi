@@ -18,7 +18,7 @@
 
 ## 快速开始
 
-依赖不入库，全新克隆后先装依赖（Python 3.11/3.12 + [uv](https://docs.astral.sh/uv/)，Node.js 20+，CI 用 22）：
+依赖不入库，全新克隆后先装依赖（Python 3.12 + [uv](https://docs.astral.sh/uv/)，Node.js 20+，CI 用 22）：
 
 ```bash
 cd backend && uv sync && cd ..                    # 后端 venv → backend/.venv（uv 管理，无 pip）
