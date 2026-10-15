@@ -207,15 +207,16 @@ OpenAI 兼容：`app/transport/openai_compat.py`（`/v1/chat/completions`，mode
 | # | 事项 | 现状 / 为什么 | 落地要点 |
 |---|---|---|---|
 | 1 | 知识库 **OCR** | ⏸ 用户叫停（`ocr_enabled=false` 占位） | RapidOCR 本地 + 扫描 PDF；接 `knowledge/capability` |
-| 2 | **深色主题入口** | token 覆盖层已备好（`THEME_OVERRIDES.dark`，核心键有测试保证），但没接切换 | 需同时把 `main.tsx` 的 antd `algorithm` 换 `darkAlgorithm`，否则 antd 组件仍浅色；加开关 + 持久化 |
-| 3 | 装饰色板收敛 + 内联样式 | 剩 60 处裸 hex（4 处 antd `color=` prop、其余装饰标签色板）+ 278 处内联 `style` | 先收 `AVATAR_COLORS`（三份重复）到 `utils/palette.ts`，再逐页收；**别为清零做无验证的大重写** |
-| 4 | 前端**渲染级**测试 | 无 `@testing-library/react`；组件行为（滚动跟随/攒批上传/折叠）只有纯函数单测兜 | 装 RTL + 给 Chat 上传/折叠、Memory 页写交互测试 |
+| 2 | **深色主题入口** | ✅ 已接线（2026-10-16，8c94056）：`themeStore.ts`（localStorage 持久化 + `useSyncExternalStore`，默认浅色、不跟系统）+ `main.tsx` 用 `buildTheme(mode)`（antd `darkAlgorithm`）+ 顶栏切换按钮 + Sider `theme` 跟随；`theme.test.ts` 10 例锁「除品牌/语义/尺寸类外每个 token 都要有深色覆盖」 | 残余：部分页面仍有硬编码浅色（见 #3），深色下会露白 |
+| 3 | 装饰色板收敛 + 内联样式 | 实测口径（2026-10-16，`pages`+`components`，排除测试文件）：内联 `style={{` **248 处**、6 位裸 hex **20 处**、`message.error` **62 处**而 `ErrorState` 基元在 pages 引用 **0 处**（基元已建好没人用）。旧文档写 60/278 都对不上，以再测为准 | 先收 `AVATAR_COLORS`（三份重复）到 `utils/palette.ts`，再把 `message.error` 逐页换成 `ErrorState`；**别为清零做无验证的大重写** |
+| 4 | 前端**渲染级**测试 | 已装 RTL：`components.test.tsx` 16 例 + `pages/chat/ApprovalCard.test.tsx` 7 例（多动作全渲染/决策条数/重复提交禁用）。**注意 vitest 未开 globals，RTL 自动 cleanup 不生效，同文件多次 render 必须手动 `afterEach(cleanup)`**（components.test.tsx:17-18 已记） | 仍缺：Chat 攒批上传、滚动跟随、折叠这类行为级测试 |
 | 5 | AI 数字人**直接说话（TTS）** | ⬜ 用户已拍板待办；TTS 客户端代码保留未删 | 恢复"收到回复文本 → TTS 播报"入口；注意当前是 Kokoro-FastAPI 路线 |
 | 6 | 斜杠技能注入（`/slug`） | ⬜ 本轮用"工具条选择器 + chips" | octop 的 `/slug` 文本插入 |
 | 7 | 专家级默认绑定 | ⬜ 对齐 octop agents 表 `skill_package_ids`/`knowledge_base_ids`/`mcp_servers` 三列 | 加绑定列 + 对话默认注入（per-turn 可覆盖；知识库仍显式指定才注入） |
 | 8 | `prompt_files` 注入 | ⬜ octop manifest 声明的非标准文件（IDENTITY/HEARTBEAT 等）已复制但不注入 | 内容合并进注入或 system_prompt |
 | 9 | octop WS 迁移 | ⏸ 事件帧已对齐，通道仍 HTTP SSE | 注意 python websockets 连 8088 WS 恒 403（§6） |
-| 10 | HITL 工具审批流 | ✅ 已落地（2026-10-07，MES 写路径） | harness `ToolGuardMiddleware`（`build_agent_config` 默认 `tool_guard_enabled=True` / `mode="require_approval"` / `rules_dir=仓库根/connectors/rules`）；写工具命中 HIGH 即 `interrupt` → 后端译 `approval_requested` 帧 → 前端审批卡片 → `POST /chat/approval` 续跑（approve 执行 / reject 丢弃）；规则文件名为 harness 固定的 `dangerous_shell_commands.yaml`（自定义目录替代内置，不含 shell 规则） |
+| 10 | HITL 工具审批流 | ✅ 已落地（2026-10-07，MES 写路径） | harness `ToolGuardMiddleware`（`build_agent_config` 默认 `tool_guard_enabled=True` / `mode="require_approval"` / `rules_dir=仓库根/connectors/rules`）；写工具命中 HIGH 即 `interrupt` → 后端译 `approval_requested` 帧 → 前端审批卡片 → `POST /chat/approval` 续跑（approve 执行 / reject 丢弃）；规则文件名为 harness 固定的 `dangerous_shell_commands.yaml`（自定义目录替代内置，不含 shell 规则）。
+**2026-10-16 补（1006d5d）**：① 自建 `approvals` 台账（`domain/approvals/service.py`，`request_id` 主键、幂等）+ `GET /api/agents/{id}/approvals` → 前端 `loadHistory` 后找回卡片（原先 `request_id` 只活在 SSE 帧里，**刷新即永久失联**，而被拦下的写操作还挂在 graph 中断上没人能批）；② 审批端点改**逐条决策**口径（`decisions[]`：按台账动作数校验条数、按 `allowed_decisions` 校验取值、`edit` 必带 `edited_action`、重复提交 409；旧单值 `decision` 兼容并复制成 N 条，壳与 `scripts/e2e_hitl_test.py` 不用改），只有真被 harness 消费（看到 `done` 或新审批帧）才 resolve，报错/断连保持 pending；③ 新一轮对话 `supersede` 旧 pending（防"复活卡片"重复放行）；④ 壳（OpenAI 兼容端点）触发的审批也落台账，可在控制台代批。**遗留**：`infra/harness/chat.py:131-135` 发完第一帧审批即 `return`，多 interrupt 项会丢后续帧（tool_guard 恒 1 条，今天无碍）；harness 对「pending interrupt 时又喂新输入」无保证，故待审期间前端禁用输入框 |
 
 ### 8.3 明确不做（用户拍板，别再排）
 
