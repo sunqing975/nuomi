@@ -1,6 +1,7 @@
-"""连接器（MCP）测试：env 字段 API 透传 + 校验；env 注入 MCP stdio 子进程集成验证。
+"""连接器（MCP）测试：env 读侧脱敏 + 写侧掩码回填 + 校验；env 注入 MCP stdio 子进程集成验证。
 
-- API 层：create/list/update/delete 带 env，非法键名 400。
+- API 层：create/list/update/delete 带 env，但**响应一律脱敏**（真值只留在内存配置与
+  0600 的 connectors.json）；把掩码原样回写 = 保持旧值；非法键名 400。
 - 集成层：octop-harness `load_mcp_tools` 加载 fixtures/mcp_env_server.py，
   断言 spec env 出现在子进程环境变量（stdio 生效）。
 """
@@ -8,10 +9,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import sys
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+
+from app.config import settings
 
 FIXTURES = Path(__file__).parent / "fixtures"
 ENV_SERVER = FIXTURES / "mcp_env_server.py"
@@ -20,7 +24,7 @@ ENV_SERVER = FIXTURES / "mcp_env_server.py"
 
 
 def test_connector_crud_with_env(client: TestClient) -> None:
-    # create（带 env）
+    # create（带 env）——响应里密钥已脱敏，真值只留在内存配置
     r = client.post(
         "/api/connectors",
         json={
@@ -32,20 +36,48 @@ def test_connector_crud_with_env(client: TestClient) -> None:
         },
     )
     assert r.status_code == 200, r.text
-    assert r.json()["env"] == {"GITHUB_TOKEN": "ghp_test", "EMPTY_VAL": ""}
+    assert r.json()["env"] == {"GITHUB_TOKEN": "******", "EMPTY_VAL": ""}
+    assert settings.mcp_servers["env_probe"]["env"]["GITHUB_TOKEN"] == "ghp_test"
 
-    # list 返回 env
+    # list 返回 env（同样脱敏：这条是 2026-10-15 审计认定的最后一个未脱敏密钥出口）
     servers = client.get("/api/connectors").json()
     row = next(s for s in servers if s["name"] == "env_probe")
-    assert row["env"] == {"GITHUB_TOKEN": "ghp_test", "EMPTY_VAL": ""}
+    assert row["env"] == {"GITHUB_TOKEN": "******", "EMPTY_VAL": ""}
+    assert "ghp_test" not in json.dumps(servers)
 
-    # update 替换 env
+    # update：把返回的掩码原样回写 = 没改动，必须保持真实值
+    # （MY_KEY 命中 env_store 的 ``_KEY`` 密钥规则 → 同样脱敏；NODE_ENV 是普通键，原样可见）
     r = client.put(
         "/api/connectors/env_probe",
-        json={"transport": "stdio", "command": sys.executable, "env": {"MY_KEY": "1"}},
+        json={
+            "transport": "stdio",
+            "command": sys.executable,
+            "env": {"GITHUB_TOKEN": "******", "MY_KEY": "1", "NODE_ENV": "production"},
+        },
     )
     assert r.status_code == 200, r.text
-    assert r.json()["env"] == {"MY_KEY": "1"}
+    assert r.json()["env"] == {
+        "GITHUB_TOKEN": "******",
+        "MY_KEY": "******",
+        "NODE_ENV": "production",
+    }
+    assert settings.mcp_servers["env_probe"]["env"] == {
+        "GITHUB_TOKEN": "ghp_test",
+        "MY_KEY": "1",
+        "NODE_ENV": "production",
+    }
+
+    # update：显式给新值就替换（掩码判据是"精确等于 mask_value(旧值)"，不是"含 ***"）
+    r = client.put(
+        "/api/connectors/env_probe",
+        json={
+            "transport": "stdio",
+            "command": sys.executable,
+            "env": {"GITHUB_TOKEN": "ghp_new***x", "MY_KEY": "2"},
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert settings.mcp_servers["env_probe"]["env"]["GITHUB_TOKEN"] == "ghp_new***x"
 
     # 非法键名 400
     r = client.put(
