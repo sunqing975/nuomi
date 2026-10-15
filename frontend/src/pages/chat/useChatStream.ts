@@ -12,8 +12,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { message } from 'antd';
 
 import {
-  chatApproval, chatStream, post,
-  type ApprovalRequest, type ChatEvent, type ChatMessage, type ChatUsage, type Segment,
+  chatApproval, chatStream, fetchApprovals, post, toApprovalRequest,
+  type ApprovalDecisionInput, type ApprovalRequest, type ChatEvent, type ChatMessage, type ChatUsage, type Segment,
 } from '../../api';
 import { accumulateUsage } from '../../utils/formatUsage';
 import { appendStreamSegment } from '../../utils/streamSegments';
@@ -230,7 +230,7 @@ export function useChatStream(opts: UseChatStreamOptions) {
    * 结果继续组织回复（不写入任何数据）。
    */
   const submitApproval = useCallback(
-    async (decision: 'approve' | 'reject', reason?: string) => {
+    async (decisions: ApprovalDecisionInput[]) => {
       if (!agentId || !approval) return;
       const tid = approval.threadId;
       setApproval(p => (p ? { ...p, pending: true } : p));
@@ -247,7 +247,15 @@ export function useChatStream(opts: UseChatStreamOptions) {
       // 只统计续跑之后的调用（审批前那几帧属于上一个作用域，不重复计）
       let turnUsage: ChatUsage | undefined;
       try {
-        await chatApproval(agentId, tid, decision, (e: ChatEvent) => {
+        await chatApproval(
+          agentId,
+          // request_id 带上：同一会话连续两次审批时，后端要按 id 精确收口台账
+          {
+            thread_id: tid,
+            ...(approval.requestId ? { request_id: approval.requestId } : {}),
+            decisions,
+          },
+          (e: ChatEvent) => {
           if (e.type === 'token' && e.content) {
             pushSeg({ id: nextSegmentId(), type: 'text', content: e.content });
           } else if (e.type === 'reasoning' && e.content) {
@@ -280,7 +288,9 @@ export function useChatStream(opts: UseChatStreamOptions) {
               pending: false,
             });
           }
-        }, reason ? { message: reason } : undefined, controller.signal);
+        },
+          controller.signal,
+        );
       } catch (err) {
         if ((err as Error).name !== 'AbortError') {
           message.error(`审批提交失败：${(err as Error).message}`);
@@ -299,6 +309,33 @@ export function useChatStream(opts: UseChatStreamOptions) {
     [agentId, approval, messages, onSessionChanged, streamSegments],
   );
 
+  /**
+   * 刷新/切换会话后把待审卡片找回来。
+   *
+   * 审批请求的 request_id 是后端现生成的 uuid，原先只活在 SSE 帧里：页面一刷新
+   * 卡片就没了，而被 harness 拦下的写入还挂在中断上 —— 用户既看不到"有待批"，
+   * 也没法批，只能干等或重开一轮（旧对话里的写操作等于凭空消失）。
+   */
+  const restoreApproval = useCallback(
+    async (threadId: string) => {
+      if (!agentId || !threadId) return;
+      try {
+        const rows = await fetchApprovals(agentId, { status: 'pending', threadId, limit: 5 });
+        const row = rows[0];
+        if (!row) return;
+        setApproval({
+          requestId: row.request_id,
+          threadId: row.thread_id,
+          request: toApprovalRequest(row),
+          pending: false,
+        });
+      } catch {
+        // 卡片找不回来不该挡住历史加载：最坏情况就是这次刷新看不到审批卡片
+      }
+    },
+    [agentId],
+  );
+
   return {
     sending,
     streamSegments,
@@ -309,5 +346,6 @@ export function useChatStream(opts: UseChatStreamOptions) {
     clearStream,
     setInterrupted,
     submitApproval,
+    restoreApproval,
   };
 }

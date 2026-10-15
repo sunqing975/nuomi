@@ -541,6 +541,28 @@ export async function chatStream(
   }
 }
 
+/** 一条待审动作的决策（与后端 ApprovalDecision 同构） */
+export interface ApprovalDecisionInput {
+  type: 'approve' | 'reject' | 'edit' | 'respond';
+  message?: string;
+  edited_action?: Record<string, unknown>;
+}
+
+/**
+ * HITL 审批提交体。两种口径：
+ * - `decision`：整批一个决定（旧口径，后端按动作数复制成 N 条）；
+ * - `decisions`：逐条决策，**长度必须等于该轮待审动作数**（harness 少一条就
+ *   ValueError 让会话永久卡在中断上，后端会先挡成 400）。
+ */
+export interface ApprovalSubmit {
+  thread_id: string;
+  request_id?: string;
+  decision?: 'approve' | 'reject';
+  decisions?: ApprovalDecisionInput[];
+  message?: string;
+  source?: string;
+}
+
 /**
  * HITL 人工审批：续跑被暂停的对话（approve 放行写工具 / reject 拒绝）。
  *
@@ -549,20 +571,14 @@ export async function chatStream(
  */
 export async function chatApproval(
   agentId: string,
-  threadId: string,
-  decision: 'approve' | 'reject',
+  body: ApprovalSubmit,
   onEvent: (e: ChatEvent) => void,
-  opts?: { message?: string },
   signal?: AbortSignal,
 ): Promise<void> {
   const res = await authedFetch(`/api/agents/${agentId}/chat/approval`, {
     method: 'POST',
     headers: { ...(await authHeaders()), 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      thread_id: threadId,
-      decision,
-      ...(opts?.message ? { message: opts.message } : {}),
-    }),
+    body: JSON.stringify(body),
     signal,
   });
   if (!res.ok) {
@@ -580,4 +596,41 @@ export async function chatApproval(
     buf = parsed.buf;
     for (const e of parsed.events) onEvent(e);
   }
+}
+
+/** 审批台账一行（GET /api/agents/{id}/approvals）。`request_id` 此前只活在 SSE 帧里，
+ *  刷新页面就找不回卡片 —— 后端现在落库，这里把它读回来。 */
+export interface ApprovalRow {
+  request_id: string;
+  thread_id: string;
+  agent_id: string;
+  status: 'pending' | 'resolved' | 'superseded';
+  source?: string;
+  created_at: number;
+  resolved_at?: number | null;
+  decisions?: ApprovalDecisionInput[];
+  actions?: { name?: string; args?: Record<string, unknown>; description?: string; allowed_decisions?: string[] }[];
+}
+
+export async function fetchApprovals(
+  agentId: string,
+  opts?: { status?: string; threadId?: string; limit?: number },
+): Promise<ApprovalRow[]> {
+  const q = new URLSearchParams();
+  if (opts?.status) q.set('status', opts.status);
+  if (opts?.threadId) q.set('thread_id', opts.threadId);
+  if (opts?.limit) q.set('limit', String(opts.limit));
+  const data = await get<{ approvals: ApprovalRow[] }>(
+    `/agents/${agentId}/approvals${q.toString() ? `?${q}` : ''}`,
+  );
+  return data.approvals;
+}
+
+/** 台账行 → 审批卡片的 request 形状（与 SSE 帧同源，卡片只认一种数据结构）。 */
+export function toApprovalRequest(row: ApprovalRow): ApprovalRequest {
+  const actions = row.actions || [];
+  return {
+    action_requests: actions.map(a => ({ name: a.name, args: a.args, description: a.description })),
+    review_configs: actions.map(a => ({ action_name: a.name, allowed_decisions: a.allowed_decisions })),
+  };
 }

@@ -20,13 +20,14 @@ from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.config import settings
 from app.domain.agents.service import (
     agent_service,
     ensure_agent_workspace,
 )
+from app.domain.approvals.service import STATUS_PENDING, approval_ledger, record_from_event
 from app.domain.chat.service import (
     PROJ_READY,
     chat_sessions,
@@ -233,12 +234,23 @@ def _resolve_avatar_action(tool_name: str, args: str = "") -> dict | None:
     return {"motion": None, "expressions": [expression], "label": _expression_label(expression)}
 
 
-async def _publish_actions(events, tool_owners: dict[str, str]):
+async def _publish_actions(
+    events,
+    tool_owners: dict[str, str],
+    *,
+    agent_id: str | None = None,
+    source: str = "console",
+    on_event=None,
+):
     """转发内部事件流，并把工具调用（动作/表情）广播给AI 数字人壳。
 
     ``tool_owners``（工具名→来源插件 id）**按请求传入**，不用模块级全局：
     它是每次对话装配 tools() 时算出来的，放全局会被并发对话互相覆盖 ——
     A 的 tool_call 帧会拿到 B 的插件映射（前端来源徽标错乱）。
+
+    顺带记审批台账：``approval_requested`` 帧里的 ``request_id`` 是 harness 事件
+    翻译层现生成的 uuid，原先只活在这一帧里 —— 刷新页面就再也拼不回审批卡片，
+    事后也查不出某个写操作是谁批的。这里落库（两个对话入口都会经过本函数）。
     """
     async for ev in events:
         if ev.get("type") == "tool_call" and ev.get("name"):
@@ -256,7 +268,16 @@ async def _publish_actions(events, tool_owners: dict[str, str]):
                 ev["plugin_id"] = owner
             # 工具执行完成 → 恢复默认表情（连续工具会有 working→idle 抖动，可接受）
             avatar_events.publish_status("idle")
+        elif ev.get("type") == "approval_requested":
+            _record_approval(ev, agent_id=agent_id, source=source)
+        if on_event is not None:
+            on_event(ev)  # 审批续跑用它判断「决策是否已被 harness 消费」
         yield ev
+
+
+def _record_approval(ev: dict, *, agent_id: str | None, source: str) -> None:
+    """审批帧落台账（实现在 domain，壳路径 openai_compat 共用同一个口径）。"""
+    record_from_event(ev, agent_id=agent_id, source=source)
 
 
 def _message_text(m) -> str:
@@ -387,6 +408,9 @@ async def chat(agent_id: str, body: ChatBody, request: Request) -> StreamingResp
             raise HTTPException(status_code=400, detail=f"模型不存在或未配置: {model}")
         model = model.strip()
     _validate_knowledge_base_ids(body.knowledge_base_ids)
+    # 用户没批这张卡片、直接又发了一句话：台账里的 pending 作废，否则刷新后
+    # 旧卡片会带着「待你审批」复活，而它对应的那次 interrupt 早就不在那儿了。
+    approval_ledger.supersede_pending(body.thread_id)
     # 先以完整参数构造运行时实例（workspace/工具/技能/MCP 一次到位），
     # 避免 gen() 内首次构造时参数缺失把实例建到全局根（历史端点同款根因）。
     ensure_agent_runtime(agent_row)
@@ -444,6 +468,7 @@ async def chat(agent_id: str, body: ChatBody, request: Request) -> StreamingResp
                     on_turn_complete=_persist_turn,
                 ),
                 tool_owners,
+                agent_id=agent_id,
             ),
             thread_id=body.thread_id,
         )
@@ -481,12 +506,60 @@ async def chat(agent_id: str, body: ChatBody, request: Request) -> StreamingResp
     )
 
 
+class ApprovalDecision(BaseModel):
+    """对**一条**待审动作的决策，字段与 harness 的 Decision 结构一致。
+
+    tool_guard 通道（nuomi 目前唯一在用的通道）只认 approve/reject；edit/respond
+    是 langchain 主通道（deepagents ``interrupt_on``、内置 ask_user）的取值，
+    这里一并接受，免得哪天挂上 ask_user 又要改一遍协议。
+    """
+
+    type: Literal["approve", "reject", "edit", "respond"]
+    message: str | None = None
+    edited_action: dict | None = None
+
+
 class ChatApprovalBody(BaseModel):
-    """HITL 人工审批：approve 放行写工具 / reject 拒绝（可附理由）。"""
+    """HITL 续跑。两种写法并存（老客户端不改也能用）：
+
+    - ``decision``：整批一个决定（旧口径，壳与 scripts/e2e_hitl_test.py 在用）。
+      该轮有 N 个待审动作时服务端复制成 N 条 —— harness 要求决策条数与动作条数严格相等。
+    - ``decisions``：逐条决策，长度必须等于该轮待审动作数。
+    """
 
     thread_id: str
-    decision: Literal["approve", "reject"]
+    request_id: str | None = None
+    decision: Literal["approve", "reject"] | None = None
+    decisions: list[ApprovalDecision] | None = None
     message: str | None = None
+    source: str = "console"
+
+    @model_validator(mode="after")
+    def _need_a_decision(self):
+        if self.decision is None and not self.decisions:
+            raise ValueError("decision 与 decisions 至少要给一个")
+        return self
+
+
+@router.get("/agents/{agent_id}/approvals")
+async def list_approvals(
+    agent_id: str,
+    status: str | None = Query(default=None, description="pending / resolved / superseded"),
+    thread_id: str | None = None,
+    limit: int = Query(default=50, ge=1, le=200),
+) -> dict:
+    """审批台账。
+
+    ``status=pending`` 是给前端的「刷新之后把卡片找回来」；不带 status 是审批历史
+    视图（谁在什么时候批/拒了哪个工具、参数是什么）。原始 HITLRequest 只在服务端
+    留证，列表里剥掉，免得每次翻页都把整包动作参数重吐一遍。
+    """
+    if agent_service.get(agent_id) is None:
+        raise HTTPException(status_code=404, detail="Agent 不存在")
+    rows = approval_ledger.query(agent_id=agent_id, status=status, thread_id=thread_id, limit=limit)
+    for row in rows:
+        row.pop("request", None)
+    return {"approvals": rows}
 
 
 @router.post("/agents/{agent_id}/chat/approval")
@@ -499,6 +572,15 @@ async def chat_approval(
     reject：harness 返回错误 ToolMessage（写操作不执行）。两者都会让
     LLM 在下一轮继续组织回复（token / tool_result / done 正常回流）。
     会话归属校验：thread 已存在时 agent_id 必须一致，避免跨 Agent 续跑。
+
+    **决策条数必须等于待审动作条数**：harness 把一条回复里所有命中门禁的工具调用
+    打包成一个审批请求，续跑时按序逐条决策 —— 条数不符 langchain 直接抛
+    ``ValueError("Number of human decisions (1) does not match ... hanging tool
+    calls (2)")``（human_in_the_loop.py:484-489）。原先这里永远只发 1 条决策：
+    单动作侥幸能用（tool_guard 通道恒为 1 条，security/tool_guard/engine.py:98-115），
+    但多动作打包时后果是「每次续跑都报错、会话永久卡在 interrupt 上」。现在按台账
+    里的动作数校验，不符就在流开始**之前**给出明确 400 —— 进了 generator 再抛只剩
+    前端一个看不懂的 error 帧。
     """
     agent_row = agent_service.get(agent_id)
     if agent_row is None:
@@ -508,9 +590,42 @@ async def chat_approval(
     thread = thread_repo.get(body.thread_id)
     if thread is not None and str(thread.get("agent_id", "")) != str(agent_id):
         raise HTTPException(status_code=403, detail="会话不属于该 Agent")
-    decisions: list[dict] = [{"type": body.decision}]
-    if body.message:
-        decisions[0]["message"] = body.message
+    pending = approval_ledger.get(body.request_id) if body.request_id else None
+    if pending is None or pending.get("status") == STATUS_PENDING:
+        pending = pending or approval_ledger.pending_for_thread(body.thread_id)
+    if pending is not None and pending.get("status") != STATUS_PENDING:
+        # 卡片复活又点一次 / 重复提交：宁可拒绝，也别把同一个写工具跑两遍
+        raise HTTPException(status_code=409, detail="这条审批已经答复或已作废")
+
+    actions = (pending or {}).get("actions") or []
+    # 台账里没有这条会话的记录（改动之前挂起的审批）→ 退回单动作口径
+    expected = len(actions) or 1
+    raw = body.decisions
+    if not raw and body.decision is not None:
+        # 旧口径：一个决定套给该轮所有待审动作（model_validator 保证两者至少有一个非空）
+        raw = [ApprovalDecision(type=body.decision, message=body.message)] * expected
+    if not raw:
+        raise HTTPException(status_code=400, detail="缺少决策")
+    if len(raw) != expected:
+        raise HTTPException(
+            status_code=400,
+            detail=f"该轮有 {expected} 个待审动作，决策必须逐条给出（收到 {len(raw)} 条）",
+        )
+    # strict=False：台账缺记录时 actions 为空（改动之前挂起的审批），
+    # 这时没有可对照的动作，逐条校验整段跳过，只按条数放行
+    for idx, (item, action) in enumerate(zip(raw, actions, strict=False)):
+        allowed = action.get("allowed_decisions") or ["approve", "reject"]
+        if item.type not in allowed:
+            raise HTTPException(
+                status_code=400,
+                detail=f"第 {idx + 1} 项 {action.get('name') or ''} 只允许 {allowed}，收到 {item.type}",
+            )
+        if item.type == "edit" and not item.edited_action:
+            raise HTTPException(
+                status_code=400, detail=f"第 {idx + 1} 项 edit 决策缺 edited_action"
+            )
+    decisions = [d.model_dump(exclude_none=True) for d in raw]
+    request_id = (pending or {}).get("request_id") or ""
 
     async def gen():
         tools, tool_owners = plugin_service.tools_and_owners()
@@ -536,6 +651,15 @@ async def chat_approval(
             if inputs:
                 thread_message_repo.append(body.thread_id, inputs)
 
+        # 决策到底有没有被 harness 消费掉：看到 done（这一轮跑完）或又冒出
+        # approval_requested（上一个 interrupt 已消费、现在停在下一处）才算。
+        # 只有消费了才写台账 —— 中途报错/断连时卡片必须留在原地，让人能重批。
+        consumed: dict[str, bool] = {}
+
+        def _mark_consumed(ev: dict) -> None:
+            if ev.get("type") in ("done", "approval_requested"):
+                consumed["ok"] = True
+
         frames = stream_octop_sse(
             _publish_actions(
                 resume_chat(
@@ -553,6 +677,9 @@ async def chat_approval(
                     on_turn_complete=_persist_turn,
                 ),
                 tool_owners,
+                agent_id=agent_id,
+                source=body.source,
+                on_event=_mark_consumed,
             ),
             thread_id=body.thread_id,
         )
@@ -573,6 +700,15 @@ async def chat_approval(
             )
         finally:
             avatar_events.publish_status("idle")
+
+        # 台账收口。已知边界：客户端在 resume 之后、done 之前断连，这里读不到
+        # consumed 会保持 pending —— 留着比错标 resolved 好（宁可让人再批一次，
+        # 也别事后查不到这条审批），重复放行的风险由上面的 409 挡住一半。
+        if request_id and consumed.get("ok"):
+            try:
+                approval_ledger.resolve(request_id, decisions)
+            except Exception:
+                logger.exception("审批台账收口失败（request=%s）", request_id)
 
     return await stream_response(
         gen,

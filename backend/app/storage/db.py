@@ -159,6 +159,31 @@ CREATE TABLE IF NOT EXISTS thread_history_projection (
 );
 """
 
+# 审批台账（HITL）：一次「需要人工审批」= 一行，用户答复后补 decisions。
+#
+# 为什么要自己记一份：待审动作本体存在 harness 的 langgraph checkpoint
+# （{workspace}/.system/checkpoints.sqlite）里，harness **没有**「列出当前 pending
+# 审批」的公开 API，读它要碰 agent._graph 私有面（跨 harness 版本不稳）；而
+# request_id 此前只活在 SSE 帧里、不落库 —— 于是控制台刷新一次就再也找不回审批
+# 卡片，用户对着一条戛然而止的回复发呆，事后也查不出「谁批了哪个写操作」。
+# 自己记既不依赖内部实现，又同时解决「刷新可恢复」与「留痕」两件事。
+APPROVALS_DDL = """
+CREATE TABLE IF NOT EXISTS approvals (
+  request_id TEXT PRIMARY KEY,
+  thread_id TEXT NOT NULL,
+  agent_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  actions_json TEXT NOT NULL DEFAULT '[]',
+  raw_json TEXT NOT NULL DEFAULT '{}',
+  decisions_json TEXT NOT NULL DEFAULT '',
+  source TEXT NOT NULL DEFAULT 'console',
+  created_at INTEGER DEFAULT 0,
+  resolved_at INTEGER DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_approvals_thread ON approvals(thread_id, status);
+CREATE INDEX IF NOT EXISTS idx_approvals_agent ON approvals(agent_id, created_at);
+"""
+
 
 def db_path() -> Path:
     """统一 SQLite 文件（单一数据根）。"""
@@ -213,6 +238,7 @@ def init_db() -> None:
         conn.executescript(THREADS_DDL)
         conn.executescript(THREAD_MESSAGES_DDL)
         conn.executescript(THREAD_HISTORY_PROJECTION_DDL)
+        conn.executescript(APPROVALS_DDL)
         _rebuild_legacy_threads(conn)
         _drop_legacy_column(conn, "agents", "default_model")  # 模型不绑专家（2026-10-04 解耦）
         _drop_legacy_column(

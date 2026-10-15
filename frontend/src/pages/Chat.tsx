@@ -232,8 +232,10 @@ export default function ChatPage() {
     selectedKnowledgeBaseIds,
     onSessionChanged: refreshState,
   });
-  const { sending, streamSegments, interrupted, approval, submitApproval } = stream;
-  // 对话忙碌态 = 流式发送中 ∪ 审批待决/提交中（期间禁止发新消息/切会话/删会话）
+  const { sending, streamSegments, interrupted, approval, submitApproval, restoreApproval } = stream;
+  // 对话忙碌态 = 流式发送中 ∪ 审批待决/提交中（期间禁止发新消息/切会话/删会话）。
+  // 待审期间禁止发新消息是刻意的：graph 停在中断上，harness 对「pending interrupt
+  // 时又喂新输入」的行为没有保证，先让用户把这一批决策点完再往下走。
   const busy = sending || Boolean(approval);
 
   /**
@@ -308,7 +310,10 @@ export default function ChatPage() {
       }
     }
     setMessages(blocks);
-  }, []);
+    // 刷新/切会话后把待审卡片找回来：审批请求此前只活在 SSE 帧里，页面一刷新
+    // 卡片就没了，而被拦下的写入还挂在中断上 —— 用户既看不到「有待批」也没法批。
+    restoreApproval(tid);
+  }, [restoreApproval]);
 
   // 专家变化 → 读后端会话状态 + 清空能力选择（各专家能力不同）
   useEffect(() => {
@@ -510,13 +515,7 @@ export default function ChatPage() {
           onBodyScroll={onBodyScroll}
         />
 
-        {approval && (
-          <ApprovalCard
-            approval={approval}
-            onApprove={() => submitApproval('approve')}
-            onReject={reason => submitApproval('reject', reason)}
-          />
-        )}
+        {approval && <ApprovalCard approval={approval} onSubmit={submitApproval} />}
 
         <Composer
           input={input}

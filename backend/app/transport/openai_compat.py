@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import aclosing
 
 from fastapi import APIRouter, HTTPException, Request
@@ -20,6 +20,7 @@ from pydantic import BaseModel
 
 from app.domain.agents.seed import default_system_prompt
 from app.domain.agents.service import agent_service
+from app.domain.approvals.service import record_from_event
 from app.domain.chat.service import (
     PROJ_READY,
     derive_thread_title,
@@ -34,6 +35,25 @@ from app.transport.streaming import SSE_HEADERS, stream_response
 router = APIRouter(prefix="/api/v1", tags=["openai"])
 
 logger = logging.getLogger(__name__)
+
+
+async def _record_approvals(
+    events: AsyncIterator[dict],
+    *,
+    agent_id: str,
+) -> AsyncGenerator[dict, None]:
+    """壳（OpenAI 兼容端点）触发的审批也落台账，帧原样透传。
+
+    为什么要管：数字人壳跑的是同一套 tool_guard，命中拦截后 harness 把 graph
+    停在中断上等决策，而壳没有任何审批 UI —— 以前这一帧走到这里直接被丢掉：
+    对话在壳里静默断掉，控制台也看不见有东西待批，那个被拦下的 MES 写操作等于
+    凭空蒸发。落台账之后，用户在控制台打开该专家的会话就能看到卡片、点批准，
+    被拦的那一轮从 checkpoint 续跑。
+    """
+    async for ev in events:
+        if ev.get("type") == "approval_requested":
+            record_from_event(ev, agent_id=agent_id, source="shell")
+        yield ev
 
 
 def _system_prompt_for(agent: dict) -> str:
@@ -111,14 +131,17 @@ async def chat_completions(body: OpenAIChatBody, request: Request) -> StreamingR
             if inputs:
                 thread_message_repo.append("desktop", inputs)
 
-        events = stream_chat(
-            user_text,
-            "desktop",
+        events = _record_approvals(
+            stream_chat(
+                user_text,
+                "desktop",
+                agent_id=agent["agent_id"],
+                name=agent["name"],
+                system_prompt=system_prompt,
+                agent_config=agent.get("config_json"),
+                on_turn_complete=_persist_turn,
+            ),
             agent_id=agent["agent_id"],
-            name=agent["name"],
-            system_prompt=system_prompt,
-            agent_config=agent.get("config_json"),
-            on_turn_complete=_persist_turn,
         )
         try:
             if body.stream:
