@@ -11,6 +11,7 @@ const BODY = [
   'data: {"type":"tool_call_chunk","name":"search_knowledge","args":"{\\"q\\":\\"糯米\\"}","plugin_id":"kb-plugin"}',
   'event: ping',
   'data: {"type":"tool_result","messages":[{"name":"search_knowledge","content":"命中 3 条","plugin_id":"kb-plugin"}]}',
+  'data: {"type":"usage","usage":{"input_tokens":12400,"uncached_input_tokens":1600,"cache_read_tokens":10800,"output_tokens":356,"total_tokens":12756},"node":"model"}',
   'data: {"type":"token","content":"你"}',
   'data: {"type":"token","content":"好"}',
   'data: {"type":"unknown","content":"忽略我"}',
@@ -24,6 +25,7 @@ const EXPECTED: ChatEvent[] = [
   { type: 'reasoning', content: '先想一下' },
   { type: 'tool_call', name: 'search_knowledge', content: '{"q":"糯米"}', plugin_id: 'kb-plugin' },
   { type: 'tool_result', name: 'search_knowledge', detail: '命中 3 条', plugin_id: 'kb-plugin' },
+  { type: 'usage', usage: { input_tokens: 12400, uncached_input_tokens: 1600, cache_read_tokens: 10800, output_tokens: 356, total_tokens: 12756 } },
   { type: 'token', content: '你' },
   { type: 'token', content: '好' },
   { type: 'error', content: '上游超时' },
@@ -54,9 +56,9 @@ describe('feedChatStream · SSE 分帧', () => {
     expect(feedInSlices(size)).toEqual(EXPECTED);
   });
 
-  it('token/reasoning/tool_call/tool_result/error/done 六类都能解析出来', () => {
+  it('token/reasoning/tool_call/tool_result/usage/error/done 七类都能解析出来', () => {
     const types = new Set(feedInSlices(7).map(e => e.type));
-    expect([...types].sort()).toEqual(['done', 'error', 'reasoning', 'token', 'tool_call', 'tool_result']);
+    expect([...types].sort()).toEqual(['done', 'error', 'reasoning', 'token', 'tool_call', 'tool_result', 'usage']);
   });
 
   it('半行留在残留缓冲，不产生半截事件', () => {

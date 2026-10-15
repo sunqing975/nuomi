@@ -7,12 +7,13 @@
  */
 
 import { RobotOutlined, UserOutlined } from '@ant-design/icons';
-import { Tag } from 'antd';
+import { Tag, Tooltip } from 'antd';
 import { useEffect, useState, type CSSProperties } from 'react';
 import ReactMarkdown from 'react-markdown';
 
-import type { ChatMessage, Segment } from '../../api';
+import type { ChatMessage, ChatUsage, Segment } from '../../api';
 import { get } from '../../api';
+import { formatUsage } from '../../utils/formatUsage';
 import { parseKnowledgeCitations, type KnowledgeCitation } from '../../utils/parseKnowledgeCitations';
 import { sanitizePluginHtml } from '../../utils/sanitizePluginHtml';
 
@@ -200,12 +201,13 @@ export function SegmentView({ seg }: { seg: Segment }) {
     const hasDetail = isCall ? !!(seg.args && seg.args !== '{}') : !!seg.content;
     const hasCard = seg.type === 'tool_result' && pluginUiRegistry.has(seg.name || '');
     return (
+      // 底色/描边/文字全部走 token（原来写死 #fff7e6/#f6ffed 这类浅色系，深色下顶着荧光块）
       <div style={{
         marginBottom: 6, fontSize: 12, padding: '4px 8px', borderRadius: 6, maxWidth: 520,
-        background: isCall ? '#fff7e6' : '#f6ffed',
-        border: `1px solid ${isCall ? '#ffd591' : '#d9f7be'}`,
+        background: isCall ? 'var(--warn-bg)' : 'var(--ok-bg)',
+        border: `1px solid ${isCall ? 'var(--warn-line)' : 'var(--ok-line)'}`,
       }}>
-        <a onClick={() => setOpen(v => !v)} style={{ color: isCall ? '#d97706' : '#52c41a', fontWeight: 500, cursor: 'pointer' }}>
+        <a onClick={() => setOpen(v => !v)} style={{ color: isCall ? 'var(--primary)' : 'var(--ok)', fontWeight: 500, cursor: 'pointer' }}>
           {open ? '▾' : '▸'} {isCall ? '⚙ 调用' : '✓ 结果'} {seg.name || '(工具)'}
           {seg.plugin_id && (
             <Tag style={{ fontSize: 10, marginLeft: 6, marginRight: 0 }}>{seg.plugin_id}</Tag>
@@ -244,7 +246,7 @@ export const userBubbleStyle: CSSProperties = {
 export const assistantAvatarStyle: CSSProperties = {
   width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
   display: 'flex', alignItems: 'center', justifyContent: 'center',
-  background: '#f59e0b1a', border: '1px solid #f59e0b55',
+  background: 'var(--accent-soft)', border: '1px solid var(--warn-line)',
 };
 export const userAvatarStyle: CSSProperties = {
   width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
@@ -252,13 +254,33 @@ export const userAvatarStyle: CSSProperties = {
   background: 'var(--primary)',
 };
 
+/**
+ * 本轮 token 用量行：↑输入 ↓输出 · 前缀缓存命中率，悬浮看完整口径。
+ *
+ * 为什么要显示：后端每轮都发 usage 帧（infra/harness/chat.py 的 _USAGE_KEYS），
+ * 但前端事件联合类型里一直没有 'usage' 分支，整条链的花费与缓存命中情况
+ * 在浏览器里被静默丢掉 —— 而「缓存有没有命中」正是判断提示词/工具列表
+ * 是否稳定（前缀缓存友好）的唯一可见信号。没数字就不渲染，不放「↑0 ↓0」。
+ */
+function UsageLine({ usage }: { usage?: ChatUsage }) {
+  const view = formatUsage(usage);
+  if (!view) return null;
+  return (
+    <Tooltip title={view.detail}>
+      <div style={{ fontSize: 12, color: 'var(--label-3)', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>
+        {view.label}
+      </div>
+    </Tooltip>
+  );
+}
+
 export function MessageBubble({ message, index }: { message: ChatMessage; index: number }) {
   const isUser = message.role === 'user';
   return (
     <div style={{ display: 'flex', marginBottom: 12, justifyContent: isUser ? 'flex-end' : 'flex-start' }}>
       <div style={{ maxWidth: '78%', display: 'flex', gap: 8, flexDirection: isUser ? 'row-reverse' : 'row' }}>
         <div style={isUser ? userAvatarStyle : assistantAvatarStyle}>
-          {isUser ? <UserOutlined style={{ color: '#fff', fontSize: 14 }} /> : <RobotOutlined style={{ color: '#d97706', fontSize: 15 }} />}
+          {isUser ? <UserOutlined style={{ color: '#fff', fontSize: 14 }} /> : <RobotOutlined style={{ color: 'var(--primary)', fontSize: 15 }} />}
         </div>
         <div style={{ minWidth: 0 }}>
           {isUser
@@ -278,6 +300,7 @@ export function MessageBubble({ message, index }: { message: ChatMessage; index:
                   <SegmentView key={s.id ?? `m${index}-${j}`} seg={s} />
                 ),
               )}
+          {!isUser && <UsageLine usage={message.usage} />}
         </div>
       </div>
     </div>

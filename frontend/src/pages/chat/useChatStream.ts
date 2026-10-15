@@ -13,8 +13,9 @@ import { message } from 'antd';
 
 import {
   chatApproval, chatStream, post,
-  type ApprovalRequest, type ChatEvent, type ChatMessage, type Segment,
+  type ApprovalRequest, type ChatEvent, type ChatMessage, type ChatUsage, type Segment,
 } from '../../api';
+import { accumulateUsage } from '../../utils/formatUsage';
 import { appendStreamSegment } from '../../utils/streamSegments';
 
 /** 模型「自动」哨兵值：发送时不传 model（null），由后端按 agent 默认模型解析（对齐 Octop AUTO 语义） */
@@ -125,6 +126,8 @@ export function useChatStream(opts: UseChatStreamOptions) {
       let gotApproval = false;
       let streamError = '';
       let stopped = false;
+      // 本轮累计 token 用量：一轮带工具的对话里 harness 每次 LLM 调用各发一帧 usage，求和才是真实花费
+      let turnUsage: ChatUsage | undefined;
       // 流式片段按真实到达顺序累积：相邻同类合并（思考累积思考、正文累积正文）。
       // 合并规则抽到 utils/streamSegments（纯函数，有单测）——原地改已进 state 的对象是这里踩过的坑。
       let segs: Segment[] = [];
@@ -153,11 +156,13 @@ export function useChatStream(opts: UseChatStreamOptions) {
             pushSeg({ id: nextSegmentId(), type: 'tool_call', name: e.name, args: e.content, plugin_id: e.plugin_id });
           } else if (e.type === 'tool_result') {
             pushSeg({ id: nextSegmentId(), type: 'tool_result', name: e.name, content: e.detail, plugin_id: e.plugin_id });
+          } else if (e.type === 'usage') {
+            if (e.usage) turnUsage = accumulateUsage(turnUsage, e.usage);
           } else if (e.type === 'done') {
             gotDone = true;
             // 去掉末尾空白段；至少保留一个 text 段（哪怕空，显示占位）
             if (!segs.some(s => s.type === 'text')) pushSeg({ id: nextSegmentId(), type: 'text', content: '' });
-            const finalMsg: ChatMessage = { role: 'assistant', segments: segs };
+            const finalMsg: ChatMessage = { role: 'assistant', segments: segs, usage: turnUsage };
             setMessages([...next, finalMsg]);
             setStreamSegments([]);
             // 标题/时间更新（后端 touch，仅「新会话」会替换标题）
@@ -192,7 +197,7 @@ export function useChatStream(opts: UseChatStreamOptions) {
         if (!gotDone && !gotError && !gotApproval) {
           if (segs.length) {
             if (!segs.some(s => s.type === 'text')) pushSeg({ id: nextSegmentId(), type: 'text', content: '' });
-            setMessages([...next, { role: 'assistant', segments: segs }]);
+            setMessages([...next, { role: 'assistant', segments: segs, usage: turnUsage }]);
           }
           setStreamSegments([]);
           if (unmountedRef.current) {
@@ -239,6 +244,8 @@ export function useChatStream(opts: UseChatStreamOptions) {
       let gotDone = false;
       let gotError = false;
       let streamError = '';
+      // 只统计续跑之后的调用（审批前那几帧属于上一个作用域，不重复计）
+      let turnUsage: ChatUsage | undefined;
       try {
         await chatApproval(agentId, tid, decision, (e: ChatEvent) => {
           if (e.type === 'token' && e.content) {
@@ -249,10 +256,12 @@ export function useChatStream(opts: UseChatStreamOptions) {
             pushSeg({ id: nextSegmentId(), type: 'tool_call', name: e.name, args: e.content, plugin_id: e.plugin_id });
           } else if (e.type === 'tool_result') {
             pushSeg({ id: nextSegmentId(), type: 'tool_result', name: e.name, content: e.detail, plugin_id: e.plugin_id });
+          } else if (e.type === 'usage') {
+            if (e.usage) turnUsage = accumulateUsage(turnUsage, e.usage);
           } else if (e.type === 'done') {
             gotDone = true;
             if (!segs.some(s => s.type === 'text')) pushSeg({ id: nextSegmentId(), type: 'text', content: '' });
-            const finalMsg: ChatMessage = { role: 'assistant', segments: segs };
+            const finalMsg: ChatMessage = { role: 'assistant', segments: segs, usage: turnUsage };
             setMessages([...messages, finalMsg]);
             setStreamSegments([]);
             setApproval(null);

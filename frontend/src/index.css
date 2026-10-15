@@ -1,8 +1,10 @@
-/* 控制台全局样式：浅色简洁 */
+/* 控制台全局样式。颜色一律走 var(--x)（定义处 src/theme.ts，深色是覆盖层），
+   这里再硬编码一次浅色值 = 深色模式下永远有一块白底/白框露出来。 */
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
   font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif;
-  background: #f7f8fa;
+  background: var(--bg);
+  color: var(--label-1);
 }
 
 /* 对话正文 Markdown 排版 */
@@ -20,21 +22,21 @@ body {
 .md-body li { margin: 0.2em 0; }
 .md-body code {
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-  font-size: 0.88em; background: rgba(0,0,0,0.06); padding: 0.12em 0.35em; border-radius: 4px;
+  font-size: 0.88em; background: var(--surface-2); padding: 0.12em 0.35em; border-radius: 4px;
 }
 .md-body pre {
-  margin: 0.5em 0; padding: 8px 10px; background: rgba(0,0,0,0.06); border-radius: 6px;
+  margin: 0.5em 0; padding: 8px 10px; background: var(--surface-2); border-radius: 6px;
   overflow: auto; max-height: 320px;
 }
 .md-body pre code { background: transparent; padding: 0; font-size: 0.85em; }
 .md-body blockquote {
-  margin: 0.5em 0; padding: 2px 12px; border-left: 3px solid rgba(0,0,0,0.15);
-  color: #6b7280;
+  margin: 0.5em 0; padding: 2px 12px; border-left: 3px solid var(--line-3);
+  color: var(--label-2);
 }
 .md-body a { color: var(--link); text-decoration: none; }
 .md-body a:hover { text-decoration: underline; }
 .md-body table { border-collapse: collapse; margin: 0.5em 0; max-width: 100%; }
-.md-body th, .md-body td { border: 1px solid rgba(0,0,0,0.12); padding: 4px 8px; font-size: 13px; }
-.md-body th { background: rgba(0,0,0,0.04); font-weight: 600; }
-.md-body hr { margin: 0.6em 0; border: none; border-top: 1px solid rgba(0,0,0,0.12); }
+.md-body th, .md-body td { border: 1px solid var(--line-1); padding: 4px 8px; font-size: 13px; }
+.md-body th { background: var(--surface-2); font-weight: 600; }
+.md-body hr { margin: 0.6em 0; border: none; border-top: 1px solid var(--line-1); }
 .md-body img { max-width: 100%; border-radius: 6px; }

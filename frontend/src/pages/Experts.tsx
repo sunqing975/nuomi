@@ -79,8 +79,14 @@ export default function ExpertsPage() {
                   {a.icon_name === 'cat' ? '🐱' : <RobotOutlined />}
                 </div>
                 <span>{a.name}</span>
-                {a.runtime === 'running' && <Tag color="green">运行中</Tag>}
-                {!a.enabled && <Tag color="default">已停用</Tag>}
+                {a.runtime === 'running' ? (
+                  <Tag color="green">运行中</Tag>
+                ) : (
+                  // 「已停止」不是异常：运行实例是后端进程内的对象，改插件/技能/连接器/模型
+                  // 会把它释放掉，下一轮对话自动重建。原来只在 running 时显示徽标，
+                  // 非 running 整块消失 —— 用户看到的就是"我改完设置专家没了/坏了"。
+                  <Tag color="default">{a.enabled ? '未运行' : '已停用'}</Tag>
+                )}
               </Space>
             }
             extra={

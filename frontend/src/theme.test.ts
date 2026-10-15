@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { theme as antdTheme } from 'antd';
 import {
-  applyCssTokens, APP_RADIUS, CORE_KEYS, resolveTokens, THEME_OVERRIDES, THEME_TOKENS,
+  applyCssTokens, APP_RADIUS, APP_TOKENS, buildTheme, CORE_KEYS, resolveTokens,
+  THEME_OVERRIDES, THEME_TOKENS,
 } from './theme';
 
 /**
@@ -55,5 +57,38 @@ describe('设计 token', () => {
 
   it('antd 常量与 token 同源（antd 不能读 var()，只能给它字面值）', () => {
     expect(APP_RADIUS).toBe(parseInt(THEME_TOKENS['radius-md'], 10));
+  });
+
+  // 深色覆盖层的完整性不能只靠 CORE_KEYS —— 底色/描边类键漏一个，
+  // 深色下就露出一块浅色（工具结果卡曾经就是荧光绿块压在深底上）。
+  it('除品牌/语义/尺寸类之外的每个 token 都必须有深色覆盖', () => {
+    // 允许沿用浅色的键：品牌色与语义色本身在深浅底都能看，尺寸不是颜色
+    const INHERIT_OK = new Set([
+      'accent', 'accent-soft', 'primary', 'link', 'ok', 'warn', 'danger',
+      'radius-sm', 'radius-md', 'radius-lg',
+    ]);
+    const missing = Object.keys(THEME_TOKENS)
+      .filter(k => !INHERIT_OK.has(k) && !(k in THEME_OVERRIDES.dark))
+      .sort();
+    expect(missing).toEqual([]);
+  });
+
+  it('CORE_KEYS 必须是深色覆盖层的子集（防止有人删深色键却留着核心清单）', () => {
+    CORE_KEYS.forEach(k => expect(k in THEME_OVERRIDES.dark).toBe(true));
+  });
+
+  it('buildTheme 深色用 darkAlgorithm 且 token 与 CSS 变量同源', () => {
+    const dark = resolveTokens('dark');
+    const t = buildTheme('dark').token;
+    expect(buildTheme('dark').algorithm).toBe(antdTheme.darkAlgorithm);
+    expect(t.colorBgContainer).toBe(dark.surface);
+    expect(t.colorBgLayout).toBe(dark.bg);
+    expect(t.colorText).toBe(dark['label-1']);
+    expect(t.colorBorderSecondary).toBe(dark['line-2']);
+    // 浅色路径必须等于原 APP_TOKENS（否则这次改动会顺带改坏现有界面）
+    const light = buildTheme('light').token;
+    expect(buildTheme('light').algorithm).toBe(antdTheme.defaultAlgorithm);
+    expect(light.colorPrimary).toBe(APP_TOKENS.primary);
+    expect(light.colorBgContainer).toBe(APP_TOKENS.surface);
   });
 });

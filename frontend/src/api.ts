@@ -205,12 +205,28 @@ export interface ApprovalRequest {
   review_configs?: { action_name?: string; allowed_decisions?: string[] }[];
 }
 
+/**
+ * 本轮 token 用量（后端 infra/harness/chat.py 的 `_USAGE_KEYS` 白名单透传）。
+ * cache_read_tokens = 前缀缓存命中；uncached_input_tokens = 未命中部分。
+ */
+export interface ChatUsage {
+  input_tokens?: number;
+  uncached_input_tokens?: number;
+  cache_read_tokens?: number;
+  cache_write_tokens?: number;
+  output_tokens?: number;
+  reasoning_tokens?: number;
+  total_tokens?: number;
+}
+
 export interface ChatEvent {
   /** error：后端流中途失败时补发的终止帧（没有它只会看到截断流） */
-  type: 'token' | 'reasoning' | 'tool_call' | 'tool_result' | 'done' | 'error' | 'approval_requested';
+  type: 'token' | 'reasoning' | 'tool_call' | 'tool_result' | 'done' | 'error' | 'approval_requested' | 'usage';
   content?: string;
   name?: string;
   detail?: string;
+  /** usage：本轮用量帧载荷（此前前端没有这一分支，整条链的用量数据被静默丢掉） */
+  usage?: ChatUsage;
   /** 工具来源插件 id（后端 _publish_actions 附加，同名工具可辨识） */
   plugin_id?: string;
   /** approval_requested：审批请求 id（续跑时回传） */
@@ -247,6 +263,11 @@ export interface ChatMessage {
   /** 兼容旧字段：首段正文（渲染优先用 segments） */
   content?: string;
   tool_events?: ToolEvent[];
+  /**
+   * 本轮 token 用量（来自 usage 帧）。只有流式当场才有：后端投影里不存它，
+   * 所以刷新页面后历史消息不会带 —— 显示层按「有才显示」处理。
+   */
+  usage?: ChatUsage;
 }
 
 export interface ChatStreamOptions {
@@ -442,7 +463,7 @@ export function feedChatStream(buf: string, chunk: string): { events: ChatEvent[
     const payload = t.slice(5).trim();
     if (!payload) continue;
     try {
-      // octop 原生事件帧：token / tool_call_chunk / tool_result / done / error
+      // octop 原生事件帧：token / tool_call_chunk / tool_result / usage / done / error
       const ev = JSON.parse(payload) as {
         type?: string;
         content?: string;
@@ -453,6 +474,7 @@ export function feedChatStream(buf: string, chunk: string): { events: ChatEvent[
         messages?: { name?: string; content?: string; plugin_id?: string }[];
         request_id?: string;
         request?: ApprovalRequest;
+        usage?: ChatUsage;
       };
       if (ev.type === 'token' && ev.content) {
         events.push({ type: 'token', content: ev.content });
@@ -471,6 +493,9 @@ export function feedChatStream(buf: string, chunk: string): { events: ChatEvent[
           request_id: ev.request_id,
           request: ev.request,
         });
+      } else if (ev.type === 'usage') {
+        // 此前没有这条分支：后端每轮发的用量帧在这里被静默丢掉，界面永远看不到 token
+        if (ev.usage) events.push({ type: 'usage', usage: ev.usage });
       } else if (ev.type === 'done') {
         events.push({ type: 'done' });
       }

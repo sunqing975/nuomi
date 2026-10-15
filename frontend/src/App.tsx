@@ -1,11 +1,12 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
-import { Layout, Menu, Space, Tag, Typography } from 'antd';
+import { Button, Layout, Menu, Space, Tag, Tooltip, Typography } from 'antd';
 import type { ReactNode } from 'react';
 import {
   RobotOutlined, ApiOutlined, ReadOutlined, GlobalOutlined,
   SmileOutlined, MessageOutlined, SettingOutlined, BookOutlined,
-  ShopOutlined, ShoppingOutlined,
+  ShopOutlined, ShoppingOutlined, MoonOutlined, SunOutlined,
 } from '@ant-design/icons';
+import { useThemeMode } from './themeStore';
 import ChatPage from './pages/Chat';
 import ExpertsPage from './pages/Experts';
 import PluginsPage from './pages/Plugins';
@@ -70,6 +71,7 @@ const ALL_NAV: NavLeaf[] = [...NAV.flatMap(n => ('children' in n ? n.children : 
 
 export default function App() {
   const [page, setPage] = useState('chat');
+  const [mode, setMode] = useThemeMode();
   const [kbDetailId, setKbDetailId] = useState<string | null>(null); // #knowledge/detail/<id> 独立详情页
   const [backendOk, setBackendOk] = useState<boolean | null>(null);
 
@@ -130,7 +132,7 @@ export default function App() {
     <Layout style={{ height: '100vh' }}>
       <Sider
         width={200}
-        theme="light"
+        theme={mode === 'dark' ? 'dark' : 'light'}
         style={{ borderRight: '1px solid var(--line-2)', position: 'relative', overflow: 'auto' }}
       >
         <div style={{ padding: '18px 20px 12px', fontSize: 16, fontWeight: 700 }}>
@@ -177,9 +179,21 @@ export default function App() {
               </Fragment>
             ))}
           </Space>
-          <Tag color={backendOk === false ? 'red' : backendOk === true ? 'green' : 'default'}>
-            {backendOk === false ? '后端离线' : backendOk === true ? '后端在线' : '连接中…'}
-          </Tag>
+          <Space size={8}>
+            {/* 主题切换：token 覆盖层早就备好了，缺的只是入口（此前 main.tsx 硬编码 light） */}
+            <Tooltip title={mode === 'dark' ? '切到浅色' : '切到深色'}>
+              <Button
+                type="text"
+                size="small"
+                aria-label={mode === 'dark' ? '切换到浅色主题' : '切换到深色主题'}
+                icon={mode === 'dark' ? <SunOutlined /> : <MoonOutlined />}
+                onClick={() => setMode(mode === 'dark' ? 'light' : 'dark')}
+              />
+            </Tooltip>
+            <Tag color={backendOk === false ? 'red' : backendOk === true ? 'green' : 'default'}>
+              {backendOk === false ? '后端离线' : backendOk === true ? '在线' : '连接中…'}
+            </Tag>
+          </Space>
         </Header>
         <Content style={{ padding: 24, overflow: 'auto' }}>
           {page === 'chat' && <ChatPage />}

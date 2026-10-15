@@ -13,6 +13,9 @@
  * 深色作为 `THEME_TOKENS.dark` 的覆盖层已备好（切换入口尚未接入，见 DESIGN.md 待办）。
  */
 
+// darkAlgorithm 要参与 antd 的色值推导，只能在这里引真实对象（不能传字符串名）
+import { theme as antdTheme } from 'antd';
+
 /** 主题变量名 → 值。键名即 CSS 变量名（不经额外映射，避免又一处漂移点）。 */
 export interface ThemeTokens {
   'bg': string;
@@ -39,6 +42,9 @@ export interface ThemeTokens {
   'danger': string;
   'warn-bg': string;
   'warn-line': string;
+  /** 工具「结果」卡片底色/描边（浅色绿系；深色必须覆盖，否则深底顶着荧光绿块） */
+  'ok-bg': string;
+  'ok-line': string;
   'radius-sm': string;
   'radius-md': string;
   'radius-lg': string;
@@ -69,6 +75,8 @@ export const THEME_TOKENS: ThemeTokens = {
   danger: '#ef4444',
   'warn-bg': '#fffbe6',
   'warn-line': '#ffe58f',
+  'ok-bg': '#f6ffed',
+  'ok-line': '#d9f7be',
   'radius-sm': '6px',
   'radius-md': '8px',
   'radius-lg': '12px',
@@ -84,12 +92,18 @@ export const THEME_OVERRIDES: Record<'light' | 'dark', ThemeOverrides> = {
     'label-1': '#e5e7eb',
     'label-2': '#9ca3af',
     'label-3': '#6b7280',
+    // label-4（次级灰字，Composer/MessageBubble 在用）深色下必须比 label-3 亮一档，
+    // 否则浅色的 #8c8c8c 压在 #0f1115 上对比度不够，小字直接糊掉。
+    'label-4': '#98a1b0',
     'line-1': '#262b36',
     'line-2': '#2f3542',
     'line-3': '#3a4150',
     'accent-text': '#ffd591',
     'warn-bg': '#2b2411',
     'warn-line': '#5c4a12',
+    // 工具结果卡：深色必须是「暗绿底 + 暗描边」。不覆盖的话深底上顶着一块荧光绿。
+    'ok-bg': '#162318',
+    'ok-line': '#2b4a30',
     'shadow-pop': '0 6px 16px rgba(0, 0, 0, 0.5), 0 3px 6px -4px rgba(0, 0, 0, 0.4)',
   },
 };
@@ -141,3 +155,29 @@ export const APP_TOKENS = {
 } as const;
 
 export const APP_RADIUS = 8;
+
+/**
+ * antd `ConfigProvider` 的 theme 配置（与 CSS 变量**同源**：都出自 `resolveTokens(mode)`）。
+ *
+ * 为什么需要函数版：`APP_TOKENS` 取的是**浅色基底**的字面值，深色模式下若继续用它，
+ * antd 组件（按钮/输入框/弹层）会保持浅色而页面背景变深 → 半深半浅。
+ * antd 的 algorithm 要参与计算，只能给它字面值，不能给 `var(--x)`。
+ */
+export function buildTheme(mode: ThemeMode = 'light') {
+  const t = resolveTokens(mode);
+  return {
+    algorithm: mode === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
+    token: {
+      colorPrimary: t.primary,
+      colorLink: t.link,
+      colorBgLayout: t.bg,
+      colorBgContainer: t.surface,
+      colorBgElevated: t.surface,
+      colorText: t['label-1'],
+      colorTextSecondary: t['label-2'],
+      colorTextTertiary: t['label-3'],
+      colorBorderSecondary: t['line-2'],
+      borderRadius: APP_RADIUS,
+    },
+  };
+}
