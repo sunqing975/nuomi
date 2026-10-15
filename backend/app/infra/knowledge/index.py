@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from app.infra.knowledge.files import knowledge_base_dir
+from app.infra.knowledge.keyword import bm25_scores
 
 
 @dataclass(frozen=True)
@@ -156,3 +157,36 @@ class KnowledgeIndex:
                 )
             )
         return sorted(hits, key=lambda hit: hit.score, reverse=True)[:k]
+
+    def keyword_search(self, query: str, k: int) -> list[Hit]:
+        """BM25 关键词召回：与 ``search`` 同表、同 ``Hit`` 结构、同 top-k 语义。
+
+        分数是 BM25 原值（无界正数），归一与加权由 ``fusion.fuse`` 负责。
+        """
+        if k <= 0:
+            return []
+        with self._session() as conn:
+            rows = conn.execute(
+                "SELECT chunk_id, doc_id, ordinal, text, meta_json FROM chunks"
+            ).fetchall()
+        if not rows:
+            return []
+        scores = bm25_scores(query, [(row[0], row[3]) for row in rows])
+        if not scores:
+            return []
+        by_chunk = {row[0]: row for row in rows}
+        hits: list[Hit] = []
+        for chunk_id, score in sorted(scores.items(), key=lambda item: (-item[1], item[0]))[:k]:
+            _, doc_id, ordinal, text, meta_json = by_chunk[chunk_id]
+            decoded = json.loads(meta_json)
+            hits.append(
+                Hit(
+                    chunk_id=chunk_id,
+                    doc_id=doc_id,
+                    ordinal=ordinal,
+                    text=text,
+                    score=score,
+                    metadata=decoded if isinstance(decoded, dict) else {},
+                )
+            )
+        return hits
