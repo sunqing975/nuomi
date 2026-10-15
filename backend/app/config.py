@@ -43,8 +43,16 @@ class Settings(BaseSettings):
     # --- 单一数据根（NUOMI_HOME；不设置则用默认用户应用数据目录） ---
     nuomi_home: str | None = None
 
-    # --- CORS（AI 数字人前端 dev） ---
-    cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    # --- CORS（默认**空**：不给任何跨源页面回显 ACAO）---
+    # 为什么留空：生产面板由后端同源挂载（main.py 的 /console），dev 走 vite proxy
+    # （frontend/vite.config.ts 把 /api 转发到 127.0.0.1:8000），两条路都不是跨源请求。
+    # 之前默认放行 5173 的实际后果（2026-10-15 实测）：带 Origin: http://localhost:5173
+    # 请求 GET /api/session-token 会回显 access-control-allow-origin —— 任何占住本机
+    # 5173 的页面都能跨源读走写操作 token，再 POST /api/plugins/import 即本机代码执行。
+    # 真需要跨源调试时显式开（无 env_prefix，list 型要写 JSON）：
+    #   CORS_ORIGINS=["http://localhost:5173"]
+    # 注意 local_guard.origin_allowed 仍按主机名放行本机任意端口 → dev 写操作不受影响。
+    cors_origins: list[str] = Field(default_factory=list)
 
     # --- 连接器（MCP 协议，langchain-mcp-adapters 连接格式；JSON env NUOMI_CONNECTORS） ---
     mcp_servers: dict[str, dict] = Field(

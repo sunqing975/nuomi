@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from app.config import settings
 from app.infra.local_guard import (
     api_token,
     header_hostname,
@@ -48,6 +49,22 @@ def test_origin_allowed_only_local() -> None:
     assert not origin_allowed("http://evil.com")
     assert not origin_allowed("null")  # file:// —— 全局放行由中间件单独判定
     assert not origin_allowed("")
+
+
+def test_no_acao_for_dev_origins_by_default(client: TestClient) -> None:
+    """CORS 默认留空：跨源请求拿不到 ACAO，本机 5173 也不例外。
+
+    2026-10-15 审计发现的口子——``cors_origins`` 曾默认含 ``http://localhost:5173``，
+    实测带 ``Origin: http://localhost:5173`` 打 ``GET /api/session-token`` 会回显
+    ``access-control-allow-origin``：占住该端口的任意本机页面可跨源读走写操作 token，
+    再 ``POST /api/plugins/import`` 即本机代码执行。dev 走 vite proxy、生产是同源
+    ``/console``，两条路都不需要跨源，所以默认清空（要开用 ``CORS_ORIGINS=[...]``）。
+    """
+    assert settings.cors_origins == []
+    for origin in ("http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000"):
+        r = client.get("/api/session-token", headers={"Origin": origin})
+        assert r.status_code == 200, r.text  # 守卫仍认这是本机来源（读操作放行）
+        assert "access-control-allow-origin" not in r.headers, origin
 
 
 def test_requires_token_only_writes_under_api() -> None:
