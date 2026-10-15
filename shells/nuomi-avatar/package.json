@@ -38,6 +38,7 @@
       "app.js",
       "index.html",
       "config.json",
+      "config.example.json",
       "prompts.json",
       "emotion_expressions.json",
       "css/**/*",

@@ -19,7 +19,12 @@ from app.config import REPO_ROOT, settings
 logger = logging.getLogger(__name__)
 
 MODEL_DIR_3D = settings.workspace_path / "models" / "3D"
+# 壳的 config.json 是**本机运行态**（ui.avatar_enabled / ui.model_path 等由后端和壳
+# 自己回写），2026-10-06 起不入库：入库只会让 git status 长期脏 + 误把上一台机器的
+# 模型绝对路径当代码提交（AGENT.md:483/:496 已经两次「这次别把它带上」）。
+# 模板是 config.example.json，缺文件时由 _shell_config() / 壳 main.js 各自播种。
 SHELL_CONFIG = REPO_ROOT / "shells" / "nuomi-avatar" / "config.json"
+SHELL_CONFIG_EXAMPLE = REPO_ROOT / "shells" / "nuomi-avatar" / "config.example.json"
 STATE_FILE = settings.workspace_path / "nuomi-state.json"
 SHELL_ANIM_DIR = REPO_ROOT / "shells" / "nuomi-avatar" / "assets" / "animations"
 FBX2VRMA_DIR = REPO_ROOT / "shells" / "nuomi-avatar" / "tools" / "fbx2vrma"
@@ -30,6 +35,18 @@ def _load_json(path: Path) -> dict:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {}
+
+
+def _shell_config() -> dict:
+    """读壳配置；文件不存在时从 config.example.json 播种。
+
+    为什么必须播种而不是返回 {}：下面几处都是「读→改→整体写回」，
+    返回 {} 会把 llm.api_url / tts / bert 等段一起丢掉，壳下次启动就连不上后端了。
+    （文件存在但 JSON 损坏时按空配置走，与改动前行为一致——不拿模板静默盖掉用户文件。）
+    """
+    if SHELL_CONFIG.exists():
+        return _load_json(SHELL_CONFIG)
+    return _load_json(SHELL_CONFIG_EXAMPLE)
 
 
 def list_models() -> list[dict]:
@@ -62,7 +79,7 @@ def list_models() -> list[dict]:
 
 
 def get_active_model() -> str | None:
-    cfg = _load_json(SHELL_CONFIG)
+    cfg = _shell_config()
     return (cfg.get("ui") or {}).get("model")
 
 
@@ -72,13 +89,13 @@ def get_avatar_enabled() -> bool:
     壳 main.js 启动时据此决定是否创建AI 数字人窗口；watch config 变化时
     据其创建/销毁窗口。控制台「模型」页的开关读写此字段。
     """
-    cfg = _load_json(SHELL_CONFIG)
+    cfg = _shell_config()
     return (cfg.get("ui") or {}).get("avatar_enabled", True)
 
 
 def set_avatar_enabled(enabled: bool) -> bool:
     """写AI 数字人开关到壳 config.json（壳 watch 后创建/销毁AI 数字人窗口）。"""
-    cfg = _load_json(SHELL_CONFIG)
+    cfg = _shell_config()
     ui = cfg.setdefault("ui", {})
     ui["avatar_enabled"] = bool(enabled)
     SHELL_CONFIG.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -101,7 +118,7 @@ def switch_model(model_id: str) -> dict:
     if target is None:
         raise KeyError(f"模型不存在: {model_id}")
 
-    cfg = _load_json(SHELL_CONFIG)
+    cfg = _shell_config()
     ui = cfg.setdefault("ui", {})
     ui["model"] = target["id"]
     ui["model_path"] = target["path"]
@@ -409,7 +426,7 @@ def delete_model(model_id: str) -> dict:
         shutil.rmtree(legacy_2d_dir, ignore_errors=True)
 
     # 2. config 联动
-    cfg = _load_json(SHELL_CONFIG)
+    cfg = _shell_config()
     ui = cfg.setdefault("ui", {})
     was_active = ui.get("model") == model_id
     if was_active:

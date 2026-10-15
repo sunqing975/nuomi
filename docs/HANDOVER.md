@@ -67,7 +67,7 @@ cd shells/nuomi-avatar && npm start
 环境：
 - Python：uv 管理（`.venv/bin/python`，无 pip）；Node：frontend/ 与 shells/nuomi-avatar/ 各自 npm install
 - 工作区与数据根 **同一目录 `/Users/superman/Nuomi`**（2026-10-04 起单根设计；.env 设 `NUOMI_HOME=/Users/superman/Nuomi`，**无 NUOMI_WORKSPACE**，workspace=数据根）；内含 agents/plugins/{weather, aidang, cat, hiyori}/skills + models/2D + nuomi.db + memory.sqlite + nuomi-state.json
-- 会话权威：SQLite `threads` 表（thread_id/agent_id/title/last_active/pinned/model_ref，2026-10-05 M4 落库）+ `nuomi-state.json` 仅存 current `thread_id`（+ `agent_id`，AI 数字人绑定消费；2026-10-04 起迁出壳 config）；消息权威 = 各专家 workspace 的 memory.sqlite（octop checkpointer），`thread_messages` 表为历史投影（首次读历史 backfill → ready，之后每轮对话增量 append）；壳 `shells/nuomi-avatar/config.json` 仅存表现层偏好（ui.model/ui.model_path，后端写、壳 watch 重载，无绝对业务状态）
+- 会话权威：SQLite `threads` 表（thread_id/agent_id/title/last_active/pinned/model_ref，2026-10-05 M4 落库）+ `nuomi-state.json` 仅存 current `thread_id`（+ `agent_id`，AI 数字人绑定消费；2026-10-04 起迁出壳 config）；消息权威 = 各专家 workspace 的 memory.sqlite（octop checkpointer），`thread_messages` 表为历史投影（首次读历史 backfill → ready，之后每轮对话增量 append）；壳 `shells/nuomi-avatar/config.json` 仅存表现层偏好（ui.model/ui.model_path，后端写、壳 watch 重载，无绝对业务状态）；**它是本机文件、2026-10-06 起不入库**（模板 `config.example.json`：壳首启由 main.js 播种，后端写入前由 `service._shell_config()` 播种——缺文件直接写会把 llm/tts/bert 段整体丢掉，壳就连不上后端了）
 - .env 在仓库根，改后必须重启 uvicorn
 
 ## 4. API 清单（全部 /api 前缀，见 app/transport/api.py）

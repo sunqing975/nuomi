@@ -29,6 +29,22 @@ const { spawn } = require('child_process')
 
 const configPath = path.join(app.getAppPath(), 'config.json')
 
+// 本机配置不入库（运行态：模型绝对路径、数字人开关都会被回写），模板是
+// config.example.json。全新克隆直接跑 `npm start` 会因文件不存在而静默拿到空配置
+// —— 连不上后端还看不出来，所以这里首启播种一次。打包态 app.asar 只读，
+// 复制会失败，忽略即可（打包时 config.json 已在 asar 里）。
+;(function ensureConfig() {
+    if (fs.existsSync(configPath)) return
+    const example = path.join(path.dirname(configPath), 'config.example.json')
+    if (!fs.existsSync(example)) return
+    try {
+        fs.copyFileSync(example, configPath)
+        console.log('[config] 首次运行：已从 config.example.json 生成本机配置')
+    } catch (e) {
+        console.warn('[config] 播种本机配置失败（打包态只读属正常）:', e.message)
+    }
+})()
+
 // 仓库根 .logs/（已 gitignore）：壳 / 后端 / 前端的 pid 与日志统一落在这里
 const LOG_DIR = path.join(__dirname, '..', '..', '.logs')
 const BACKEND_PID_FILE = path.join(LOG_DIR, 'backend.pid')

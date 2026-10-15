@@ -35,5 +35,9 @@ shells/nuomi-avatar/tools/fbx2vrma/FBX2glTF-darwin-x64
 # Electron 下载缓存（91MB 二进制，electron-builder/npm install 自动拉取，不入库）
 shells/nuomi-avatar/.electron-cache/
 
+# 壳的本机运行态配置：后端切模型/开关会回写 ui.*，入库=git status 长期脏 +
+# 把上一台机器的模型绝对路径当代码提交（模板见 config.example.json，首启自动播种）
+shells/nuomi-avatar/config.json
+
 # 模拟 MES 演示数据（生成物，scripts/gen_mes_data.py 可复现）
 connectors/data/
