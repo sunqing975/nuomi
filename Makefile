@@ -42,7 +42,7 @@ FRONTEND_PORT := 5173
 
 .DEFAULT_GOAL := help
 
-.PHONY: help start stop restart status logs logs-follow desktop web backend frontend test lint typecheck check format format-check build frontend-test shell-check clean
+.PHONY: help start stop restart status logs logs-follow desktop web backend frontend test lint typecheck check format format-check build frontend-test shell-check backup restore backups clean
 
 help:
 	@echo "糯米 Nuomi 启动/关闭脚本"
@@ -207,6 +207,30 @@ shell-check:
 	  files=$$(find . -name '*.js' -not -path './node_modules/*' -not -path './tools/*'); \
 	  for f in $$files; do node --check "$$f" || exit 1; done; \
 	  echo "✔ 壳语法检查通过（$$(echo "$$files" | wc -l | tr -d ' ') 个文件）"
+
+# -----------------------------------------------------------------------------
+# 数据根备份 / 恢复（NUOMI_HOME：人格 MD + 长期记忆 + nuomi.db + 密钥 + 知识索引）
+# 为什么单独一档：产品全部事实只在本机这一个目录里，而仓库此前没有任何备份工具、
+# 也没有 export 端点（live openapi 76 个 path 里只有 7 个 `*/import`）。
+# 磁盘坏了或误删专家 = 记忆和人格一起没了，无从恢复。
+# 库文件走 sqlite3 `VACUUM INTO` 出一致快照（WAL 模式下直接 cp 主文件会丢 -wal
+# 里未合并的最后一截），默认排除可再生的 models/ 与 logs/ tmp/。
+# 行为由 backend/tests/test_backup_script.py 锁住（含「WAL 未合并的写入必须进备份」）。
+# -----------------------------------------------------------------------------
+backup:
+	@$(ROOT)/scripts/backup_nuomi.sh backup
+
+backups:
+	@$(ROOT)/scripts/backup_nuomi.sh list
+
+# 用法：make restore BACKUP=<tar> [DELETE=1]（restore 会拒绝在 :8000 还开着时执行）
+restore:
+	@if [ -z "$(BACKUP)" ]; then \
+	  echo "用法：make restore BACKUP=\$$(ls -1t $$HOME/Nuomi-backups/*.tar.gz | head -1)"; \
+	  echo "先 make stop；restore 会先把当前数据根备份一份再动手。"; \
+	  exit 1; \
+	fi
+	@$(ROOT)/scripts/backup_nuomi.sh restore "$(BACKUP)" --yes $(if $(DELETE),--delete-extras,)
 
 clean:
 	@rm -f $(SHELL_PID) $(BACKEND_PID) $(FRONTEND_PID) $(SHELL_LOG) $(BACKEND_LOG) $(FRONTEND_LOG)
