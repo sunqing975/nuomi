@@ -168,6 +168,4 @@ async def chat_completions(body: OpenAIChatBody, request: Request) -> StreamingR
                 yield json.dumps({"error": {"message": message}}, ensure_ascii=False)
 
     media = "text/event-stream" if body.stream else "application/json"
-    return await stream_response(
-        gen, media_type=media, headers=SSE_HEADERS
-    )
+    return await stream_response(gen, media_type=media, headers=SSE_HEADERS)

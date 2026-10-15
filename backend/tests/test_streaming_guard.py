@@ -60,7 +60,11 @@ def test_no_http_exception_raised_inside_gen() -> None:
                 func = sub.exc.func if isinstance(sub.exc, ast.Call) else None
                 if func is None:
                     continue
-                name = func.id if isinstance(func, ast.Name) else (func.attr if isinstance(func, ast.Attribute) else "")
+                name = (
+                    func.id
+                    if isinstance(func, ast.Name)
+                    else (func.attr if isinstance(func, ast.Attribute) else "")
+                )
                 if name == "HTTPException":
                     violations.append(f"{f.name}:{sub.lineno}")
     assert not violations, (
