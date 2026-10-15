@@ -69,7 +69,9 @@ export default function PluginsPage() {
 
   const toggle = async (p: Plugin, enabled: boolean) => {
     await patch(`/plugins/${p.plugin_id}`, { enabled });
-    message.success(enabled ? '已启用（重启专家实例生效）' : '已停用');
+    // 后端在 PATCH 里已自动释放实例（manager.close），下一轮对话重建即挂上新工具——
+    // 不要再写「重启专家实例生效」，那会让用户以为要手动重启软件
+    message.success(enabled ? '已启用，下一轮对话即生效' : '已停用，下一轮对话即生效');
     load();
   };
 

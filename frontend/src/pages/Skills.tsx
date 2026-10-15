@@ -73,7 +73,7 @@ export default function SkillsPage() {
 
   const toggleSkill = async (s: Skill, enabled: boolean) => {
     await patch(`/skills/${s.name}`, { enabled });
-    message.success(enabled ? '已启用（重启专家实例生效）' : '已停用');
+    message.success(enabled ? '已启用，下一轮对话即生效' : '已停用，下一轮对话即生效');
     load();
   };
 
@@ -89,7 +89,7 @@ export default function SkillsPage() {
 
   const togglePackage = async (p: SkillPackage, enabled: boolean) => {
     await patch(`/skill-packages/${p.id}`, { enabled });
-    message.success(enabled ? '包已启用（重启专家实例生效）' : '包已停用');
+    message.success(enabled ? '包已启用，下一轮对话即生效' : '包已停用，下一轮对话即生效');
     load();
   };
 
