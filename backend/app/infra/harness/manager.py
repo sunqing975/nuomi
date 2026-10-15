@@ -111,6 +111,34 @@ class HarnessManager:
         for agent_id in list(self._agents):
             self.release(agent_id)
 
+    def apply_skills_disabled(
+        self,
+        disabled: frozenset[str],
+        *,
+        sync_running: bool = True,
+    ) -> int:
+        """把新的禁用技能集热更新到**全部存活实例**，返回更新到的实例数。
+
+        为什么不调 ``close()``：octop 的 ``SkillFilterMiddleware`` 每轮模型调用都重读
+        ``self._config.skills_disabled``（``middleware/skill_filter.py:200/:260``），
+        ``HarnessAgent.set_skills_disabled``（``agent.py:334``）改的正是这个字段——
+        所以启停技能**不需要重建实例**。重建的代价是 ~147ms/专家（带 MCP stdio 更高，
+        且同步阻塞事件循环），另外还会把「运行中」徽标打回「已停止」。
+
+        ``sync_running``：实例已存在时 harness 会忽略 ``get_agent`` 传入的
+        ``skills_disabled``（见 ``get_agent`` docstring），所以「启动实例」端点在冷构造
+        之外还要显式同步一次——否则用户先关技能再启动专家，启动请求会把禁用集打回
+        构造时那份（可能为空）。默认关闭以免影响对话热路径（多一次全量遍历）。
+        """
+        count = 0
+        for agent in list(self._agents.values()):
+            try:
+                agent.set_skills_disabled(disabled)
+                count += 1
+            except Exception:  # 单个实例失败不能带走整条链
+                logger.exception("set_skills_disabled 失败，该实例保持旧配置")
+        return count
+
     def shutdown(self) -> None:
         """进程退出：释放全部实例并冲刷 Langfuse（main lifespan 收尾调用）。"""
         self.close()

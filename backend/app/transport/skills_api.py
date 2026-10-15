@@ -22,6 +22,23 @@ from app.transport.models import GitImportBody
 router = APIRouter(prefix="/api", tags=["skills"])
 
 
+def _sync_skills_disabled() -> None:
+    """技能/技能包启停后，把禁用集热更新到全部存活实例（回归防线）。
+
+    两条曾经漏掉的路径，都由这一步收口：
+
+    1. **运行中的专家**：``manager.get_agent`` 按 agent_id 单例缓存，实例已存在时
+       **忽略**传入的 ``skills_disabled``（见其 docstring）。修复前这里的启停既不调
+       ``close()`` 也不同步 → 只有重启后端才生效（控制台文案曾写「重启专家实例生效」，
+       其实是错的，插件路径早就能自动生效）。这里走 harness 的热接口
+       ``HarnessAgent.set_skills_disabled``——``SkillFilterMiddleware`` 每轮模型调用
+       重读 ``config.skills_disabled``，所以不重建实例也能即时生效。
+    2. **之后新建的实例**：``ensure_agent_runtime`` 冷构造时现算
+       ``skill_service.disabled_set()``，本来就用最新值，无需处理。
+    """
+    manager.apply_skills_disabled(skill_service.disabled_set())
+
+
 def _slug_from_hub(name: str) -> str:
     """市场 slug → 本地目录名（小写 kebab，长度受限）。"""
     s = re.sub(r"[^a-zA-Z0-9_-]+", "-", name.strip()).strip("-").lower()
@@ -100,6 +117,7 @@ async def patch_skill(skill_name: str, body: SkillPatchBody) -> dict:
         row = next((s for s in skill_service.list_all() if s["name"] == skill_name), None)
     if row is None:
         raise HTTPException(status_code=404, detail="技能不存在")
+    _sync_skills_disabled()
     return row
 
 
@@ -223,6 +241,7 @@ async def patch_skill_package(package_id: str, body: SkillPackagePatchBody) -> d
     row = skill_package_service.get(package_id)
     if row is None:
         raise HTTPException(status_code=404, detail="技能包不存在")
+    _sync_skills_disabled()  # 包启停/改名后同步存活实例（改名可能换掉 slug）
     return row
 
 

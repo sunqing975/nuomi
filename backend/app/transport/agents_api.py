@@ -137,7 +137,7 @@ async def start_agent(agent_id: str) -> dict:
     # 这里曾自行调 manager.get_agent 且漏传 workspace_dir —— 用户在「专家」页点
     # 「启动实例」会把实例建到全局数据根（无 persona 文件、写全局 memory.sqlite），
     # 之后该专家的对话/历史全部错位（详见 ensure_agent_runtime 的 docstring）。
-    ensure_agent_runtime(row)
+    ensure_agent_runtime(row, sync_skills=True)
     agent_service.set_state(agent_id, STATE_RUNNING)
     return {"ok": True, "state": STATE_RUNNING}
 
