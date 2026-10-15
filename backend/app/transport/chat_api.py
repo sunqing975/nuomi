@@ -30,6 +30,7 @@ from app.domain.agents.service import (
 from app.domain.chat.service import (
     PROJ_READY,
     chat_sessions,
+    derive_thread_title,
     messages_to_inputs,
     thread_message_repo,
     thread_repo,
@@ -159,6 +160,7 @@ class ChatTouchBody(BaseModel):
     agent_id: str
     thread_id: str
     title: str | None = None
+    rename: bool = False
 
 
 @router.get("/chat/state")
@@ -184,8 +186,12 @@ async def chat_switch(body: ChatSwitchBody) -> dict:
 
 @router.post("/chat/touch")
 async def chat_touch(body: ChatTouchBody) -> dict:
-    """更新会话时间/标题。"""
-    chat_sessions.touch(body.agent_id, body.thread_id, body.title)
+    """更新会话时间/标题。
+
+    默认只在标题仍是「新会话」/空时写（首轮自动命名用）；`rename=true` 是用户在
+    会话列表里手动改名，无条件覆盖。
+    """
+    chat_sessions.touch(body.agent_id, body.thread_id, body.title, rename=body.rename)
     return {"ok": True}
 
 
@@ -404,7 +410,11 @@ async def chat(agent_id: str, body: ChatBody, request: Request) -> StreamingResp
             """本轮消息写入 thread_messages 投影（M4；失败不影响对话）。"""
             if thread_repo.get(body.thread_id) is None:
                 # AI 数字人壳等直带任意 thread_id 对话时兜底登记会话
-                thread_repo.insert(body.thread_id, agent_id, title="")
+                thread_repo.insert(
+                    body.thread_id, agent_id, title=derive_thread_title(turn.get("user"))
+                )
+            else:
+                thread_repo.ensure_title(body.thread_id, from_text=turn.get("user"))
             # 仅已 backfill（ready）的投影增量 append；pending 由首次历史读取全量 backfill
             if thread_message_repo.projection_status(body.thread_id) != PROJ_READY:
                 return
@@ -517,6 +527,9 @@ async def chat_approval(
             """本轮消息写入 thread_messages 投影（M4；失败不影响对话）。"""
             if thread_repo.get(body.thread_id) is None:
                 thread_repo.insert(body.thread_id, agent_id, title="")
+            # 审批续跑这轮 user 输入是 None（见 resume_chat），补不上标题就维持原样，
+            # 至少不会把 "[{'role': ...}]" 这种脏串写进会话列表
+            thread_repo.ensure_title(body.thread_id, from_text=turn.get("user"))
             if thread_message_repo.projection_status(body.thread_id) != PROJ_READY:
                 return
             inputs = turn_to_message_inputs(turn)

@@ -26,6 +26,50 @@ STATE_PATH = settings.workspace_path / "nuomi-state.json"
 # —— threads 表（ThreadRepo） ——
 
 
+# 会话标题上限：自动命名取首条消息前若干字，侧栏一行放得下
+THREAD_TITLE_MAX = 40
+
+
+def _as_user_text(value: object) -> str:
+    """把"一轮的用户输入"归一成文本。
+
+    三个调用方给的东西不一样：控制台传 messages 列表（[{role, content}, ...]）、
+    AI 数字人壳 / OpenAI 兼容口传纯文本、审批续跑传 None。列表取**最后一条**带
+    content 的（那是本轮真正想问的话），别 str() 整个列表——那会得到
+    "[{'role': 'user', ...}]" 这种没法看的标题。
+    """
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (list, tuple)):
+        for item in reversed(list(value)):
+            if isinstance(item, str):
+                if item.strip():
+                    return item
+                continue
+            if isinstance(item, dict):
+                content = item.get("content") or item.get("text") or ""
+                if isinstance(content, str) and content.strip():
+                    return content
+        return ""
+    return str(value)
+
+
+def derive_thread_title(text: object, *, limit: int = 24) -> str:
+    """从一段用户输入里裁出会话标题：只取第一行、压掉多余空白、超长截断加省略号。
+
+    纯空白返回空串，由调用方决定兜不兜「新会话」。
+    """
+    raw = _as_user_text(text)
+    first_line = next((ln.strip() for ln in raw.splitlines() if ln.strip()), "")
+    collapsed = " ".join(first_line.split())
+    if not collapsed:
+        return ""
+    clipped = collapsed[:limit]
+    return clipped + ("…" if len(collapsed) > limit else "")
+
+
 class ThreadRepo:
     """threads 表：会话元数据（thread_id/agent_id/title/last_active/pinned/model_ref）。"""
 
@@ -76,6 +120,22 @@ class ThreadRepo:
                 (agent_id,),
             ).fetchall()
         return [self._row(r) for r in rows]
+
+    def ensure_title(self, thread_id: str, *, from_text: object) -> str:
+        """标题还空着就用首轮用户消息补一个（会话列表不该一排空白）。
+
+        只在空标题时补，已有标题（自动补的或用户手改的）一律不动。
+        """
+        with db.connect() as conn:
+            row = conn.execute(
+                "SELECT title FROM threads WHERE thread_id = ?", (thread_id,)
+            ).fetchone()
+        if row is None or (row[0] or "").strip():
+            return (row[0] if row else "") or ""
+        title = derive_thread_title(from_text)
+        if title:
+            self.update_title(thread_id, title)
+        return title
 
     def update_title(self, thread_id: str, title: str) -> None:
         with db.connect() as conn:
@@ -414,14 +474,23 @@ class ChatSessionService:
         thread_repo.touch_last_active(thread_id)  # 切换即更新最近使用
         return True
 
-    def touch(self, agent_id: str, thread_id: str, title: str | None = None) -> None:
-        """更新会话时间/标题（标题仅在仍为「新会话」时替换）。"""
+    def touch(
+        self, agent_id: str, thread_id: str, title: str | None = None, *, rename: bool = False
+    ) -> None:
+        """更新会话时间/标题。
+
+        默认标题只在仍为「新会话」/空时替换 —— 首轮自动命名不该盖掉用户改过的名字；
+        `rename=True` 是用户在会话列表里手动重命名，无条件写。
+        """
         t = thread_repo.get(thread_id)
         if t is None or t.get("agent_id") != agent_id:
             return
         thread_repo.touch_last_active(thread_id)
-        if title and t.get("title") in (None, "", "新会话"):
-            thread_repo.update_title(thread_id, title)
+        cleaned = (title or "").strip()[:THREAD_TITLE_MAX]
+        if not cleaned:
+            return
+        if rename or t.get("title") in (None, "", "新会话"):
+            thread_repo.update_title(thread_id, cleaned)
 
     def delete(self, agent_id: str, thread_id: str) -> bool:
         """删除会话：threads 行 + 消息投影 + 检查点历史全部清除。

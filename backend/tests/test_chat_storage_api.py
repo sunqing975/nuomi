@@ -290,3 +290,65 @@ def test_history_projection_after_turn_append(client: TestClient, monkeypatch) -
 
     # 重复 append 同一 message_id 不重复（本轮无 message_id → 全量追加；此断言验证计数）
     assert thread_message_repo.append(tid, inputs) == 2
+
+
+def test_thread_title_semantics(client: TestClient) -> None:
+    """会话标题：自动命名只在空/「新会话」时补，手动改名无条件覆盖。
+
+    为什么单独测：侧栏一排空白是真实痛点（实测 11 条会话 7 条无标题），
+    而自动命名一旦写宽就会盖掉用户自己起的名字。
+    """
+    from app.domain.chat.service import thread_repo
+
+    aid = _new_agent(client)
+    tid = client.post("/api/chat/new", json={"agent_id": aid}).json()["thread_id"]
+    assert thread_repo.get(tid)["title"] == "新会话"
+
+    # 已有标题（含「新会话」）时 ensure_title 不动它——首轮自动命名走的是 touch
+    assert thread_repo.ensure_title(tid, from_text="别的话") == "新会话"
+    assert thread_repo.get(tid)["title"] == "新会话"
+
+    # 空标题（壳/兼容口兜底登记的会话）才补
+    empty = f"{aid}:emptythread"
+    thread_repo.insert(empty, aid, title="")
+    assert (
+        thread_repo.ensure_title(empty, from_text="查询一下明天北京的天气并给出安排")
+        == "查询一下明天北京的天气并给出安排"[:24]
+    )
+
+    # touch：非 rename 只在仍为「新会话」/空时替换；rename 无条件写
+    client.post("/api/chat/touch", json={"agent_id": aid, "thread_id": tid, "title": "第一轮"})
+    assert thread_repo.get(tid)["title"] == "第一轮"
+    client.post("/api/chat/touch", json={"agent_id": aid, "thread_id": tid, "title": "不该盖掉"})
+    assert thread_repo.get(tid)["title"] == "第一轮"
+    r = client.post(
+        "/api/chat/touch",
+        json={"agent_id": aid, "thread_id": tid, "title": "我自己改的", "rename": True},
+    )
+    assert r.status_code == 200
+    assert thread_repo.get(tid)["title"] == "我自己改的"
+    # 空白标题什么都不写（不会把标题清成空串）
+    client.post(
+        "/api/chat/touch", json={"agent_id": aid, "thread_id": tid, "title": "   ", "rename": True}
+    )
+    assert thread_repo.get(tid)["title"] == "我自己改的"
+
+
+def test_derive_thread_title_shapes() -> None:
+    """三个调用方给的"用户输入"形状不一样，都不能产出没法看的标题。"""
+    from app.domain.chat.service import derive_thread_title
+
+    assert derive_thread_title("  多行\n第二行  ") == "多行"
+    assert (
+        derive_thread_title([{"role": "user", "content": "帮我看看这个 MES 工单"}])
+        == "帮我看看这个 MES 工单"
+    )
+    assert derive_thread_title("纯文本输入") == "纯文本输入"
+    assert derive_thread_title(None) == ""
+    assert derive_thread_title("   ") == ""
+    assert derive_thread_title([]) == ""
+    # 列表里最后一条才是本轮的话（不是 str(list) 那种脏串）
+    assert (
+        derive_thread_title([{"role": "user", "content": "旧"}, {"role": "user", "content": "新"}])
+        == "新"
+    )

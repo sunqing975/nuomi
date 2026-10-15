@@ -22,6 +22,7 @@ from app.domain.agents.seed import default_system_prompt
 from app.domain.agents.service import agent_service
 from app.domain.chat.service import (
     PROJ_READY,
+    derive_thread_title,
     thread_message_repo,
     thread_repo,
     turn_to_message_inputs,
@@ -99,7 +100,11 @@ async def chat_completions(body: OpenAIChatBody, request: Request) -> StreamingR
         async def _persist_turn(turn: dict) -> None:
             """AI 数字人壳对话（thread=desktop）同样写消息投影（M4；失败不影响对话）。"""
             if thread_repo.get("desktop") is None:
-                thread_repo.insert("desktop", agent["agent_id"], title="")
+                thread_repo.insert(
+                    "desktop", agent["agent_id"], title=derive_thread_title(turn.get("user"))
+                )
+            else:
+                thread_repo.ensure_title("desktop", from_text=turn.get("user"))
             if thread_message_repo.projection_status("desktop") != PROJ_READY:
                 return
             inputs = turn_to_message_inputs(turn)

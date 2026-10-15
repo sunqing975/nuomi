@@ -10,10 +10,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Button, Drawer, Empty, Popconfirm, Select, Tag, message,
+  Button, Drawer, Empty, Input, Popconfirm, Select, Tag, message,
 } from 'antd';
 import {
-  DeleteOutlined, HistoryOutlined, PlusOutlined, BulbOutlined,
+  DeleteOutlined, EditOutlined, HistoryOutlined, PlusOutlined, BulbOutlined,
 } from '@ant-design/icons';
 import {
   del, get, knowledgeApi, post,
@@ -76,43 +76,105 @@ function TrajectoryDrawer({ open, onClose, messages }: { open: boolean; onClose:
   );
 }
 
-/** 会话列表项：选中态主色描边/淡底，hover 浅灰 + 删除图标变红（IM 列表交互） */
-function SessionItem({ session, active, onOpen, onDelete }: {
+/** 会话列表项：选中态主色描边/淡底，hover 浅灰 + 改名/删除图标（IM 列表交互）。
+ *
+ * 三件事一起做的理由：
+ *  - 颜色一律走 token（原来 #fff7e6/#f59e0b/#dc2626 是硬编码浅色，深色主题下会刺眼露白）；
+ *  - 可聚焦（原来是个纯 div onClick，键盘进不去、读屏念不出这是会话）；
+ *  - 支持重命名（后端 /chat/touch 的 rename 分支）。
+ */
+function SessionItem({ session, active, onOpen, onDelete, onRename }: {
   session: SessionMeta; active: boolean; onOpen: () => void; onDelete: () => void;
+  onRename: (title: string) => void;
 }) {
   const [hover, setHover] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(session.title);
+
+  const startEdit = () => {
+    setDraft(session.title || '');
+    setEditing(true);
+  };
+  const commit = () => {
+    setEditing(false);
+    const next = draft.trim().slice(0, 40);
+    if (next && next !== (session.title || '')) onRename(next);
+  };
+
   return (
     <div
-      onClick={onOpen}
+      role="button"
+      tabIndex={0}
+      aria-label={`会话 ${session.title || '未命名'}`}
+      aria-current={active ? 'true' : undefined}
+      onClick={() => { if (!editing) onOpen(); }}
+      onKeyDown={e => {
+        if (editing) return;
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(); }
+        if (e.key === 'F2') { e.preventDefault(); startEdit(); }
+      }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       style={{
         padding: '8px 10px', marginBottom: 6, borderRadius: 8, cursor: 'pointer',
-        background: active ? '#fff7e6' : hover ? '#fafafa' : 'var(--surface)',
-        border: active ? '1px solid #f59e0b' : '1px solid var(--line-1)',
+        background: active ? 'var(--accent-soft)' : hover ? 'var(--surface-2)' : 'var(--surface)',
+        border: active ? '1px solid var(--primary)' : '1px solid var(--line-1)',
         transition: 'background 0.15s',
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
-        <div style={{
-          fontSize: 13, fontWeight: active ? 600 : 400,
-          color: active ? 'var(--accent-text)' : 'var(--label-1)',
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-        }}>
-          {session.title || '（空会话）'}
-        </div>
-        <Popconfirm
-          title="删除这个会话？"
-          description="会话记录和对话上下文将一并清除"
-          okText="删除" cancelText="取消"
-          onConfirm={e => { e?.stopPropagation(); onDelete(); }}
-          onCancel={e => e?.stopPropagation()}
-        >
-          <DeleteOutlined
+        {editing ? (
+          <Input
+            size="small"
+            autoFocus
+            maxLength={40}
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
             onClick={e => e.stopPropagation()}
-            style={{ color: hover ? '#dc2626' : 'var(--label-4)', fontSize: 13, flexShrink: 0, transition: 'color 0.15s' }}
+            onPressEnter={commit}
+            onBlur={commit}
+            onKeyDown={e => { if (e.key === 'Escape') { setEditing(false); setDraft(session.title || ''); } }}
           />
-        </Popconfirm>
+        ) : (
+          <div
+            onDoubleClick={e => { e.stopPropagation(); startEdit(); }}
+            title="双击重命名"
+            style={{
+              fontSize: 13, fontWeight: active ? 600 : 400,
+              color: active ? 'var(--accent-text)' : 'var(--label-1)',
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}
+          >
+            {session.title || '（空会话）'}
+          </div>
+        )}
+        {!editing && (
+          <span style={{ display: 'inline-flex', gap: 6, flexShrink: 0 }}>
+            <EditOutlined
+              aria-label="重命名会话"
+              role="button"
+              tabIndex={0}
+              onClick={e => { e.stopPropagation(); startEdit(); }}
+              onKeyDown={e => { if (e.key === 'Enter') { e.stopPropagation(); startEdit(); } }}
+              style={{ color: hover ? 'var(--primary)' : 'var(--label-4)', fontSize: 13, transition: 'color 0.15s' }}
+            />
+            <Popconfirm
+              title="删除这个会话？"
+              description="会话记录和对话上下文将一并清除"
+              okText="删除" cancelText="取消"
+              onConfirm={e => { e?.stopPropagation(); onDelete(); }}
+              onCancel={e => e?.stopPropagation()}
+            >
+              <DeleteOutlined
+                aria-label="删除会话"
+                role="button"
+                tabIndex={0}
+                onClick={e => e.stopPropagation()}
+                style={{ color: hover ? 'var(--danger)' : 'var(--label-4)', fontSize: 13, transition: 'color 0.15s' }}
+              />
+            </Popconfirm>
+          </span>
+        )}
       </div>
       <small style={{ color: 'var(--label-3)' }}>
         {session.updated_at ? new Date(session.updated_at).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '延续记忆'}
@@ -125,6 +187,7 @@ export default function ChatPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [agentId, setAgentId] = useState<string | null>(null);
   const [sessions, setSessions] = useState<SessionMeta[]>([]);
+  const [sessionQuery, setSessionQuery] = useState('');
   const [activeThread, setActiveThread] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -300,6 +363,13 @@ export default function ChatPage() {
     }
   };
 
+  // 侧栏会话可能几十条（实测已有 11 条），搜索只在超过一屏时才露出来
+  const visibleSessions = useMemo(() => {
+    const q = sessionQuery.trim().toLowerCase();
+    if (!q) return sessions;
+    return sessions.filter(s => (s.title || '').toLowerCase().includes(q) || s.thread_id.toLowerCase().includes(q));
+  }, [sessions, sessionQuery]);
+
   const switchSession = async (tid: string) => {
     if (tid === activeThread || busy) return;
     try {
@@ -309,6 +379,21 @@ export default function ChatPage() {
       loadHistory(agentId!, tid);
     } catch (e) {
       message.error(`切换会话失败：${(e as Error).message}`);
+    }
+  };
+
+  const renameSession = async (tid: string, title: string) => {
+    if (!agentId) return;
+    // 乐观改：改名不该有网络等待感；失败再拉一次状态回滚
+    setSessions(prev => prev.map(s => (s.thread_id === tid ? { ...s, title } : s)));
+    try {
+      await post('/chat/touch', { agent_id: agentId, thread_id: tid, title, rename: true });
+    } catch (e) {
+      message.error(`重命名失败：${(e as Error).message}`);
+      try {
+        const st = await get<ChatState>(`/chat/state?agent_id=${agentId}`);
+        setSessions(st.sessions);
+      } catch { /* 回滚失败就只能等下次刷新 */ }
     }
   };
 
@@ -370,17 +455,31 @@ export default function ChatPage() {
           新建会话
         </Button>
         <div style={{ fontSize: 12, color: 'var(--label-3)', fontWeight: 600 }}>会话记录</div>
+        {sessions.length > 6 && (
+          <Input
+            size="small"
+            allowClear
+            placeholder="搜索会话"
+            value={sessionQuery}
+            onChange={e => setSessionQuery(e.target.value)}
+          />
+        )}
         <div style={{ overflow: 'auto', flex: 1 }}>
-          {sessions.length === 0 && (
-            <EmptyState simple description="暂无会话" style={{ marginTop: 24 }} />
+          {visibleSessions.length === 0 && (
+            <EmptyState
+              simple
+              description={sessions.length === 0 ? '暂无会话' : `没有匹配「${sessionQuery}」的会话`}
+              style={{ marginTop: 24 }}
+            />
           )}
-          {sessions.map(s => (
+          {visibleSessions.map(s => (
             <SessionItem
               key={s.thread_id}
               session={s}
               active={s.thread_id === activeThread}
               onOpen={() => switchSession(s.thread_id)}
               onDelete={() => deleteSession(s.thread_id)}
+              onRename={title => renameSession(s.thread_id, title)}
             />
           ))}
         </div>
