@@ -9,7 +9,9 @@ dependencies = [
     "uvicorn[standard]>=0.30",
     # Agent 运行时：octop-harness（机制基础库，v0.13 起不再自研 engine）。
     # harness 依赖 langchain>=1.5 / langgraph<2 / deepagents / octop-memory，版本由它约束。
-    "octop-harness>=1.0.0",
+    # 加 <2.0.0 上界：infra/harness 直接吃它的运行时形状（stream 事件、
+    # set_skills_disabled / replace_mcp_tools 这类热接口），major 一跳会静默崩语义。
+    "octop-harness>=1.0.0,<2.0.0",
     # Langfuse 观测：nuomi 设置页「测试连接」直接 import（transport/settings_api.py），
     # 且 octop-harness 的 observability extra 也要求它——必须显式声明，不能靠 optional extra
     # （2026-10-07 uv sync 重对齐后 venv 丢过 langfuse，导致 5 个 langfuse 测试全挂）。
@@ -21,12 +23,21 @@ dependencies = [
     "huggingface_hub>=0.23",
     "pydantic-settings>=2.4",
     "python-dotenv>=1.0",
+    # 以下三个都是「代码里直接 import，却只靠传递依赖存在」的同类坑（langfuse / fastembed
+    # 已经各踩过一次：`uv sync` 重对齐时 venv 里直接被清掉）。
+    # httpx：infra/skillhub.py、infra/providers_store.py、infra/knowledge/onnx_download.py
+    # 自己发请求；此前只在 dev group 里，生产装依赖时随时可能没有。
+    "httpx>=0.27",
+    # pyyaml：infra/plugins/market.py（插件 manifest）+ infra/importers.py（会话导入）。
+    "pyyaml>=6.0",
+    # python-multipart：所有上传端点（knowledge_api / skills_api / plugins_api / avatar_api
+    # 的 UploadFile / File）。FastAPI 不会自动带上它，缺了是运行期 500 而不是启动报错。
+    "python-multipart>=0.0.9",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=8.0",
-    "httpx>=0.27",
     "ruff>=0.4",
     "mypy>=1.10",
 ]
