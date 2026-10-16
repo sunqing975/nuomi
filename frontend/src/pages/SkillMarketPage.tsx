@@ -4,12 +4,11 @@ import { DownloadOutlined, ReloadOutlined } from '@ant-design/icons';
 import { get, post, type SkillHubItem, type SkillPackage } from '../api';
 import EntityGrid from '../components/EntityGrid';
 import PageLayout from '../components/PageLayout';
-
-const AVATAR_COLORS = ['#f59e0b', '#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
+import { pickAvatarColor } from '../utils/palette';
 
 const initialAvatarOf = (name: string, size = 40) => {
   const ch = (name[0] || '?').toUpperCase();
-  const color = AVATAR_COLORS[(name.charCodeAt(0) || 0) % AVATAR_COLORS.length];
+  const color = pickAvatarColor(name);
   return <Avatar size={size} style={{ backgroundColor: color, flexShrink: 0 }}>{ch}</Avatar>;
 };
 

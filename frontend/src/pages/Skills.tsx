@@ -10,7 +10,9 @@ import {
   del, get, patch, post, upload, type Skill, type SkillPackage,
 } from '../api';
 import EntityGrid from '../components/EntityGrid';
+import ErrorState from '../components/ErrorState';
 import PageLayout from '../components/PageLayout';
+import { pickAvatarColor } from '../utils/palette';
 
 export default function SkillsPage() {
   // —— 已安装 ——
@@ -19,6 +21,7 @@ export default function SkillsPage() {
   const [packages, setPackages] = useState<SkillPackage[]>([]);
   const [envVars, setEnvVars] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [gitOpen, setGitOpen] = useState(false);
   const [gitUrl, setGitUrl] = useState('');
   const [gitLoading, setGitLoading] = useState(false);
@@ -37,6 +40,11 @@ export default function SkillsPage() {
       setPackages(p);
       setBuiltins(b);
       setEnvVars(e);
+      setLoadError(null);
+    } catch (e) {
+      // 三个列表是 Promise.all 一起取的，任一失败就是整页数据不可信（而不是「没有技能」）：
+      // 原来没有 catch，异常直接冒泡，用户看到空网格还以为技能被删了。
+      setLoadError((e as Error).message);
     } finally {
       setLoading(false);
     }
@@ -204,11 +212,9 @@ export default function SkillsPage() {
     );
   };
 
-  const AVATAR_COLORS = ['#f59e0b', '#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
-
   const initialAvatarOf = (name: string, size = 40) => {
     const ch = (name[0] || '?').toUpperCase();
-    const color = AVATAR_COLORS[(name.charCodeAt(0) || 0) % AVATAR_COLORS.length];
+    const color = pickAvatarColor(name);
     return <Avatar size={size} style={{ backgroundColor: color, flexShrink: 0 }}>{ch}</Avatar>;
   };
 
@@ -262,12 +268,16 @@ export default function SkillsPage() {
           autoFocus
         />
       </Modal>
-      <EntityGrid
-        items={installedItems}
-        loading={loading}
-        emptyText="没有匹配的已安装项"
-        renderItem={renderInstalledItem}
-      />
+      {loadError ? (
+        <ErrorState description={loadError} onRetry={load} />
+      ) : (
+        <EntityGrid
+          items={installedItems}
+          loading={loading}
+          emptyText="没有匹配的已安装项"
+          renderItem={renderInstalledItem}
+        />
+      )}
     </PageLayout>
   );
 }

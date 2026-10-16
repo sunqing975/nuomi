@@ -11,6 +11,7 @@ import {
 import {
   knowledgeApi, type KnowledgeBase, type KnowledgeDocument,
 } from '../api';
+import ErrorState from '../components/ErrorState';
 import KnowledgeDocEditorModal from './KnowledgeDocEditorModal';
 import KnowledgeUploadModal from './KnowledgeUploadModal';
 
@@ -42,6 +43,9 @@ export default function KnowledgeDetailPage({ kbId }: { kbId: string }) {
   const [prefix, setPrefix] = useState('');
   const [docLoading, setDocLoading] = useState(false);
   const [missing, setMissing] = useState(false);
+  // 主体（库信息 + 文档表）加载失败：原来只弹 toast，页面主体渲染不出来又没有出口，
+  // 用户只看到一片空白，分不清是「库被删了」还是「后端没起来」。
+  const [loadError, setLoadError] = useState<string | null>(null);
   // —— Modal 状态 ——
   const [docRenameOpen, setDocRenameOpen] = useState(false);
   const [docRenameTarget, setDocRenameTarget] = useState<KnowledgeDocument | null>(null);
@@ -59,8 +63,11 @@ export default function KnowledgeDetailPage({ kbId }: { kbId: string }) {
       if (!hit) { setKb(null); setMissing(true); return; }
       setKb(hit);
       setMissing(false);
+      setLoadError(null);
     } catch (e) {
-      message.error(`加载知识库失败：${(e as Error).message}`);
+      // 「库不存在」走上面的 missing（Empty 文案），这里只处理请求本身失败：两者必须区分，
+      // 否则后端离线会被误报成「知识库已被删除」。
+      setLoadError(`加载知识库失败：${(e as Error).message}`);
     }
   }, [kbId]);
 
@@ -73,9 +80,10 @@ export default function KnowledgeDetailPage({ kbId }: { kbId: string }) {
       const rows = await knowledgeApi.listDocs(id, p || undefined);
       if (req !== docsReqRef.current) return;
       setDocs(rows);
+      setLoadError(null);
     } catch (e) {
       if (req !== docsReqRef.current) return;
-      message.error(`加载文档失败：${(e as Error).message}`);
+      setLoadError(`加载文档失败：${(e as Error).message}`);
     } finally {
       if (req === docsReqRef.current) setDocLoading(false);
     }
@@ -163,7 +171,7 @@ export default function KnowledgeDetailPage({ kbId }: { kbId: string }) {
         <Space>
           {d.is_dir ? <FolderOutlined style={{ color: 'var(--accent)' }} /> : <FileOutlined style={{ color: 'var(--label-3)' }} />}
           <Typography.Text
-            style={{ cursor: d.is_dir ? 'pointer' : 'default', color: d.is_dir ? '#1677ff' : undefined }}
+            style={{ cursor: d.is_dir ? 'pointer' : 'default', color: d.is_dir ? 'var(--link)' : undefined }}
             onClick={d.is_dir ? () => enterFolder(d.path) : undefined}
           >
             {d.is_dir ? `${d.filename}/` : d.filename}
@@ -218,7 +226,9 @@ export default function KnowledgeDetailPage({ kbId }: { kbId: string }) {
 
   return (
     <div style={{ maxWidth: 1080 }}>
-      {kb && (
+      {loadError ? (
+        <ErrorState description={loadError} onRetry={refreshAll} />
+      ) : kb && (
         <Card
           title={
             <Space>

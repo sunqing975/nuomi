@@ -208,7 +208,7 @@ OpenAI 兼容：`app/transport/openai_compat.py`（`/v1/chat/completions`，mode
 |---|---|---|---|
 | 1 | 知识库 **OCR** | ⏸ 用户叫停（`ocr_enabled=false` 占位） | RapidOCR 本地 + 扫描 PDF；接 `knowledge/capability` |
 | 2 | **深色主题入口** | ✅ 已接线（2026-10-16，8c94056）：`themeStore.ts`（localStorage 持久化 + `useSyncExternalStore`，默认浅色、不跟系统）+ `main.tsx` 用 `buildTheme(mode)`（antd `darkAlgorithm`）+ 顶栏切换按钮 + Sider `theme` 跟随；`theme.test.ts` 10 例锁「除品牌/语义/尺寸类外每个 token 都要有深色覆盖」 | 残余：部分页面仍有硬编码浅色（见 #3），深色下会露白 |
-| 3 | 装饰色板收敛 + 内联样式 | 实测口径（2026-10-16，`pages`+`components`，排除测试文件）：内联 `style={{` **248 处**、6 位裸 hex **20 处**、`message.error` **62 处**而 `ErrorState` 基元在 pages 引用 **0 处**（基元已建好没人用）。旧文档写 60/278 都对不上，以再测为准 | 先收 `AVATAR_COLORS`（三份重复）到 `utils/palette.ts`，再把 `message.error` 逐页换成 `ErrorState`；**别为清零做无验证的大重写** |
+| 3 | 装饰色板收敛 + 内联样式 | 实测口径（2026-10-16 晚，`pages`+`components`，排除测试文件）：内联 `style={{` **248 处**、非测试裸 hex **12 处**（全是刻意保留的装饰色与注释）、`message.error` **61 处**，`ErrorState` 已在 **8 个页面**主体加载路径接入。`AVATAR_COLORS` 原先 5 份重复（Plugins/Connectors/Skills/Market/SkillMarketPage）已收进 `utils/palette.ts`；新增 `info-soft`/`pink-soft` 两个深色 token | 剩余 `message.error` 是动作类失败（保存/删除/启停/导入），刻意保留 toast；要接着做按「主体失败 → ErrorState、动作失败 → toast」口径逐页补；**别为清零做无验证的大重写** |
 | 4 | 前端**渲染级**测试 | 已装 RTL：`components.test.tsx` 16 例 + `pages/chat/ApprovalCard.test.tsx` 7 例（多动作全渲染/决策条数/重复提交禁用）。**注意 vitest 未开 globals，RTL 自动 cleanup 不生效，同文件多次 render 必须手动 `afterEach(cleanup)`**（components.test.tsx:17-18 已记） | 仍缺：Chat 攒批上传、滚动跟随、折叠这类行为级测试 |
 | 5 | AI 数字人**直接说话（TTS）** | ⬜ 用户已拍板待办；TTS 客户端代码保留未删 | 恢复"收到回复文本 → TTS 播报"入口；注意当前是 Kokoro-FastAPI 路线 |
 | 6 | 斜杠技能注入（`/slug`） | ⬜ 本轮用"工具条选择器 + chips" | octop 的 `/slug` 文本插入 |

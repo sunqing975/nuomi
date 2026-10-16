@@ -38,7 +38,7 @@ export default function MessageList({
       {hasStream && (
         <div style={{ display: 'flex', marginBottom: 12, gap: 8 }}>
           <div style={assistantAvatarStyle}>
-            <RobotOutlined style={{ color: '#d97706', fontSize: 15 }} />
+            <RobotOutlined style={{ color: 'var(--primary)', fontSize: 15 }} />
           </div>
           <div style={{ minWidth: 0 }}>
             {streamSegments.map((s, j) =>

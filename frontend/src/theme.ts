@@ -45,6 +45,10 @@ export interface ThemeTokens {
   /** 工具「结果」卡片底色/描边（浅色绿系；深色必须覆盖，否则深底顶着荧光绿块） */
   'ok-bg': string;
   'ok-line': string;
+  /** 工具「调用」卡片底色（浅色蓝系）。与 ok-bg 成对：深色漏覆盖同样是荧光块压深底 */
+  'info-soft': string;
+  /** 知识库选择器「选中行」底色（浅粉，跟 #eb2f96 勾选符同色系，别拿它当通用高亮） */
+  'pink-soft': string;
   'radius-sm': string;
   'radius-md': string;
   'radius-lg': string;
@@ -77,6 +81,8 @@ export const THEME_TOKENS: ThemeTokens = {
   'warn-line': '#ffe58f',
   'ok-bg': '#f6ffed',
   'ok-line': '#d9f7be',
+  'info-soft': '#f0f7ff',
+  'pink-soft': '#fff0f6',
   'radius-sm': '6px',
   'radius-md': '8px',
   'radius-lg': '12px',
@@ -104,6 +110,9 @@ export const THEME_OVERRIDES: Record<'light' | 'dark', ThemeOverrides> = {
     // 工具结果卡：深色必须是「暗绿底 + 暗描边」。不覆盖的话深底上顶着一块荧光绿。
     'ok-bg': '#162318',
     'ok-line': '#2b4a30',
+    // 调用卡/选择行同理：暗蓝、暗粉，压到 #0f1115 / #171a21 上不刺眼
+    'info-soft': '#16233a',
+    'pink-soft': '#3a1a2b',
     'shadow-pop': '0 6px 16px rgba(0, 0, 0, 0.5), 0 3px 6px -4px rgba(0, 0, 0, 0.4)',
   },
 };

@@ -75,17 +75,19 @@ Token **只在 `src/theme.ts` 里定义一次**（带 TypeScript 约束，拼错
 
 ## 5. 迁移欠账（如实记录，不用"已对齐"糊过去）
 
-截至 2026-10-06 的实测：
+截至 2026-10-16 的实测（`pages` + `components`，排除测试文件）：
 
 | 项 | 数量 | 说明 |
 | --- | --- | --- |
-| `var(--x)` 引用 | 58 处 | 已迁移的中性色/主色 |
-| tsx 内剩余裸 hex | 60 处 | 其中 4 处是 antd `color="…"` prop；其余是**装饰性标签色板**（`#8b5cf6` `#ec4899` `#3b82f6` `#14b8a6` `#f97316` `#722ed1` `#eb2f96`）与少量语义色 |
-| 内联 `style={{` | 278 处 | 未做系统化抽取；多数是布局（`margin`/`gap`/`flex`）而非颜色，风险低 |
+| `var(--x)` 引用 | 91 处 | 中性色/主色/语义色已 token 化（本轮新增 `info-soft`/`pink-soft` 覆盖工具调用卡与选中行） |
+| 非测试裸 hex | 12 处 | 全是刻意保留的装饰色与注释：`AbilityChip` 四色（`#1677ff` `#52c41a` `#eb2f96` `#722ed1`）、知识库勾选 `#eb2f96`、`AvatarModels` 紫 `#7c3aed`、`Experts` 头像占位 `#f59e0b`；另有 2 处写在注释里记录旧值（`Chat.tsx:82`、`chat/MessageBubble.tsx:204`） |
+| 内联 `style={{` | 248 处 | 未做系统化抽取；多数是布局（`margin`/`gap`/`flex`）而非颜色，风险低 |
+| `message.error` | 61 处 | 动作类失败（保存/删除/启停/导入）刻意保留 toast；**主体加载失败**已改 `ErrorState`（Experts/Plugins/Skills/Connectors/Knowledge/KnowledgeDetail/Market/AvatarModels 共 8 页接入 `loadError` + `onRetry`） |
 | **i18n** | 不存在 | 文案全为硬编码中文，**没有** `i18n/` 基建（曾有一份已删文档声称「i18n 基建 ✅ 完成、~89 处全部 t() 化」——那是**从未存在**的东西）。单用户中文形态下暂不做；要做则先立字典再逐页迁移 |
 
-处理顺序建议：先把装饰标签色板收成一个 `utils/palette.ts`（三份 `AVATAR_COLORS` 重复定义已经存在），
-再逐页收内联样式。**不要为了"清零"而做大范围无验证的重写** —— 内联布局改动容易破版。
+处理顺序建议：装饰标签色板已收进 `utils/palette.ts`（`AVATAR_COLORS` 原先在
+Plugins / Connectors / Skills / Market / SkillMarketPage 各有一份，共 5 份重复），
+接下来逐页收内联样式。**不要为了"清零"而做大范围无验证的重写** —— 内联布局改动容易破版。
 
 ## 6. 变更流程
 

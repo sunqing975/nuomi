@@ -172,7 +172,9 @@ SSE 事件协议（当前完整）：`token` / `reasoning` / `tool_call_chunk`�
 - **设计 token**（`32fad76`）：`DESIGN.md` 描述的是**从未实现**的深色+DeepSeek 蓝+`styles.css` :root
   （实际是浅色+琥珀、全仓无 CSS 变量）→ 与 DESIGN.md 同样的病。现在 token **只在 `src/theme.ts` 定义一次**
   （TS 类型约束），启动注入成 CSS 变量，组件用 `var(--x)`；只有一个来源 → 漂移结构上不可能。
-  `DESIGN.md` 重写为描述现实 + 如实欠账（60 处裸 hex / 278 处内联样式 / 装饰色板三份重复）。
+  `DESIGN.md` 重写为描述现实 + 如实欠账（当次口径 60 处裸 hex / 278 处内联样式 / 装饰色板三份重复；
+  2026-10-16 复测与收口见 `DESIGN.md` §5：非测试裸 hex 12 处、内联 248 处，`AVATAR_COLORS`
+  实际有 5 份重复、已收进 `utils/palette.ts`）。
 - **前端测试基建 + 7 项体验软点**（`de72f9c`）：vitest+jsdom，XSS 净化 13 例（**鉴别力已验证**：
   换回旧「只正则剥 `<script>`」实现 → 9 例失败）、SSE 分帧 13 例、引用解析 5 例、片段合并 6 例。
   软点：`STATUS_TAG` 无兜底 + 顶层 ErrorBoundary、流式片段索引 key、原地改 state、每 token 都 `scrollTo`

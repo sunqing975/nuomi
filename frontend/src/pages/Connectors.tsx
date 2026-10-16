@@ -6,7 +6,9 @@ import {
 import { DeleteOutlined, EditOutlined, MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import { del, get, post, put, type ConnectorServer } from '../api';
 import EntityGrid from '../components/EntityGrid';
+import ErrorState from '../components/ErrorState';
 import PageLayout from '../components/PageLayout';
+import { pickAvatarColor } from '../utils/palette';
 
 interface EnvItem {
   key?: string;
@@ -21,7 +23,6 @@ interface McpFormValues {
   env?: EnvItem[];
 }
 
-const AVATAR_COLORS = ['#f59e0b', '#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
 const TRANSPORT_COLOR: Record<string, string> = { stdio: 'blue', sse: 'green', http: 'purple' };
 /** 传输方式的中文展示名（值仍是协议层字段，仅用户可见文案中文化） */
 const TRANSPORT_LABEL: Record<string, string> = { stdio: '本地进程', sse: 'HTTP 流', http: 'HTTP' };
@@ -29,6 +30,7 @@ const TRANSPORT_LABEL: Record<string, string> = { stdio: '本地进程', sse: 'H
 export default function McpPage() {
   const [servers, setServers] = useState<ConnectorServer[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<ConnectorServer | null>(null);
   const [saving, setSaving] = useState(false);
@@ -38,6 +40,11 @@ export default function McpPage() {
     setLoading(true);
     try {
       setServers(await get<ConnectorServer[]>('/connectors'));
+      setLoadError(null);
+    } catch (e) {
+      // 读连接器列表失败（后端启动中 / mcp 配置文件损坏）必须给重试出口：
+      // 原来只有 finally，失败后页面显示「还没有配置连接器」，看起来像配置被清空了。
+      setLoadError((e as Error).message);
     } finally {
       setLoading(false);
     }
@@ -99,7 +106,7 @@ export default function McpPage() {
 
   const renderConnector = (s: ConnectorServer) => {
     const t = s.transport || 'stdio';
-    const color = AVATAR_COLORS[(s.name.charCodeAt(0) || 0) % AVATAR_COLORS.length];
+    const color = pickAvatarColor(s.name);
     const cmd = s.command || '—';
     const args = (s.args || []).join(' ');
     const envKeys = Object.keys(s.env || {});
@@ -158,12 +165,16 @@ export default function McpPage() {
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建连接器</Button>
       }
     >
-      <EntityGrid
-        items={servers}
-        loading={loading}
-        emptyText="还没有配置连接器"
-        renderItem={renderConnector}
-      />
+      {loadError ? (
+        <ErrorState description={loadError} onRetry={load} />
+      ) : (
+        <EntityGrid
+          items={servers}
+          loading={loading}
+          emptyText="还没有配置连接器"
+          renderItem={renderConnector}
+        />
+      )}
 
       <Modal
         title={editing ? `编辑连接器：${editing.name}` : '新建连接器'}

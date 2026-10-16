@@ -60,7 +60,7 @@ function TrajectoryDrawer({ open, onClose, messages }: { open: boolean; onClose:
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {rows.map(r => (
-            <div key={r.seq} style={{ border: '1px solid var(--line-1)', borderRadius: 8, padding: '8px 10px', background: r.kind === 'tool_call' ? '#f0f7ff' : '#f6ffed' }}>
+            <div key={r.seq} style={{ border: '1px solid var(--line-1)', borderRadius: 8, padding: '8px 10px', background: r.kind === 'tool_call' ? 'var(--info-soft)' : 'var(--ok-bg)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Tag color={r.kind === 'tool_call' ? 'blue' : 'green'} style={{ margin: 0 }}>{r.seq}</Tag>
                 <span style={{ fontSize: 13, fontWeight: 500 }}>{r.kind === 'tool_call' ? '⚙ 调用' : '✓ 结果'} {r.name || ''}</span>

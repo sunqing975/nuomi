@@ -8,16 +8,17 @@ import {
 } from '@ant-design/icons';
 import { del, get, post, patch, upload, type Plugin } from '../api';
 import EntityGrid from '../components/EntityGrid';
+import ErrorState from '../components/ErrorState';
 import PageLayout from '../components/PageLayout';
+import { pickAvatarColor } from '../utils/palette';
 
 /** 插件 kind 中文化（产品不暴露英文术语） */
 const KIND_LABEL: Record<string, string> = { tool: '工具插件', model: '模型插件' };
 
-const AVATAR_COLORS = ['#f59e0b', '#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
-
 export default function PluginsPage() {
   const [plugins, setPlugins] = useState<Plugin[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [gitOpen, setGitOpen] = useState(false);
   const [gitUrl, setGitUrl] = useState('');
   const [gitLoading, setGitLoading] = useState(false);
@@ -27,6 +28,12 @@ export default function PluginsPage() {
     setLoading(true);
     try {
       setPlugins(await get<Plugin[]>('/plugins'));
+      setLoadError(null);
+    } catch (e) {
+      // 插件目录可能整个读不到（工作区权限、plugins/ 被删）：原来这里没有 catch，
+      // 异常冒泡成 unhandled rejection，页面只剩一个「还没有插件」的空网格，
+      // 用户会误以为是插件真没了而不是加载失败。
+      setLoadError((e as Error).message);
     } finally {
       setLoading(false);
     }
@@ -86,7 +93,7 @@ export default function PluginsPage() {
   };
 
   const renderPlugin = (p: Plugin) => {
-    const color = AVATAR_COLORS[(p.plugin_id.charCodeAt(0) || 0) % AVATAR_COLORS.length];
+    const color = pickAvatarColor(p.plugin_id);
     return (
       <Card
         size="small"
@@ -183,12 +190,16 @@ export default function PluginsPage() {
           autoFocus
         />
       </Modal>
-      <EntityGrid
-        items={plugins}
-        loading={loading}
-        emptyText="还没有插件，可导入或重新扫描"
-        renderItem={renderPlugin}
-      />
+      {loadError ? (
+        <ErrorState description={loadError} onRetry={load} />
+      ) : (
+        <EntityGrid
+          items={plugins}
+          loading={loading}
+          emptyText="还没有插件，可导入或重新扫描"
+          renderItem={renderPlugin}
+        />
+      )}
     </PageLayout>
   );
 }

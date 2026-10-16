@@ -43,7 +43,7 @@ function SkillPicker({
       onClick={onClick}
       style={{
         display: 'flex', gap: 8, alignItems: 'flex-start', padding: '7px 10px', borderRadius: 8,
-        cursor: 'pointer', background: active ? '#e6f4ff' : 'transparent', marginBottom: 2,
+        cursor: 'pointer', background: active ? 'var(--info-soft)' : 'transparent', marginBottom: 2,
       }}
     >
       <span style={{ color: 'var(--link)', fontSize: 13, marginTop: 1 }}>{active ? '☑' : '☐'}</span>
@@ -142,7 +142,7 @@ function KnowledgePicker({ bases, selected, onToggle, disabled }: { bases: Knowl
               onClick={() => onToggle(b.id)}
               style={{
                 display: 'flex', gap: 8, alignItems: 'flex-start', padding: '8px 10px', borderRadius: 8,
-                cursor: 'pointer', background: active ? '#fff0f6' : 'transparent', marginBottom: 2,
+                cursor: 'pointer', background: active ? 'var(--pink-soft)' : 'transparent', marginBottom: 2,
               }}
             >
               <span style={{ color: '#eb2f96', fontSize: 13, marginTop: 1 }}>{active ? '☑' : '☐'}</span>
