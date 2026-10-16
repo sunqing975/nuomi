@@ -7,8 +7,13 @@
   4) 同一个 request_id 重复提交 → 409（防卡片复活导致重复放行写工具）
 
 用法: python3 scripts/e2e_hitl_recovery.py
+
+默认临时建一个全新专家跑、跑完删掉（含工作区），理由同 e2e_hitl_test.py：真机专家
+带记忆时可能先反问你「这单是不是重复报工」，压根不调用写工具，护栏没机会响。
+要针对已有专家跑：NUOMI_E2E_AGENT_ID=<agent_id> python3 scripts/e2e_hitl_recovery.py
 """
 import json
+import os
 import sys
 import time
 import urllib.error
@@ -16,7 +21,7 @@ import urllib.request
 import uuid
 
 BASE = "http://127.0.0.1:8000"
-AGENT_ID = "6a3b128b89e9"
+AGENT_ID = os.environ.get("NUOMI_E2E_AGENT_ID", "")
 
 
 def get_token():
@@ -40,6 +45,23 @@ def post(url, payload, token, timeout=240):
 
 def get(url, token, timeout=30):
     return request("GET", url, None, token, timeout)
+
+
+def create_probe_agent(token):
+    payload = {
+        "name": f"e2e-hitl-recovery-{uuid.uuid4().hex[:6]}",
+        "description": "HITL 恢复验证用临时专家（脚本结束即删）",
+    }
+    with post(f"{BASE}/api/agents", payload, token, timeout=30) as r:
+        return json.load(r)["agent_id"]
+
+
+def delete_probe_agent(agent_id, token):
+    try:
+        with request("DELETE", f"{BASE}/api/agents/{agent_id}", None, token, timeout=30):
+            print(f"[cleanup] 已删除临时专家 {agent_id}")
+    except Exception as e:  # 清理失败不影响判定，但要让人看得见
+        print(f"[cleanup] 删除临时专家失败（请手工清理 {agent_id}）: {e}")
 
 
 def read_sse(resp, stop_at_approval=False):
@@ -74,19 +96,17 @@ def read_sse(resp, stop_at_approval=False):
     return types, approval, "done" in types
 
 
-def pending(token, thread_id):
+def pending(token, agent_id, thread_id):
     resp = get(
-        f"{BASE}/api/agents/{AGENT_ID}/approvals?status=pending&thread_id={thread_id}&limit=5",
+        f"{BASE}/api/agents/{agent_id}/approvals?status=pending&thread_id={thread_id}&limit=5",
         token,
     )
     with resp:
         return json.load(resp).get("approvals", [])
 
 
-def main():
-    token = get_token()
+def run_scenarios(token, agent_id):
     thread = uuid.uuid4().hex
-    print("[token] ok")
 
     # ---- 1) 触发审批后立刻断开 ----
     print("\n=== 场景1: 触发审批后断开连接（模拟刷新）===")
@@ -96,7 +116,7 @@ def main():
         "connectors": ["mes"],
     }
     try:
-        resp = post(f"{BASE}/api/agents/{AGENT_ID}/chat", payload, token)
+        resp = post(f"{BASE}/api/agents/{agent_id}/chat", payload, token)
     except Exception as e:
         print(f"[FAIL] chat 请求失败: {e}")
         return 1
@@ -110,7 +130,7 @@ def main():
 
     # ---- 2) 刷新后从台账找回待审 ----
     print("\n=== 场景2: 刷新后从台账找回待审卡片 ===")
-    rows = pending(token, thread)
+    rows = pending(token, agent_id, thread)
     print(f"[ledger] pending={len(rows)}")
     if not rows:
         print("[FAIL] 刷新后台账里找不到这条待审（恢复路径断）")
@@ -135,7 +155,7 @@ def main():
     # ---- 3) 用找回的 request_id 提交 approve ----
     print("\n=== 场景3: 从台账恢复后提交批准 ===")
     resp = post(
-        f"{BASE}/api/agents/{AGENT_ID}/chat/approval",
+        f"{BASE}/api/agents/{agent_id}/chat/approval",
         {
             "thread_id": thread,
             "request_id": request_id,
@@ -148,7 +168,7 @@ def main():
     if not done3:
         print(f"[FAIL] 批准后未见 done: {types3}")
         return 1
-    rows = pending(token, thread)
+    rows = pending(token, agent_id, thread)
     print(f"[ledger] pending after approve={len(rows)}")
     if rows:
         print("[FAIL] 批准后台账仍是 pending")
@@ -159,7 +179,7 @@ def main():
     print("\n=== 场景4: 重复提交同一审批 → 409 ===")
     try:
         resp = post(
-            f"{BASE}/api/agents/{AGENT_ID}/chat/approval",
+            f"{BASE}/api/agents/{agent_id}/chat/approval",
             {"thread_id": thread, "request_id": request_id, "decision": "approve"},
             token,
         )
@@ -175,6 +195,20 @@ def main():
     with resp:
         print(f"[FAIL] 重复提交竟未被拒绝（{resp.status}）")
     return 1
+
+
+def main():
+    token = get_token()
+    print("[token] ok")
+    agent_id = AGENT_ID or create_probe_agent(token)
+    probe_created = not AGENT_ID
+    if probe_created:
+        print(f"[setup] 临时专家 {agent_id}（跑完删除）")
+    try:
+        return run_scenarios(token, agent_id)
+    finally:
+        if probe_created:
+            delete_probe_agent(agent_id, token)
 
 
 if __name__ == "__main__":
