@@ -51,6 +51,47 @@ def test_stream_error_frame_keeps_thread_id(client: TestClient, monkeypatch) -> 
     assert '"thread_id": "boom-2"' in r.text
 
 
+def test_friendly_stream_error_maps_recursion_limit() -> None:
+    """撞 LangGraph 递归上限 → 中文可执行提示；其它异常原样透出（便于排查）。"""
+    from app.infra.harness.chat import friendly_stream_error
+
+    class GraphRecursionError(RuntimeError):
+        """模拟 langgraph.errors.GraphRecursionError（按类名识别，不引入依赖）。"""
+
+    raw = "Recursion limit of 60 reached without hitting a stop condition."
+    mapped = friendly_stream_error(GraphRecursionError(raw))
+    assert "步数达到上限" in mapped
+    assert "Recursion limit" not in mapped
+
+    # 类名不同但消息特征在（例如被包装过）同样映射
+    assert "步数达到上限" in friendly_stream_error(RuntimeError(raw))
+    # 未知异常不许被吞成通用文案
+    assert friendly_stream_error(ValueError("别的问题")) == "别的问题"
+    assert friendly_stream_error(ValueError()) == "ValueError"
+
+
+def test_recursion_limit_error_frame_is_chinese(client: TestClient, monkeypatch) -> None:
+    """端到端：撞递归上限时客户端收到的是中文提示，而不是英文异常原文。"""
+    import app.transport.chat_api as api_mod
+
+    class GraphRecursionError(RuntimeError):
+        pass
+
+    async def _boom(*_args, **_kwargs):
+        raise GraphRecursionError("Recursion limit of 60 reached without hitting a stop condition.")
+        yield  # pragma: no cover  (让它成为 async generator)
+
+    monkeypatch.setattr(api_mod, "stream_octop_sse", _boom)
+    aid = _first_agent(client)
+    r = client.post(f"/api/agents/{aid}/chat", json={"messages": "hi", "thread_id": "boom-3"})
+
+    assert r.status_code == 200
+    assert '"type": "error"' in r.text
+    assert "步数达到上限" in r.text
+    assert "Recursion limit" not in r.text
+    assert '"thread_id": "boom-3"' in r.text
+
+
 def test_slow_endpoint_does_not_block_health(client: TestClient, monkeypatch) -> None:
     """慢操作（git 导入）在别的线程跑：期间 /api/health 必须立即返回。
 

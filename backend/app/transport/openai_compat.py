@@ -28,7 +28,7 @@ from app.domain.chat.service import (
     thread_repo,
     turn_to_message_inputs,
 )
-from app.infra.harness.chat import stream_chat, stream_openai_sse
+from app.infra.harness.chat import friendly_stream_error, stream_chat, stream_openai_sse
 from app.transport.runtime import ensure_agent_runtime
 from app.transport.streaming import SSE_HEADERS, stream_response
 
@@ -188,7 +188,7 @@ async def chat_completions(body: OpenAIChatBody, request: Request) -> StreamingR
         except Exception as exc:
             # 中途失败必须给壳一个明确的终止信号：壳只解析 SSE，流被截断会让它永久等待
             logger.exception("AI 数字人对话流异常（agent=%s）", agent["agent_id"])
-            message = str(exc) or exc.__class__.__name__
+            message = friendly_stream_error(exc)
             if body.stream:
                 yield f"data: {json.dumps({'error': {'message': message}}, ensure_ascii=False)}\n\n"
                 yield "data: [DONE]\n\n"

@@ -43,6 +43,7 @@ from app.domain.skills.service import skill_service
 from app.infra.avatar_events import avatar_events
 from app.infra.harness.chat import (
     format_sse,
+    friendly_stream_error,
     resume_chat,
     stream_chat,
     stream_octop_sse,
@@ -489,7 +490,7 @@ async def chat(agent_id: str, body: ChatBody, request: Request) -> StreamingResp
             yield format_sse(
                 {
                     "type": "error",
-                    "message": str(exc) or exc.__class__.__name__,
+                    "message": friendly_stream_error(exc),
                     "thread_id": body.thread_id,
                 }
             )
@@ -694,7 +695,7 @@ async def chat_approval(
             yield format_sse(
                 {
                     "type": "error",
-                    "message": str(exc) or exc.__class__.__name__,
+                    "message": friendly_stream_error(exc),
                     "thread_id": body.thread_id,
                 }
             )

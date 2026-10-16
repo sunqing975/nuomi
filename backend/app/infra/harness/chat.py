@@ -42,6 +42,24 @@ _USAGE_KEYS = (
 )
 
 
+def friendly_stream_error(exc: BaseException) -> str:
+    """把流中途的底层异常翻成用户能看懂的一句话（前端直接展示 message）。
+
+    实测（2026-10-16，问「昨天 A 线生产情况怎么样？」）：MES 演示库最近几天是
+    全 0 行，模型拿不到有效数字就一路换日期/换工具试，60 步撞上 LangGraph 的
+    recursion_limit，前端收到的是一行英文
+    ``Recursion limit of 60 reached without hitting a stop condition.``
+    ——数字人产品不该把这种话甩给用户，所以这里做一个最小映射（不改写其它异常，
+    未知异常仍然原样透出，便于排查）。
+    """
+    if exc.__class__.__name__ == "GraphRecursionError" or "Recursion limit" in str(exc):
+        return (
+            "这轮工具调用步数达到上限（60 步），任务没做完。"
+            "请把要求拆小一点，或直接告诉我具体的日期/产线（例如「10 月 6 日 A 线」）。"
+        )
+    return str(exc) or exc.__class__.__name__
+
+
 def _flush_pending_tools(pending: dict) -> list[dict]:
     """把当前累积的 tool_call 分块固化成完整调用，并清空累加器。
 
