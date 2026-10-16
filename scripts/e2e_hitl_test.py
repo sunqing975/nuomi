@@ -4,24 +4,55 @@
   1) 触发对话让 agent 调用 mes_submit_work_report → 期待 approval_requested 帧
   2) 走审批 API approve 续跑 → 期待 done + 写库落一条记录
   3) 走审批 API reject 续跑 → 期待 done + 写库不落记录
-  4) 只读路径回归：问昨日产量 → 正常 done、无审批帧
+  4) 只读路径回归：问最近报工记录 → 正常 done、无审批帧
 
 用法: python3 scripts/e2e_hitl_test.py
+
+默认会临时创建一个全新专家跑完整流程、结束时删掉（含工作区）：
+真机专家带记忆时场景1会假失败——实测 2026-10-16 真机专家的 MEMORY.md 里学到
+「重复报工先问再做」后，它直接拒绝调用写工具，护栏根本没机会响。全新工作区没有
+这条记忆，护栏是唯一变量；顺带不污染真机专家的记忆和工作区。
+要针对已有专家跑：NUOMI_E2E_AGENT_ID=<agent_id> python3 scripts/e2e_hitl_test.py
 """
 import json
+import os
 import sys
 import time
 import urllib.request
 import uuid
 
 BASE = "http://127.0.0.1:8000"
-AGENT_ID = "6a3b128b89e9"
+AGENT_ID = os.environ.get("NUOMI_E2E_AGENT_ID", "")
 OP_DB = "/Users/superman/projects/code/nuomi/connectors/data/mes_operations.db"
 
 
 def get_token():
     with urllib.request.urlopen(f"{BASE}/api/session-token", timeout=10) as r:
         return json.load(r)["token"]
+
+
+def create_probe_agent(token):
+    payload = {
+        "name": f"e2e-hitl-probe-{uuid.uuid4().hex[:6]}",
+        "description": "HITL 端到端测试用临时专家（脚本结束即删）",
+    }
+    with post(f"{BASE}/api/agents", payload, token, timeout=30) as r:
+        row = json.load(r)
+    return row["agent_id"]
+
+
+def delete_probe_agent(agent_id, token):
+    req = urllib.request.Request(
+        f"{BASE}/api/agents/{agent_id}",
+        headers={"X-Nuomi-Token": token},
+        method="DELETE",
+    )
+    try:
+        urllib.request.urlopen(req, timeout=30).close()
+        print(f"[cleanup] 已删除临时专家 {agent_id}")
+    except Exception as e:  # 清理失败不影响判定，但要让人看得见
+        print(f"[cleanup] 删除临时专家失败（请手工清理 {agent_id}）: {e}")
+
 
 
 def post(url, payload, token, timeout=240):
@@ -74,10 +105,7 @@ def count_work_reports(db=OP_DB):
         return f"ERR {e}"
 
 
-def main():
-    token = get_token()
-    print(f"[token] ok")
-
+def run_scenarios(token, agent_id):
     # ---- 1) 触发写工具 → approval_requested ----
     thread = uuid.uuid4().hex
     print("\n=== 场景1: 报工触发 HITL ===")
@@ -87,7 +115,7 @@ def main():
         "connectors": ["mes"],
     }
     try:
-        resp = post(f"{BASE}/api/agents/{AGENT_ID}/chat", payload, token)
+        resp = post(f"{BASE}/api/agents/{agent_id}/chat", payload, token)
     except Exception as e:
         print(f"[FAIL] chat 请求失败: {e}")
         return 1
@@ -111,7 +139,7 @@ def main():
     before = count_work_reports()
     print(f"[db] work_reports before={before}")
     resp = post(
-        f"{BASE}/api/agents/{AGENT_ID}/chat/approval",
+        f"{BASE}/api/agents/{agent_id}/chat/approval",
         {"thread_id": thread, "decision": "approve"},
         token,
     )
@@ -135,7 +163,7 @@ def main():
         "thread_id": thread2,
         "connectors": ["mes"],
     }
-    resp = post(f"{BASE}/api/agents/{AGENT_ID}/chat", payload2, token)
+    resp = post(f"{BASE}/api/agents/{agent_id}/chat", payload2, token)
     types3, approval3, calls3 = read_sse(resp)
     print(f"[events] {types3}")
     if approval3 is None:
@@ -143,7 +171,7 @@ def main():
         return 1
     before3 = count_work_reports()
     resp = post(
-        f"{BASE}/api/agents/{AGENT_ID}/chat/approval",
+        f"{BASE}/api/agents/{agent_id}/chat/approval",
         {"thread_id": thread2, "decision": "reject", "message": "数量与排产不符，驳回"},
         token,
     )
@@ -162,12 +190,16 @@ def main():
     # ---- 4) 只读路径回归 ----
     print("\n=== 场景4: 只读路径回归 ===")
     thread3 = uuid.uuid4().hex
+    # 问「最近的报工记录」（list_work_reports，演示库有数据）而不是「昨天 A 线生产
+    # 情况」：后者在演示库里最近几天全是 0 行，模型会一路换日期/换工具试到 60 步
+    # 递归上限（见 9f64bda 的 friendly_stream_error）。这里要验的是「只读问答不触发
+    # 审批」，不该顺带考演示数据的完备性。
     payload3 = {
-        "messages": "昨天 A 线生产情况怎么样？",
+        "messages": "帮我看看最近的报工记录都有哪些？",
         "thread_id": thread3,
         "connectors": ["mes"],
     }
-    resp = post(f"{BASE}/api/agents/{AGENT_ID}/chat", payload3, token)
+    resp = post(f"{BASE}/api/agents/{agent_id}/chat", payload3, token)
     types5, approval5, _ = read_sse(resp)
     print(f"[events] {types5}")
     if "done" not in types5:
@@ -180,6 +212,20 @@ def main():
 
     print("\n===== 端到端 HITL 验证全部通过 =====")
     return 0
+
+
+def main():
+    token = get_token()
+    print("[token] ok")
+    agent_id = AGENT_ID or create_probe_agent(token)
+    probe_created = not AGENT_ID
+    if probe_created:
+        print(f"[setup] 临时专家 {agent_id}（跑完删除）")
+    try:
+        return run_scenarios(token, agent_id)
+    finally:
+        if probe_created:
+            delete_probe_agent(agent_id, token)
 
 
 if __name__ == "__main__":
