@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import time
 import uuid
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from app.config import settings
@@ -336,22 +337,35 @@ def turn_to_message_inputs(turn: dict) -> list[dict]:
     answer = str(turn.get("answer") or "").strip()
     reasoning = str(turn.get("reasoning") or "").strip()
     tool_calls = _normalize_tool_calls(turn.get("tool_calls"))
-    if answer or reasoning or tool_calls:
+    # 模型实际产出的片段顺序（stream_chat 边转发边记的）。有工具参与时才写：
+    # 历史回显必须按它还原「工具→结果→正文」的穿插，否则工具卡片会被重建到正文
+    # 下面，和用户刚看到的流式顺序相反（用户反馈的 bug）。
+    parts = [p for p in (turn.get("parts") or []) if isinstance(p, dict)]
+    has_tools = any(p.get("type") in ("tool_call", "tool_result") for p in parts)
+    if answer or reasoning or tool_calls or turn.get("interrupted"):
         kwargs: dict = {}
         if reasoning:
             kwargs["reasoning_content"] = reasoning
+        if turn.get("interrupted"):
+            # 断连中断的半截回复：带上标记，历史里能看出「这条没说完」
+            kwargs["interrupted"] = True
+        if has_tools:
+            # 这一轮的工具调用与结果已经按真实顺序记在 parts 里，不再单独写 ToolMessage
+            # 行（否则同一份工具结果会被渲染两次）
+            kwargs["display_segments"] = parts
         _push(AIMessage(content=answer, additional_kwargs=kwargs, tool_calls=tool_calls))
 
-    for tr in turn.get("tool_results") or []:
-        name = tr.get("name") or ""
-        content = tr.get("content") or ""
-        if not content:
-            continue
-        try:
-            _push(ToolMessage(content=content, name=name, tool_call_id=""))
-        except TypeError:
-            # 老版本 langchain 的 ToolMessage 不收 tool_call_id
-            _push(ToolMessage(content=content, name=name))
+    if not has_tools:
+        for tr in turn.get("tool_results") or []:
+            name = tr.get("name") or ""
+            content = tr.get("content") or ""
+            if not content:
+                continue
+            try:
+                _push(ToolMessage(content=content, name=name, tool_call_id=""))
+            except TypeError:
+                # 老版本 langchain 的 ToolMessage 不收 tool_call_id
+                _push(ToolMessage(content=content, name=name))
     return inputs
 
 
@@ -377,6 +391,68 @@ def messages_to_inputs(messages: list) -> list[dict]:
             }
         )
     return inputs
+
+
+def _text_of(message: object) -> str:
+    """BaseMessage.content → 纯文本（与 transport.chat_api._message_text 同口径）。"""
+    content = getattr(message, "content", None)
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                parts.append(str(block.get("text", "")))
+            elif isinstance(block, str):
+                parts.append(block)
+        return "".join(parts)
+    return ""
+
+
+async def write_turn_projection(
+    *,
+    agent_id: str,
+    thread_id: str,
+    turn: dict,
+    insert_title: str | None = None,
+    load_history: Callable[[], Awaitable[list]] | None = None,
+) -> None:
+    """把一轮对话写进 thread_messages 投影（M4）。正常完成与「断连中断」共用一个口径。
+
+    - 会话不存在先登记（``insert_title=None`` 时用首条用户消息自动起名）；
+    - 投影已 ready：照常增量 append 本轮消息；
+    - 投影还 pending：**只有** ``turn["interrupted"]`` 时才补写。断连（切页刷新/关窗）
+      或本轮抛错时后端原先什么都不写 —— 用户看到「会话还在，刚才那一问一答全没了」。
+      但 pending 状态下直接 append 会被下一次全量 backfill 覆盖，所以先按历史端点同一
+      口径用 checkpointer 回填（``load_history``），再把半截补上；回填里已带这条用户
+      消息时只补助手那半，避免重复。
+    """
+    if thread_repo.get(thread_id) is None:
+        thread_repo.insert(
+            thread_id,
+            agent_id,
+            title=derive_thread_title(turn.get("user")) if insert_title is None else insert_title,
+        )
+    else:
+        thread_repo.ensure_title(thread_id, from_text=turn.get("user"))
+
+    if thread_message_repo.projection_status(thread_id) != PROJ_READY:
+        if not turn.get("interrupted") or load_history is None:
+            # 正常轮次：等首次读历史时全量 backfill（pending 期间 append 会被覆盖）
+            return
+        history = await load_history()
+        thread_message_repo.replace_all(thread_id, messages_to_inputs(history))
+        thread_message_repo.mark_projection(thread_id, PROJ_READY)
+        user_text = _as_user_text(turn.get("user")).strip()
+        already_has_user = bool(user_text) and any(
+            getattr(m, "type", "") == "human" and _text_of(m).strip() == user_text for m in history
+        )
+        if already_has_user:
+            turn = {**turn, "user": None}
+
+    inputs = turn_to_message_inputs(turn)
+    if inputs:
+        thread_message_repo.append(thread_id, inputs)
 
 
 def _migrate_state_threads() -> None:

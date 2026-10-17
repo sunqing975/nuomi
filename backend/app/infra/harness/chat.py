@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import uuid
@@ -60,6 +61,28 @@ def friendly_stream_error(exc: BaseException) -> str:
     return str(exc) or exc.__class__.__name__
 
 
+def _record_part(state: dict, part: dict) -> None:
+    """按到达顺序记录本轮片段（text/reasoning/tool_call/tool_result）。
+
+    历史回显原先只能用 turn 的汇总字段重建（正文 + 全部工具调用），于是工具卡片
+    一律掉到正文下面，和用户刚看到的流式顺序对不上。这里把「模型实际产出的顺序」
+    原样记下来，随 turn 一起交给投影层（additional_kwargs.display_segments）。
+
+    合并规则与前端 ``appendStreamSegment`` 一致：相邻同类文本/思考才合并，工具
+    调用与结果各自独立成段。
+    """
+    parts: list[dict] = state.setdefault("parts", [])
+    last = parts[-1] if parts else None
+    if (
+        last is not None
+        and part["type"] in ("text", "reasoning")
+        and last.get("type") == part["type"]
+    ):
+        last["content"] = (last.get("content") or "") + (part.get("content") or "")
+        return
+    parts.append(part)
+
+
 def _flush_pending_tools(pending: dict) -> list[dict]:
     """把当前累积的 tool_call 分块固化成完整调用，并清空累加器。
 
@@ -82,6 +105,53 @@ def _flush_pending_tools(pending: dict) -> list[dict]:
     return flushed
 
 
+def _interrupted_turn(user: str | None, state: dict) -> dict:
+    """把「已生成的一半」组织成 turn dict（与正常完成同构，标记 interrupted）。
+
+    后端原先只在整轮跑完时才把 turn 交给上层投影；客户端断连（切页刷新/关窗口）
+    或本轮抛错时什么都不写 —— 用户看到的后果是「会话还在，但刚才那一问一答全没了」。
+    """
+    state["turn_tool_calls"].extend(_flush_pending_tools(state["pending_tools"]))
+    return {
+        "user": user,
+        "answer": "".join(state["text_parts"]).strip(),
+        "reasoning": "".join(state["reasoning_parts"]).strip(),
+        "tool_calls": state["turn_tool_calls"],
+        "tool_results": state["tool_results"],
+        "parts": state.get("parts") or [],
+        "interrupted": True,
+    }
+
+
+def _report_archive_failure(task: asyncio.Task) -> None:
+    """后台落库任务的异常只记日志（不能让它静默消失）。"""
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:
+        logger.error("中断轮次投影写入失败（不影响连接清理）", exc_info=exc)
+
+
+async def _archive_interrupted(on_turn_complete, user: str | None, state: dict) -> None:
+    """断连/异常收尾：把半截轮次交给上层投影（失败只记日志，不阻断连接清理）。
+
+    关键：断连时本协程所在的请求任务**已经处于取消状态**（Starlette/anyio 会在
+    每个 await 处重新抛 CancelledError），直接 ``await on_turn_complete(...)`` 会被
+    当场打断 —— 半截还是丢了。所以落库放进独立任务再 shield 等待：正常情况等它
+    写完；被取消时任务照样跑完（DB 写入是毫秒级，用户下一次读历史就能看到）。
+    """
+    if on_turn_complete is None:
+        return
+    turn = _interrupted_turn(user, state)
+    task = asyncio.get_running_loop().create_task(on_turn_complete(turn))
+    task.add_done_callback(_report_archive_failure)
+    try:
+        await asyncio.shield(task)
+    except asyncio.CancelledError:
+        # 断连取消：任务已独立启动，不随本次取消丢失
+        logger.info("断连收尾：半截轮次投影转入后台任务")
+
+
 async def _translate_events(events, state: dict) -> AsyncGenerator[dict, None]:
     """把 harness 协议事件翻译成 nuomi 内部事件（token/tool/usage/approval）。
 
@@ -94,9 +164,11 @@ async def _translate_events(events, state: dict) -> AsyncGenerator[dict, None]:
 
         if kind == AgentEventType.TOKEN.value and event.get("content"):
             state["text_parts"].append(event["content"])
+            _record_part(state, {"type": "text", "content": event["content"]})
             yield {"type": "token", "content": event["content"]}
         elif kind == AgentEventType.REASONING.value and event.get("content"):
             state["reasoning_parts"].append(event["content"])
+            _record_part(state, {"type": "reasoning", "content": event["content"]})
             yield {"type": "reasoning", "content": event["content"]}
         elif kind == AgentEventType.TOOL_CALL_CHUNK.value:
             # 聚合工具调用分块（name 首个 chunk 携带，args 分块累积）
@@ -112,6 +184,15 @@ async def _translate_events(events, state: dict) -> AsyncGenerator[dict, None]:
             # 工具结果到达 = 本轮工具调用已提交，先 flush 完整 tool_call 事件
             for call in _flush_pending_tools(state["pending_tools"]):
                 state["turn_tool_calls"].append(call)
+                _record_part(
+                    state,
+                    {
+                        "type": "tool_call",
+                        "name": call["name"],
+                        "args": call["args"],
+                        "id": call["id"],
+                    },
+                )
                 yield {
                     "type": "tool_call",
                     "name": call["name"],
@@ -130,6 +211,14 @@ async def _translate_events(events, state: dict) -> AsyncGenerator[dict, None]:
                             "name": getattr(m, "name", None) or "",
                             "content": str(content)[:500],
                         }
+                    )
+                    _record_part(
+                        state,
+                        {
+                            "type": "tool_result",
+                            "name": getattr(m, "name", None) or "",
+                            "content": str(content)[:500],
+                        },
                     )
                     yield {
                         "type": "tool_result",
@@ -245,18 +334,27 @@ async def stream_chat(
         "thread_id": thread_id,
         "text_parts": [],
         "reasoning_parts": [],
+        "parts": [],
         "seen_tool_results": set(),
         "pending_tools": {},
         "turn_tool_calls": [],
         "tool_results": [],
     }
     paused = False
-    async for ev in _translate_events(agent.stream(request), state):
-        if ev.get("type") == "approval_requested":
-            paused = True
+    finished = False
+    try:
+        async for ev in _translate_events(agent.stream(request), state):
+            if ev.get("type") == "approval_requested":
+                paused = True
+                yield ev
+                break
             yield ev
-            break
-        yield ev
+        finished = not paused
+    finally:
+        # 没跑完就退出（客户端断连 / 本轮异常）：先把已生成的部分落库，
+        # 否则这一问一答会随着连接一起消失（后端只在整轮完成时投影）。
+        if not finished:
+            await _archive_interrupted(on_turn_complete, messages, state)
     if paused:
         # HITL 暂停：不投影、不发 done、不广播完成（对话在等人工审批，resume_chat 续跑）
         return
@@ -282,6 +380,8 @@ async def stream_chat(
                     # 本轮全部工具调用（flush 时归档，非从 pending_tools 现取）
                     "tool_calls": state["turn_tool_calls"],
                     "tool_results": state["tool_results"],
+                    # 模型实际产出的片段顺序（历史回显据此还原工具与正文的穿插）
+                    "parts": state["parts"],
                 }
             )
         except Exception:
@@ -327,18 +427,26 @@ async def resume_chat(
         "thread_id": thread_id,
         "text_parts": [],
         "reasoning_parts": [],
+        "parts": [],
         "seen_tool_results": set(),
         "pending_tools": {},
         "turn_tool_calls": [],
         "tool_results": [],
     }
     paused = False
-    async for ev in _translate_events(agent.resume_hitl(thread_id, decisions), state):
-        if ev.get("type") == "approval_requested":
-            paused = True
+    finished = False
+    try:
+        async for ev in _translate_events(agent.resume_hitl(thread_id, decisions), state):
+            if ev.get("type") == "approval_requested":
+                paused = True
+                yield ev
+                break
             yield ev
-            break
-        yield ev
+        finished = not paused
+    finally:
+        # 同 stream_chat：续跑中途断连也要把已生成的部分落库
+        if not finished:
+            await _archive_interrupted(on_turn_complete, None, state)
     if paused:
         return
 
@@ -358,6 +466,8 @@ async def resume_chat(
                     "reasoning": "".join(state["reasoning_parts"]).strip(),
                     "tool_calls": state["turn_tool_calls"],
                     "tool_results": state["tool_results"],
+                    # 模型实际产出的片段顺序（历史回显据此还原工具与正文的穿插）
+                    "parts": state["parts"],
                 }
             )
         except Exception:

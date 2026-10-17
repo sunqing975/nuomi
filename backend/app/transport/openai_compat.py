@@ -21,13 +21,7 @@ from pydantic import BaseModel
 from app.domain.agents.seed import default_system_prompt
 from app.domain.agents.service import agent_service
 from app.domain.approvals.service import record_from_event
-from app.domain.chat.service import (
-    PROJ_READY,
-    derive_thread_title,
-    thread_message_repo,
-    thread_repo,
-    turn_to_message_inputs,
-)
+from app.domain.chat.service import write_turn_projection
 from app.infra.harness.chat import friendly_stream_error, stream_chat, stream_openai_sse
 from app.transport.runtime import ensure_agent_runtime
 from app.transport.streaming import SSE_HEADERS, stream_response
@@ -119,17 +113,14 @@ async def chat_completions(body: OpenAIChatBody, request: Request) -> StreamingR
     async def gen() -> AsyncIterator[str]:
         async def _persist_turn(turn: dict) -> None:
             """AI 数字人壳对话（thread=desktop）同样写消息投影（M4；失败不影响对话）。"""
-            if thread_repo.get("desktop") is None:
-                thread_repo.insert(
-                    "desktop", agent["agent_id"], title=derive_thread_title(turn.get("user"))
-                )
-            else:
-                thread_repo.ensure_title("desktop", from_text=turn.get("user"))
-            if thread_message_repo.projection_status("desktop") != PROJ_READY:
-                return
-            inputs = turn_to_message_inputs(turn)
-            if inputs:
-                thread_message_repo.append("desktop", inputs)
+            await write_turn_projection(
+                agent_id=agent["agent_id"],
+                thread_id="desktop",
+                turn=turn,
+                load_history=lambda: ensure_agent_runtime(agent).aget_history(
+                    "desktop", limit=100_000
+                ),
+            )
 
         events = _record_approvals(
             stream_chat(
@@ -155,11 +146,15 @@ async def chat_completions(body: OpenAIChatBody, request: Request) -> StreamingR
                     model=agent["name"],
                     include_usage=include_usage,
                 )
-                async with aclosing(frames) as stream:
-                    async for frame in stream:
-                        if await request.is_disconnected():
-                            break
-                        yield frame
+                try:
+                    async with aclosing(frames) as stream:
+                        async for frame in stream:
+                            if await request.is_disconnected():
+                                break
+                            yield frame
+                finally:
+                    # 壳（AI 数字人）断连：显式关生产者，半截轮次照样落库
+                    await events.aclose()
                 return
             # 非流式：攒完整回答后一次性返回
             parts: list[str] = []

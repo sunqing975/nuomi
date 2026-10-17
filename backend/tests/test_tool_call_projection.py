@@ -18,6 +18,7 @@ import pytest
 from octop_harness.protocols.langgraph import AgentEventType
 
 from app.domain.chat.service import _normalize_tool_calls, turn_to_message_inputs
+from app.transport.chat_api import _segments_from_messages, _wire_to_messages
 
 # ---------- 环节 2：turn → 投影输入 ----------
 
@@ -170,11 +171,63 @@ async def test_stream_chat_keeps_pending_calls_at_stream_end(monkeypatch) -> Non
 
 @pytest.mark.anyio
 async def test_turn_projects_end_to_end_without_validation_error(monkeypatch) -> None:
-    """端到端：stream_chat 的 turn 直接喂给 turn_to_message_inputs 不能抛错且带上工具调用。"""
+    """端到端：stream_chat 的 turn 直接喂给 turn_to_message_inputs 不能抛错且带上工具调用。
+
+    有工具参与的一轮，工具调用与结果按真实顺序记在 display_segments 里，不再单独写
+    ToolMessage 行（否则历史回显会把同一份结果渲染两次，且顺序被重建错）。
+    """
     turn = await _run_turn(monkeypatch, _tool_events())
     turn.pop("_frames")
     inputs = turn_to_message_inputs(turn)
     wire = json.loads(next(i for i in inputs if i["role"] == "ai")["message_json"])
     assert wire["data"]["tool_calls"][0]["name"] == "do_action"
     assert wire["data"]["tool_calls"][0]["args"] == {"action": "bow"}
-    assert any(i["role"] == "tool" for i in inputs)
+    assert not any(i["role"] == "tool" for i in inputs)
+    assert wire["data"]["additional_kwargs"]["display_segments"] == [
+        {"type": "text", "content": "好"},
+        {"type": "tool_call", "name": "do_action", "args": '{"action": "bow"}', "id": "call_abc"},
+        {"type": "tool_result", "name": "do_action", "content": "ok"},
+    ]
+
+
+@pytest.mark.anyio
+async def test_history_keeps_model_order_of_tools_and_text(monkeypatch) -> None:
+    """历史回显必须与流式一致：工具（含结果）在正文之前，而不是被压到正文下面。
+
+    回归用户反馈：实时看到「工具→结果→正文」，刷新/切会话看历史却变成「正文→工具」。
+    """
+    events = [
+        {"type": AgentEventType.REASONING.value, "content": "先查时间"},
+        {
+            "type": AgentEventType.TOOL_CALL_CHUNK.value,
+            "index": 0,
+            "id": "call_t",
+            "name": "current_time",
+            "args": "{}",
+        },
+        {
+            "type": AgentEventType.TOOL_RESULT.value,
+            "messages": [type("M", (), {"name": "current_time", "content": "2026-10-17 11:46"})()],
+        },
+        {"type": AgentEventType.TOKEN.value, "content": "现在"},
+        {"type": AgentEventType.TOKEN.value, "content": "是上午。"},
+    ]
+    turn = await _run_turn(monkeypatch, events)
+    turn.pop("_frames")
+    # 流式顺序（前端就是照这个顺序画的）
+    assert [p["type"] for p in turn["parts"]] == [
+        "reasoning",
+        "tool_call",
+        "tool_result",
+        "text",
+    ]
+    inputs = turn_to_message_inputs(turn)
+    segments = _segments_from_messages(_wire_to_messages([i["message_json"] for i in inputs]))
+    assert [s["type"] for s in segments] == [
+        "user",
+        "reasoning",
+        "tool_call",
+        "tool_result",
+        "text",
+    ]
+    assert segments[-1]["content"] == "现在是上午。"

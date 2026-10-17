@@ -31,11 +31,10 @@ from app.domain.approvals.service import STATUS_PENDING, approval_ledger, record
 from app.domain.chat.service import (
     PROJ_READY,
     chat_sessions,
-    derive_thread_title,
     messages_to_inputs,
     thread_message_repo,
     thread_repo,
-    turn_to_message_inputs,
+    write_turn_projection,
 )
 from app.domain.plugins.service import plugin_service
 from app.domain.skillpackages.service import skill_package_service
@@ -311,15 +310,46 @@ def _segments_from_messages(msgs: list) -> list[dict]:
             if text:
                 out.append({"type": "user", "content": text})
         elif mtype == "ai":
+            kwargs = getattr(m, "additional_kwargs", {}) or {}
+            interrupted = bool(kwargs.get("interrupted"))
+            # 投影快照里带了「模型实际产出顺序」时直接照抄：汇总字段（正文 + 全部工具
+            # 调用）无法表达穿插，重建出来工具会一律掉到正文下面（用户反馈的 bug）。
+            display = kwargs.get("display_segments")
+            if isinstance(display, list) and display:
+                for part in display:
+                    if not isinstance(part, dict):
+                        continue
+                    seg = {"type": part.get("type") or "text"}
+                    if part.get("content") is not None:
+                        seg["content"] = str(part.get("content") or "")
+                    if part.get("name"):
+                        seg["name"] = part["name"]
+                    if part.get("args"):
+                        seg["args"] = part["args"]
+                    if seg["type"] == "tool_result":
+                        seg.setdefault("content", "")
+                    if interrupted and seg["type"] == "text":
+                        seg["interrupted"] = True
+                    out.append(seg)
+                if interrupted and not any(
+                    s.get("type") == "text" and s.get("interrupted") for s in out
+                ):
+                    out.append({"type": "text", "content": "", "interrupted": True})
+                continue
             # 深度思考（reasoner 模型的 reasoning_content）
-            reasoning = getattr(m, "reasoning_content", None) or (
-                getattr(m, "additional_kwargs", {}) or {}
-            ).get("reasoning_content")
+            reasoning = getattr(m, "reasoning_content", None) or kwargs.get("reasoning_content")
             if reasoning:
                 out.append({"type": "reasoning", "content": reasoning})
             text = _message_text(m)
+            # 断连中断的半截回复带 interrupted 标记（前端渲染「已中断」提示），
+            # 否则历史里它和一条正常完成的回复长得一模一样
             if text:
-                out.append({"type": "text", "content": text})
+                segment: dict = {"type": "text", "content": text}
+                if interrupted:
+                    segment["interrupted"] = True
+                out.append(segment)
+            elif interrupted:
+                out.append({"type": "text", "content": "", "interrupted": True})
             for tc in getattr(m, "tool_calls", None) or []:
                 args = tc.get("args") or tc.get("args_dict") or {}
                 out.append(
@@ -433,52 +463,42 @@ async def chat(agent_id: str, body: ChatBody, request: Request) -> StreamingResp
 
         async def _persist_turn(turn: dict) -> None:
             """本轮消息写入 thread_messages 投影（M4；失败不影响对话）。"""
-            if thread_repo.get(body.thread_id) is None:
-                # AI 数字人壳等直带任意 thread_id 对话时兜底登记会话
-                thread_repo.insert(
-                    body.thread_id, agent_id, title=derive_thread_title(turn.get("user"))
-                )
-            else:
-                thread_repo.ensure_title(body.thread_id, from_text=turn.get("user"))
-            # 仅已 backfill（ready）的投影增量 append；pending 由首次历史读取全量 backfill
-            if thread_message_repo.projection_status(body.thread_id) != PROJ_READY:
-                return
-            inputs = turn_to_message_inputs(turn)
-            if inputs:
-                thread_message_repo.append(body.thread_id, inputs)
-
-        frames = stream_octop_sse(
-            _publish_actions(
-                stream_chat(
-                    body.messages,
-                    body.thread_id,
-                    agent_id=agent_id,
-                    name=agent_row["name"],
-                    system_prompt=system_prompt,
-                    workspace_dir=ensure_agent_workspace(agent_id, agent_row["name"]),
-                    plugin_tools=tools,
-                    skills_dir=all_skills_dirs(),
-                    skills_disabled=skill_service.disabled_set(),
-                    mcp_server_configs=settings.mcp_servers,
-                    mcp_default_servers=list(settings.mcp_servers.keys()) or None,
-                    skills=skills,
-                    connectors=connectors,
-                    model=model,
-                    knowledge_base_ids=body.knowledge_base_ids,
-                    agent_config=agent_row.get("config_json"),
-                    on_turn_complete=_persist_turn,
-                ),
-                tool_owners,
+            await write_turn_projection(
                 agent_id=agent_id,
-            ),
+                thread_id=body.thread_id,
+                turn=turn,
+                # 断连中断的那一轮可能落在「还没 backfill 过」的新会话上：交回填口径
+                load_history=lambda: ensure_agent_runtime(agent_row).aget_history(
+                    body.thread_id, limit=100_000
+                ),
+            )
+
+        events = stream_chat(
+            body.messages,
+            body.thread_id,
+            agent_id=agent_id,
+            name=agent_row["name"],
+            system_prompt=system_prompt,
+            workspace_dir=ensure_agent_workspace(agent_id, agent_row["name"]),
+            plugin_tools=tools,
+            skills_dir=all_skills_dirs(),
+            skills_disabled=skill_service.disabled_set(),
+            mcp_server_configs=settings.mcp_servers,
+            mcp_default_servers=list(settings.mcp_servers.keys()) or None,
+            skills=skills,
+            connectors=connectors,
+            model=model,
+            knowledge_base_ids=body.knowledge_base_ids,
+            agent_config=agent_row.get("config_json"),
+            on_turn_complete=_persist_turn,
+        )
+        frames = stream_octop_sse(
+            _publish_actions(events, tool_owners, agent_id=agent_id),
             thread_id=body.thread_id,
         )
         try:
-            # aclosing：客户端断连 break 时关闭本层 SSE 生成器。注意机制——
-            # aclose 只把 GeneratorExit 抛进**本层**；这层没有 try/finally，
-            # 所以不会同步传播到上游。上游（LLM 流）是在引用释放后由 async
-            # generator 终结器异步关闭的（实测让出若干次事件循环后生效）。
-            # 效果成立，但别指望「break 完上游立刻关」。
+            # aclosing 只负责关最外层翻译器；真正的生产者（events）在 finally 里
+            # 显式 aclose —— GeneratorExit 不会自动穿透中间翻译层。
             async with aclosing(frames) as stream:
                 async for frame in stream:
                     if await request.is_disconnected():
@@ -495,6 +515,10 @@ async def chat(agent_id: str, body: ChatBody, request: Request) -> StreamingResp
                 }
             )
         finally:
+            # 客户端断连时 aclosing(frames) 只关最外层翻译层，GeneratorExit 不会
+            # 自动穿透到生产者 —— 显式关掉它，让 stream_chat 的 finally 把
+            # 「已生成的半截」落库（刷新/关窗口后历史里还能看到）。
+            await events.aclose()
             # 推状态：回复结束，恢复 idle
             avatar_events.publish_status("idle")
 
@@ -641,16 +665,17 @@ async def chat_approval(
 
         async def _persist_turn(turn: dict) -> None:
             """本轮消息写入 thread_messages 投影（M4；失败不影响对话）。"""
-            if thread_repo.get(body.thread_id) is None:
-                thread_repo.insert(body.thread_id, agent_id, title="")
             # 审批续跑这轮 user 输入是 None（见 resume_chat），补不上标题就维持原样，
             # 至少不会把 "[{'role': ...}]" 这种脏串写进会话列表
-            thread_repo.ensure_title(body.thread_id, from_text=turn.get("user"))
-            if thread_message_repo.projection_status(body.thread_id) != PROJ_READY:
-                return
-            inputs = turn_to_message_inputs(turn)
-            if inputs:
-                thread_message_repo.append(body.thread_id, inputs)
+            await write_turn_projection(
+                agent_id=agent_id,
+                thread_id=body.thread_id,
+                turn=turn,
+                insert_title="",
+                load_history=lambda: ensure_agent_runtime(agent_row).aget_history(
+                    body.thread_id, limit=100_000
+                ),
+            )
 
         # 决策到底有没有被 harness 消费掉：看到 done（这一轮跑完）或又冒出
         # approval_requested（上一个 interrupt 已消费、现在停在下一处）才算。
@@ -661,22 +686,23 @@ async def chat_approval(
             if ev.get("type") in ("done", "approval_requested"):
                 consumed["ok"] = True
 
+        events = resume_chat(
+            body.thread_id,
+            decisions,
+            agent_id=agent_id,
+            name=agent_row["name"],
+            system_prompt=system_prompt,
+            workspace_dir=ensure_agent_workspace(agent_id, agent_row["name"]),
+            plugin_tools=tools,
+            skills_dir=all_skills_dirs(),
+            skills_disabled=skill_service.disabled_set(),
+            mcp_server_configs=settings.mcp_servers,
+            mcp_default_servers=list(settings.mcp_servers.keys()) or None,
+            on_turn_complete=_persist_turn,
+        )
         frames = stream_octop_sse(
             _publish_actions(
-                resume_chat(
-                    body.thread_id,
-                    decisions,
-                    agent_id=agent_id,
-                    name=agent_row["name"],
-                    system_prompt=system_prompt,
-                    workspace_dir=ensure_agent_workspace(agent_id, agent_row["name"]),
-                    plugin_tools=tools,
-                    skills_dir=all_skills_dirs(),
-                    skills_disabled=skill_service.disabled_set(),
-                    mcp_server_configs=settings.mcp_servers,
-                    mcp_default_servers=list(settings.mcp_servers.keys()) or None,
-                    on_turn_complete=_persist_turn,
-                ),
+                events,
                 tool_owners,
                 agent_id=agent_id,
                 source=body.source,
@@ -700,6 +726,8 @@ async def chat_approval(
                 }
             )
         finally:
+            # 断连时同样显式关生产者：续跑那半轮也要落库
+            await events.aclose()
             avatar_events.publish_status("idle")
 
         # 台账收口。已知边界：客户端在 resume 之后、done 之前断连，这里读不到
