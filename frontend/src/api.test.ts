@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { feedChatStream, type ChatEvent } from './api';
+import { feedChatStream, chatStream, type ChatEvent } from './api';
 
 /**
  * 一次完整响应的帧序列（octop 原生事件帧）。中间刻意混入空行、非 data 行、
@@ -111,5 +111,42 @@ describe('feedChatStream · SSE 分帧', () => {
       },
       { type: 'done' },
     ]);
+  });
+});
+
+describe('chatStream · 流收尾', () => {
+  /** 用假 reader 顶掉 fetch：只关心「最后一行没有尾随换行」时的收尾行为 */
+  function fakeResponse(chunks: string[]): Response {
+    let i = 0;
+    return {
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      body: {
+        getReader: () => ({
+          read: async () => (i < chunks.length
+            ? { done: false, value: new TextEncoder().encode(chunks[i++]) }
+            : { done: true, value: undefined }),
+        }),
+      },
+      json: async () => ({}),
+    } as unknown as Response;
+  }
+
+  it('末尾没有换行的 done 帧不能丢（read 循环退出时必须 flush 缓冲）', async () => {
+    const realFetch = globalThis.fetch;
+    const seen: ChatEvent[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/api/session-token')) return fakeResponse(['{"token":"t"}']);
+      // 注意：最后一行刻意不带换行 —— 真实链路里后端 close 前就是这样收尾的
+      return fakeResponse(['data: {"type":"token","content":"好"}\n\ndata: {"type":"done"}']);
+    }) as typeof fetch;
+    try {
+      await chatStream('agent-1', 'hi', 'thread-1', e => seen.push(e));
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+    expect(seen).toEqual([{ type: 'token', content: '好' }, { type: 'done' }]);
   });
 });

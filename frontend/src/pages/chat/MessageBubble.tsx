@@ -295,6 +295,13 @@ export function MessageBubble({ message, index }: { message: ChatMessage; index:
                 s.type === 'text' ? (
                   <div key={s.id ?? `m${index}-${j}`} style={{ ...assistantBubbleStyle, marginBottom: 6, fontSize: 14, lineHeight: 1.6 }}>
                     <MarkdownText raw={s.content} placeholder="（空回复）" />
+                    {s.interrupted && (
+                      // 断连（切页刷新/关窗口）那轮被后端保底存下的半截回复：明确标出来，
+                      // 别让用户以为模型就说到这为止
+                      <div style={{ marginTop: 6, fontSize: 12, color: 'var(--label-3)' }}>
+                        这条回复被中断了（页面被关闭或重新加载）
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <SegmentView key={s.id ?? `m${index}-${j}`} seg={s} />

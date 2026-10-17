@@ -6,7 +6,7 @@
  */
 
 import { RobotOutlined } from '@ant-design/icons';
-import type { RefObject } from 'react';
+import { useEffect, useState, type RefObject } from 'react';
 import type { ChatMessage, Segment } from '../../api';
 import EmptyState from '../../components/EmptyState';
 import { MarkdownText, MessageBubble, SegmentView, assistantAvatarStyle, assistantBubbleStyle } from './MessageBubble';
@@ -26,7 +26,19 @@ export default function MessageList({
   bodyRef,
   onBodyScroll,
 }: MessageListProps) {
+  // 等待秒数：上游卡住时（一帧都不发）页面原先只有一个静态「思考中…」，
+  // 用户无法判断「在跑」还是「死了」。挂上秒表至少看得出真的在等。
+  const [waitedSec, setWaitedSec] = useState(0);
+  useEffect(() => {
+    if (!sending) { setWaitedSec(0); return; }
+    const started = Date.now();
+    const timer = setInterval(() => setWaitedSec(Math.floor((Date.now() - started) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, [sending]);
+
   const hasStream = streamSegments.length > 0 || sending;
+  /** 一个字都还没到（首帧前，或上游卡住）：这时页面上除了头像什么都没有 */
+  const segmentsEmpty = streamSegments.length === 0;
   return (
     <div ref={bodyRef} onScroll={onBodyScroll} style={{ flex: 1, overflow: 'auto', paddingBottom: 12 }}>
       {messages.length === 0 && streamSegments.length === 0 && (
@@ -52,7 +64,10 @@ export default function MessageList({
               ),
             )}
             {sending && streamSegments.every(s => s.type === 'tool_result' || s.type === 'tool_call') && (
-              <div style={{ fontSize: 12, color: 'var(--label-3)' }}>思考中…</div>
+              <div style={{ fontSize: 12, color: 'var(--label-3)' }}>
+                {segmentsEmpty ? '正在等待模型返回…' : '思考中…'}
+                {waitedSec >= 3 ? ` ${waitedSec}s` : ''}
+              </div>
             )}
           </div>
         </div>

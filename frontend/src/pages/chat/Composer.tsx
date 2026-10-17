@@ -182,6 +182,11 @@ export interface ComposerProps {
   selectedModel: string | null;
   modelOptions: { value: string; label: string }[];
   interrupted: InterruptedTurn | null;
+  /**
+   * 会话切换中（新建/切换/换专家/删除未落定）：此时 activeThread 还是旧值，
+   * 发出去会落到上一个会话，所以输入区与发送按钮一并禁掉。
+   */
+  disabled?: boolean;
   onSend: (text: string) => void;
   onStop: () => void;
   onToggleSkill: (name: string) => void;
@@ -201,7 +206,7 @@ export default function Composer(props: ComposerProps) {
     input, setInput, sending, agentId,
     skills, builtinSkills, skillPackages, connectors, knowledgeBases, kbEnabled,
     selectedSkills, selectedConnectors, selectedKnowledgeBaseIds, selectedModel, modelOptions,
-    interrupted,
+    interrupted, disabled = false,
     onSend, onStop,
     onToggleSkill, onToggleSkillPackage, onToggleConnector, onToggleKnowledgeBase, onChangeModel, onResetModel,
     onRetry, onDismissInterrupted,
@@ -262,11 +267,12 @@ export default function Composer(props: ComposerProps) {
           onPressEnter={e => {
             // 中文输入法候选词确认也会发 Enter：合成态必须放行，否则半句话被发出去
             if ((e.nativeEvent as KeyboardEvent).isComposing) return;
+            if (disabled) return;
             if (!e.shiftKey) { e.preventDefault(); onSend(input); }
           }}
           placeholder="输入消息，Enter 发送"
           autoSize={{ minRows: 1, maxRows: 6 }}
-          disabled={sending || !agentId}
+          disabled={sending || disabled || !agentId}
           variant="borderless"
           style={{ flex: 1, padding: '4px 0' }}
         />
@@ -277,7 +283,8 @@ export default function Composer(props: ComposerProps) {
             type="primary"
             icon={<SendOutlined />}
             onClick={() => onSend(input)}
-            disabled={!agentId || !input.trim()}
+            disabled={!agentId || !input.trim() || disabled}
+            loading={disabled}
           >发送</Button>
         )}
       </div>

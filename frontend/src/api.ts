@@ -254,6 +254,11 @@ export interface Segment {
   name?: string;
   args?: string;
   plugin_id?: string;
+  /**
+   * 这条正文是被「断连中断」的半截回复（后端在客户端断开时保底落库的那一轮）。
+   * 只有历史回读会带：流式当场不会有它。
+   */
+  interrupted?: boolean;
 }
 
 export interface ChatMessage {
@@ -505,6 +510,16 @@ export function feedChatStream(buf: string, chunk: string): { events: ChatEvent[
 }
 
 /**
+ * 流的最后一帧可能没有尾随换行（后端 close 前只写了 `data: {...}`）：read 循环退出后
+ * 它还在缓冲区里，原实现直接丢掉 —— 表现就是「最后一帧（常常是 done）没到」。
+ * 这里补一个换行把它喂进同一个解析器。
+ */
+function flushStreamTail(buf: string, onEvent: (e: ChatEvent) => void): void {
+  if (!buf.trim()) return;
+  for (const e of feedChatStream(buf, '\n').events) onEvent(e);
+}
+
+/**
  * 调用专家对话 SSE 流（octop 原生事件帧），逐事件回调（token 累积由调用方处理）。
  *
  * ``signal``：用户点「停止生成」或组件卸载时 abort —— 中止后 fetch reader 抛
@@ -539,6 +554,7 @@ export async function chatStream(
     buf = parsed.buf;
     for (const e of parsed.events) onEvent(e);
   }
+  flushStreamTail(buf, onEvent);
 }
 
 /** 一条待审动作的决策（与后端 ApprovalDecision 同构） */
@@ -596,6 +612,7 @@ export async function chatApproval(
     buf = parsed.buf;
     for (const e of parsed.events) onEvent(e);
   }
+  flushStreamTail(buf, onEvent);
 }
 
 /** 审批台账一行（GET /api/agents/{id}/approvals）。`request_id` 此前只活在 SSE 帧里，

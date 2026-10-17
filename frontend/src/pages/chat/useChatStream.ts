@@ -22,6 +22,32 @@ import { appendStreamSegment } from '../../utils/streamSegments';
 export const MODEL_AUTO = 'auto';
 
 /**
+ * 上游静默看门狗（毫秒）：整轮期间「连续多久没收到任何 SSE 帧」就判定卡死并主动中止。
+ *
+ * 为什么需要：harness 卡在 LLM 调用上时**一帧都不发**（2026-10-16 11:58 与 11:59 那两轮
+ * 实测零输出：harness 日志停在 recall_inject 之后再无 capture_turn，DB 里也没有任何
+ * 助手消息），而页面只有一个「思考中…」，用户看到的就是「发起对话后收不到消息」。
+ * 卡死时主动 abort + 落中断条，至少能点「重试」。
+ */
+export const STREAM_STALL_MS = 90_000;
+
+/**
+ * 在飞轮次登记表（跨组件生命周期，模块级）。
+ *
+ * 切页/切专家会把聊天页整个卸载，但**这一轮不该被杀掉**：后端只在整轮完成时才落库
+ * （thread_messages 投影 / checkpoint），一断连就是「用户消息和回复一起消失」——
+ * 正是「切到专家页再回来，会话还在但消息全没了」的原因。
+ * 所以卸载不再 abort，只把在飞的那一轮登记在这里：回到对话页时先用它把用户那条补上
+ * （乐观消息），等它跑完再把历史拉回来。
+ */
+const pendingTurns = new Map<string, { text: string; startedAt: number }>();
+
+/** 该会话是否还有一轮在后台跑（切页不杀轮次，回到页面时据此恢复显示） */
+export function getPendingTurn(threadId: string): { text: string; startedAt: number } | null {
+  return pendingTurns.get(threadId) ?? null;
+}
+
+/**
  * 片段稳定 id 生成器（模块级自增，流式片段进 state 时生成）。
  * 为什么不能用数组下标当 key：SegmentView 的折叠状态 `open` 活在组件实例里，
  * 而流式期间相邻同类片段会合并、历史回读会整批替换 —— 下标 key 会让 React 把
@@ -82,12 +108,26 @@ export function useChatStream(opts: UseChatStreamOptions) {
   const abortRef = useRef<AbortController | null>(null);
   /** 卸载标记：卸载触发的 abort 不该给已销毁的页面弹提示/写状态 */
   const unmountedRef = useRef(false);
+  /**
+   * 发送态的同步镜像。
+   * setSending 要等一次渲染才生效，而 Composer 的 onClick 可能在同一 task 里被连点两次
+   * （双击/自动化），那时 send 闭包里的 sending 还是 false —— 会重复发一轮。这里同步挡。
+   */
+  const sendingRef = useRef(false);
 
-  // 卸载（切页/切专家）时中止在途请求 —— 否则切到「设置」页 LLM 继续跑完，token 照扣。
-  // 用标记区分「用户点停止」与「组件卸载」，后者不弹 toast。
-  useEffect(() => () => {
-    unmountedRef.current = true;
-    abortRef.current?.abort();
+  // 卸载（切页/切专家）**不再中止在途请求**：后端只在整轮完成时落库，
+  // 掐断连接 = 用户消息和回复一起丢（「切页回来消息全没了」的根因）。
+  // 卸载只置标记（停止给已销毁页面写状态/弹提示）；真正的停止入口是 stop()，以及浏览器整页关闭。
+  useEffect(() => {
+    // React 18 StrictMode（dev）是 mount→cleanup→mount：只在 cleanup 里置 true 会让标记
+    // 永久为真，send 的 finally 里 `if (!unmountedRef.current) setSending(false)` 就再也
+    // 不执行 —— 发送态永远停在 true（按钮变「停止」、输入框禁用），页面看起来就是
+    // 「发完这一条之后再也发不出/收不到消息」。所以每次挂载都复位。
+    unmountedRef.current = false;
+    return () => {
+      unmountedRef.current = true;
+      // 注意：这里刻意不 abort（见上）。
+    };
   }, []);
 
   /** 清空流式片段（切会话/切专家/删会话时） */
@@ -109,6 +149,8 @@ export function useChatStream(opts: UseChatStreamOptions) {
       // 重试要发回**原来那轮**的会话（用户可能已经切走了）
       const tid = overrideThread ?? activeThread;
       if (!tid) return;
+      if (sendingRef.current) return;
+      sendingRef.current = true;
       setInterrupted(null);
       const userMsg: ChatMessage = {
         role: 'user',
@@ -121,6 +163,8 @@ export function useChatStream(opts: UseChatStreamOptions) {
       // 取消支持：用户点「停止生成」或组件卸载时 abort（后端断连即停止，不再跑完白烧 token）
       const controller = new AbortController();
       abortRef.current = controller;
+      // 登记「这一轮在飞」：组件被卸载（切页）后流仍在跑，回到页面时据此恢复显示
+      pendingTurns.set(tid, { text, startedAt: Date.now() });
       let gotDone = false;
       let gotError = false;
       let gotApproval = false;
@@ -146,8 +190,22 @@ export function useChatStream(opts: UseChatStreamOptions) {
         knowledge_base_ids: selectedKnowledgeBaseIds,
       };
 
+      // 上游静默看门狗：每收到一帧就重置，连续 STREAM_STALL_MS 没有新帧（含首帧迟迟不来）
+      // 就中止本轮，避免页面无限转圈而用户以为「收不到消息」。
+      let stalled = false;
+      let stallTimer: ReturnType<typeof setTimeout> | null = null;
+      const clearStallTimer = () => {
+        if (stallTimer !== null) { clearTimeout(stallTimer); stallTimer = null; }
+      };
+      const armStallTimer = () => {
+        clearStallTimer();
+        stallTimer = setTimeout(() => { stalled = true; controller.abort(); }, STREAM_STALL_MS);
+      };
+
       try {
+        armStallTimer();
         await chatStream(agentId, text, tid, (e: ChatEvent) => {
+          armStallTimer();
           if (e.type === 'token' && e.content) {
             pushSeg({ id: nextSegmentId(), type: 'text', content: e.content });
           } else if (e.type === 'reasoning' && e.content) {
@@ -191,6 +249,8 @@ export function useChatStream(opts: UseChatStreamOptions) {
           message.error(`对话失败：${(err as Error).message}`);
         }
       } finally {
+        clearStallTimer();
+        pendingTurns.delete(tid);
         // 没有 done 也没有 error：连接被中断。已生成的片段必须落成消息，
         // 否则半截回复停在流式气泡里、刷新即消失（原实现只清 streamSegments）。
         // HITL 审批暂停（gotApproval）不算中断——审批卡片接管，续流由 submitApproval 处理。
@@ -202,6 +262,9 @@ export function useChatStream(opts: UseChatStreamOptions) {
           setStreamSegments([]);
           if (unmountedRef.current) {
             // 卸载触发的 abort（切页/切专家）：不要给已经不在的页面弹提示
+          } else if (stalled) {
+            message.warning(`上游 ${STREAM_STALL_MS / 1000} 秒没有任何返回，已中止本轮；可点下方「重试」`);
+            setInterrupted({ text, threadId: tid });
           } else if (stopped) {
             message.info('已停止生成');
           } else {
@@ -215,6 +278,7 @@ export function useChatStream(opts: UseChatStreamOptions) {
           }
         }
         abortRef.current = null;
+        sendingRef.current = false;
         if (!unmountedRef.current) setSending(false);
       }
     },
