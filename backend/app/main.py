@@ -66,6 +66,11 @@ async def lifespan(_: FastAPI):
     from app.infra.harness.config import configure_harness_logging
 
     _safe(configure_harness_logging, "harness 日志目录初始化失败（沿用 harness 默认）")
+    # 记忆质量策略（捕获只取用户消息 / 抽取规则 / 召回地域过滤）：必须早于任何
+    # Agent 实例——Agent 构造时 MemoryService 已按上游默认配置就绪。
+    from app.infra.memory_policy import install_memory_policies
+
+    _safe(install_memory_policies, "记忆策略初始化失败（沿用上游默认）")
     init_db()
     seed_default_agent()
     ensure_agent_workspaces()
