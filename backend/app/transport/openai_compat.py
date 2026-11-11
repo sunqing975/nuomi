@@ -35,6 +35,7 @@ async def _record_approvals(
     events: AsyncIterator[dict],
     *,
     agent_id: str,
+    source: str = "shell",
 ) -> AsyncGenerator[dict, None]:
     """壳（OpenAI 兼容端点）触发的审批也落台账，帧原样透传。
 
@@ -46,7 +47,7 @@ async def _record_approvals(
     """
     async for ev in events:
         if ev.get("type") == "approval_requested":
-            record_from_event(ev, agent_id=agent_id, source="shell")
+            record_from_event(ev, agent_id=agent_id, source=source)
         yield ev
 
 

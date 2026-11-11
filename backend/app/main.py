@@ -30,6 +30,7 @@ from app.transport.openai_compat import router as openai_router
 from app.transport.plugins_api import router as plugins_router
 from app.transport.settings_api import router as settings_router
 from app.transport.skills_api import router as skills_router
+from app.transport.webhook_api import router as webhook_router
 
 logger = logging.getLogger(__name__)
 
@@ -188,6 +189,7 @@ app.include_router(settings_router)
 app.include_router(skills_router)
 app.include_router(knowledge_router)
 app.include_router(memory_router)
+app.include_router(webhook_router)
 
 # —— 前端控制台（frontend/dist 静态挂载，同源零 CORS；浏览器或壳内都访问 /console/）——
 _FRONTEND_DIR = REPO_ROOT / "frontend" / "dist"

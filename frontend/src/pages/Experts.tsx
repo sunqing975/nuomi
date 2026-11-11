@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   Button, Card, Modal, Form, Input, Space, Switch, Tag, Typography, message, Popconfirm,
 } from 'antd';
-import { PlusOutlined, RobotOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import { PlusOutlined, RobotOutlined, EditOutlined, DeleteOutlined, ApiOutlined } from '@ant-design/icons';
 import { get, post, patch, del, type Agent } from '../api';
 import EntityGrid from '../components/EntityGrid';
 import ErrorState from '../components/ErrorState';
@@ -17,6 +17,7 @@ export default function ExpertsPage() {
   const [form] = Form.useForm();
   const [editing, setEditing] = useState<Agent | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [webhookAgent, setWebhookAgent] = useState<Agent | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -99,6 +100,7 @@ export default function ExpertsPage() {
               }
               extra={
                 <Space size={4}>
+                  <Button size="small" type="text" icon={<ApiOutlined />} onClick={() => setWebhookAgent(a)} />
                   <Button size="small" type="text" icon={<EditOutlined />} onClick={() => { setEditing(a); form.setFieldsValue(a); setCreateOpen(true); }} />
                   <Popconfirm title={`删除「${a.name}」？`} onConfirm={async () => { await del(`/agents/${a.agent_id}`); message.success('已删除'); load(); }}>
                     <Button size="small" type="text" danger icon={<DeleteOutlined />} />
@@ -124,6 +126,26 @@ export default function ExpertsPage() {
           )}
         />
       )}
+
+      {/* Webhook 调用示例 */}
+      <Modal
+        open={!!webhookAgent}
+        title={webhookAgent ? `Webhook 调用 · ${webhookAgent.name}` : ''}
+        onCancel={() => setWebhookAgent(null)}
+        footer={null}
+      >
+        <Typography.Paragraph type="secondary" style={{ fontSize: 13 }}>
+          POST 该地址即可用这个专家发起一轮对话，立即返回 thread_id；对话在后台运行，结果在本专家的会话列表可见。
+        </Typography.Paragraph>
+        <Typography.Text copyable style={{ fontSize: 13 }}>
+          {webhookAgent ? `${window.location.origin}/api/webhook/${webhookAgent.agent_id}` : ''}
+        </Typography.Text>
+        <pre style={{ background: 'var(--bg, #f6f6f6)', padding: 12, borderRadius: 8, fontSize: 12, overflowX: 'auto', marginTop: 12 }}>
+{`curl -X POST ${webhookAgent ? `${window.location.origin}/api/webhook/${webhookAgent.agent_id}` : ''} \\
+  -H "Content-Type: application/json" \\
+  -d '{"message": "这里写你要说的内容"}'`}
+        </pre>
+      </Modal>
 
       {/* 创建 / 编辑 */}
       <Modal

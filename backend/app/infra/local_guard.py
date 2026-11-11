@@ -101,7 +101,13 @@ def origin_allowed(origin: str) -> bool:
 
 
 def requires_token(method: str, path: str) -> bool:
-    """``/api/*`` 的写方法需要 token（读方法放行：SSE 长连接与静态资源不受影响）。"""
+    """``/api/*`` 的写方法需要 token（读方法放行：SSE 长连接与静态资源不受影响）。
+
+    例外：``/api/webhook/*`` 是外部系统发起对话的专用入口，设计上免 token
+    （纯本地部署，2026-11-11 决定）；Host/Origin 白名单对它依然生效。
+    """
+    if path.startswith("/api/webhook/"):
+        return False
     return method.upper() in WRITE_METHODS and path.startswith("/api/")
 
 
