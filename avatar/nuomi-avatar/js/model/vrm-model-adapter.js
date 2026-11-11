@@ -229,7 +229,7 @@ class VRMModelAdapter extends EventEmitter {
     async loadVRMA(name, filePath) {
         const fs = require('fs');
         const path = require('path');
-        // 相对路径基于壳根目录（js/model/ → ../../ = shells/nuomi-avatar）
+        // 相对路径基于壳根目录（js/model/ → ../../ = avatar/nuomi-avatar）
         const absPath = path.resolve(path.join(__dirname, '..', '..'), filePath);
         if (!fs.existsSync(absPath)) {
             console.warn(`[VRM动画] ${name} 文件不存在: ${absPath}`);

@@ -1,7 +1,7 @@
 # =============================================================================
 # 糯米 Nuomi · 启动 / 关闭脚本（Makefile）
 #
-# 默认形态（v0.13 起）：桌面 = AI 数字人壳（shells/nuomi-avatar，Electron）。
+# 默认形态（v0.13 起）：桌面 = AI 数字人壳（avatar/nuomi-avatar，Electron）。
 #   make start        启动AI 数字人壳（默认形态；依赖后端 :8000）
 #   make web          调试形态：后端:8000 + 控制台前端:5173（浏览器调试用）
 #
@@ -70,10 +70,10 @@ desktop: build
 	@mkdir -p $(LOGDIR)
 	@if [ -f $(SHELL_PID) ] && kill -0 $$(cat $(SHELL_PID)) 2>/dev/null; then \
 		echo "⚠ AI 数字人壳已在运行 (PID $$(cat $(SHELL_PID)))，先 make stop 再启动"; \
-	elif pgrep -f "shells/nuomi-avatar/node_modules/electron" >/dev/null 2>&1; then \
+	elif pgrep -f "avatar/nuomi-avatar/node_modules/electron" >/dev/null 2>&1; then \
 		echo "⚠ 检测到残留AI 数字人壳进程，先 make stop 清理"; \
 	else \
-		cd $(ROOT)/shells/nuomi-avatar && nohup npm start >$(SHELL_LOG) 2>&1 </dev/null & \
+		cd $(ROOT)/avatar/nuomi-avatar && nohup npm start >$(SHELL_LOG) 2>&1 </dev/null & \
 		echo $$! > $(SHELL_PID); \
 		echo "✔ AI 数字人壳已启动 (PID $$(cat $(SHELL_PID)))，日志 $(SHELL_LOG)"; \
 		echo "  窗口就绪后即显示AI 数字人；依赖后端 :$(BACKEND_PORT)（未启动请先 make backend）"; \
@@ -115,8 +115,8 @@ stop:
 		if kill -0 $$SPID 2>/dev/null; then kill $$SPID 2>/dev/null || true; echo "  已终止AI 数字人启动进程 (PID $$SPID)"; fi; \
 		rm -f $(SHELL_PID); \
 	fi
-	@if pgrep -f "shells/nuomi-avatar/node_modules/electron" >/dev/null 2>&1; then \
-		pkill -f "shells/nuomi-avatar/node_modules/electron" 2>/dev/null || true; \
+	@if pgrep -f "avatar/nuomi-avatar/node_modules/electron" >/dev/null 2>&1; then \
+		pkill -f "avatar/nuomi-avatar/node_modules/electron" 2>/dev/null || true; \
 		echo "  已终止AI 数字人壳 (Electron)"; \
 	fi
 	@echo "== 停止 web 模式 =="
@@ -145,7 +145,7 @@ restart: stop start
 
 status:
 	@echo "== 糯米 Nuomi 运行状态 =="
-	@if pgrep -f "shells/nuomi-avatar/node_modules/electron" >/dev/null 2>&1; then echo "  AI 数字人壳     运行中 (Electron)"; else echo "  AI 数字人壳     未运行"; fi
+	@if pgrep -f "avatar/nuomi-avatar/node_modules/electron" >/dev/null 2>&1; then echo "  AI 数字人壳     运行中 (Electron)"; else echo "  AI 数字人壳     未运行"; fi
 	@if [ -f $(BACKEND_PID) ] && kill -0 $$(cat $(BACKEND_PID)) 2>/dev/null; then echo "  web 后端   运行中 (PID $$(cat $(BACKEND_PID)))"; else echo "  web 后端   未运行"; fi
 	@if [ -f $(FRONTEND_PID) ] && kill -0 $$(cat $(FRONTEND_PID)) 2>/dev/null; then echo "  web 前端   运行中 (PID $$(cat $(FRONTEND_PID)))"; else echo "  web 前端   未运行"; fi
 	@echo "  端口监听:"
@@ -203,7 +203,7 @@ frontend-test:
 
 # 壳（Electron）语法门禁：CI 没有壳作业，靠这条兜住语法级回归
 shell-check:
-	@cd $(ROOT)/shells/nuomi-avatar && \
+	@cd $(ROOT)/avatar/nuomi-avatar && \
 	  files=$$(find . -name '*.js' -not -path './node_modules/*' -not -path './tools/*'); \
 	  for f in $$files; do node --check "$$f" || exit 1; done; \
 	  echo "✔ 壳语法检查通过（$$(echo "$$files" | wc -l | tr -d ' ') 个文件）"

@@ -13,7 +13,7 @@ equipment（设备）/ work_orders（工单）/ work_reports（报工）/ qualit
   可用率×性能×良率计算（本脚本只保证报工数量与标准节拍自洽）。
 
 用法：
-    python scripts/gen_mes_data.py                       # 默认：近 90 天，写到 connectors/data/mes.db
+    python scripts/gen_mes_data.py                       # 默认：近 90 天，写到 connectors/mes/data/mes.db
     python scripts/gen_mes_data.py --db /tmp/mes.db --end-date 2026-10-06 --days 30 --seed 42
 """
 
@@ -246,7 +246,7 @@ def gen(conn: sqlite3.Connection, days: int, end: date, rng: random.Random) -> d
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="生成模拟 MES 数据库（CNC 机加工）")
-    parser.add_argument("--db", default=str(Path(__file__).resolve().parents[1] / "connectors" / "data" / "mes.db"))
+    parser.add_argument("--db", default=str(Path(__file__).resolve().parents[1] / "connectors" / "mes" / "data" / "mes.db"))
     parser.add_argument("--end-date", type=date.fromisoformat, default=None, help="数据结束日期，默认今天")
     parser.add_argument("--days", type=int, default=90)
     parser.add_argument("--seed", type=int, default=42)

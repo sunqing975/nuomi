@@ -2,9 +2,9 @@
 # ruff: noqa: DTZ011
 """MES 连接器（MCP server，stdio 传输）。
 
-供糯米「连接器」挂载，对模拟 MES 数据库（connectors/data/mes.db）提供查询工具：
+供糯米「连接器」挂载，对模拟 MES 数据库（connectors/mes/data/mes.db）提供查询工具：
 日产量、良率趋势、报警、设备状态、工单、OEE；以及**写操作**：报工提交（走独立
-写库 connectors/data/mes_operations.db，人工审批后才会被调用）。
+写库 connectors/mes/data/mes_operations.db，人工审批后才会被调用）。
 
 设计原则：
 - 读路径：所有查询工具只做 SELECT；数据库以 SQLite 只读模式（mode=ro）打开，双保险写不进去；

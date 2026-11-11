@@ -15,7 +15,7 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 REPO = Path(__file__).resolve().parents[1]
-CONNECTOR = REPO / "connectors" / "mes_connector.py"
+CONNECTOR = REPO / "connectors" / "mes" / "mes_connector.py"
 
 
 async def main() -> None:

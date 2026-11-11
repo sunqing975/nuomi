@@ -23,7 +23,7 @@ import uuid
 
 BASE = "http://127.0.0.1:8000"
 AGENT_ID = os.environ.get("NUOMI_E2E_AGENT_ID", "")
-OP_DB = "/Users/superman/projects/code/nuomi/connectors/data/mes_operations.db"
+OP_DB = "/Users/superman/projects/code/nuomi/connectors/mes/data/mes_operations.db"
 
 
 def get_token():

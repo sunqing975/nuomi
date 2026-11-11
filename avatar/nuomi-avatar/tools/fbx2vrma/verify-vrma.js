@@ -1,6 +1,6 @@
 // verify-vrma.js — 验证 .vrma 能被壳同款加载链解析并在目标 VRM 模型上生成 AnimationClip
 // 用法: node verify-vrma.js [path/to/file.vrma]
-// 依赖解析: 向上找到 shells/nuomi-avatar/node_modules (three/@pixiv/three-vrm/@pixiv/three-vrm-animation)
+// 依赖解析: 向上找到 avatar/nuomi-avatar/node_modules (three/@pixiv/three-vrm/@pixiv/three-vrm-animation)
 const os = require('os');
 const fs = require('fs');
 

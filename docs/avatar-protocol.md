@@ -39,7 +39,7 @@ LLM 通过工具调用（工具名 = 动作/表情名）驱动AI 数字人。壳
 
 ## 消费者
 
-- 壳 `callNuomiSSE`（shells/nuomi-avatar/app.js）：`token`→字幕、`tool_call_chunk`→`playPetToolByName`、`done`→结束
+- 壳 `callNuomiSSE`（avatar/nuomi-avatar/app.js）：`token`→字幕、`tool_call_chunk`→`playPetToolByName`、`done`→结束
 - 控制台 `chatStream`（frontend/src/api.ts）：`token`/`tool_call_chunk`/`done` → ChatEvent
 
 ## 历史

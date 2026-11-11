@@ -2,14 +2,14 @@
 
 > 最后更新：2026-10-05 · 分支 main · HEAD `d7a7c45`（M3/M4 已落地）
 > 本文件面向「下一个接手的人」：先读它，再读代码。已实现的细节以代码为准（`git show <commit>` 可查）。
-> ⚠ 2026-10-05 命名变更：API 前缀已从 `/api/pet/*` 全量改名为 `/api/avatar/*`（模型/动作/表情/预览/开关），插件 `vrm-pet`→`vrm-avatar`、`shells/myspy`→`shells/nuomi-avatar`；产品概念「桌宠」→「AI 数字人」。本文 §4 历史条目保留旧名，新链路均用新名。
+> ⚠ 2026-10-05 命名变更：API 前缀已从 `/api/pet/*` 全量改名为 `/api/avatar/*`（模型/动作/表情/预览/开关），插件 `vrm-pet`→`vrm-avatar`、`avatar/myspy`→`avatar/nuomi-avatar`；产品概念「桌宠」→「AI 数字人」。本文 §4 历史条目保留旧名，新链路均用新名。
 > ⚠ 2026-10-05 M4：会话列表权威已从 `nuomi-state.json` 的 `threads` 数组迁至 SQLite `threads` 表（见 §2/§4）；state 文件仅存 `thread_id`（+ `agent_id`，AI 数字人绑定消费）。
 
 ---
 
 ## 0. 一句话定位
 
-**Nuomi = AI 大脑（backend，基于 octop-harness）+ 通用控制台（frontend，React + antd）+ 可插拔表现层（shells/nuomi-avatar AI 数字人壳）。**
+**Nuomi = AI 大脑（backend，基于 octop-harness）+ 通用控制台（frontend，React + antd）+ 可插拔表现层（avatar/nuomi-avatar AI 数字人壳）。**
 表现层只消费标准化 SSE 协议（v3：**octop 原生事件帧**）；能力（专家/插件/技能/连接器/技能包）由后端统一管理，控制台统一呈现。产品命名：连接器（底层 MCP 协议）；内部领域语言对齐 octop：Expert / Plugin / Skill / MCP / Workspace。
 
 ## 1. 架构与目录
@@ -23,7 +23,7 @@ nuomi/
 │   ├── app/storage/db.py# SQLite（agents/plugins/agent_plugins/skills/skill_packages*）
 │   └── app/config.py    # env 配置（Settings）
 ├── frontend/          # 控制台：Vite + React + antd（dist 不入 git，后端挂 /console）
-├── shells/nuomi-avatar/      # 表现层壳（Electron + Live2D，纯表现层：动作/表情播放，无输入/字幕）
+├── avatar/nuomi-avatar/      # 表现层壳（Electron + Live2D，纯表现层：动作/表情播放，无输入/字幕）
 └── docs/              # avatar-protocol.md（v3 协议）等
 ```
 
@@ -59,15 +59,15 @@ cd frontend && npm run build     # vite base=/console/，产物 dist/
 
 # 3) 壳（AI 数字人 + 控制面板窗口，面板自动指到 /console/）
 kill $(ps aux | grep "nuomi-avatar/node_modules/electron" | grep -v grep | awk '{print $2}') 2>/dev/null || true
-cd shells/nuomi-avatar && npm start
+cd avatar/nuomi-avatar && npm start
 ```
 
 访问：控制台 `http://127.0.0.1:8000/console/`；开发态前端 `cd frontend && npm run dev`（5173 代理 /api）。
 
 环境：
-- Python：uv 管理（`.venv/bin/python`，无 pip）；Node：frontend/ 与 shells/nuomi-avatar/ 各自 npm install
+- Python：uv 管理（`.venv/bin/python`，无 pip）；Node：frontend/ 与 avatar/nuomi-avatar/ 各自 npm install
 - 工作区与数据根 **同一目录 `/Users/superman/Nuomi`**（2026-10-04 起单根设计；.env 设 `NUOMI_HOME=/Users/superman/Nuomi`，**无 NUOMI_WORKSPACE**，workspace=数据根）；内含 agents/plugins/{weather, aidang, cat, hiyori}/skills + models/2D + nuomi.db + memory.sqlite + nuomi-state.json
-- 会话权威：SQLite `threads` 表（thread_id/agent_id/title/last_active/pinned/model_ref，2026-10-05 M4 落库）+ `nuomi-state.json` 仅存 current `thread_id`（+ `agent_id`，AI 数字人绑定消费；2026-10-04 起迁出壳 config）；消息权威 = 各专家 workspace 的 memory.sqlite（octop checkpointer），`thread_messages` 表为历史投影（首次读历史 backfill → ready，之后每轮对话增量 append）；壳 `shells/nuomi-avatar/config.json` 仅存表现层偏好（ui.model/ui.model_path，后端写、壳 watch 重载，无绝对业务状态）；**它是本机文件、2026-10-06 起不入库**（模板 `config.example.json`：壳首启由 main.js 播种，后端写入前由 `service._shell_config()` 播种——缺文件直接写会把 llm/tts/bert 段整体丢掉，壳就连不上后端了）
+- 会话权威：SQLite `threads` 表（thread_id/agent_id/title/last_active/pinned/model_ref，2026-10-05 M4 落库）+ `nuomi-state.json` 仅存 current `thread_id`（+ `agent_id`，AI 数字人绑定消费；2026-10-04 起迁出壳 config）；消息权威 = 各专家 workspace 的 memory.sqlite（octop checkpointer），`thread_messages` 表为历史投影（首次读历史 backfill → ready，之后每轮对话增量 append）；壳 `avatar/nuomi-avatar/config.json` 仅存表现层偏好（ui.model/ui.model_path，后端写、壳 watch 重载，无绝对业务状态）；**它是本机文件、2026-10-06 起不入库**（模板 `config.example.json`：壳首启由 main.js 播种，后端写入前由 `service._shell_config()` 播种——缺文件直接写会把 llm/tts/bert 段整体丢掉，壳就连不上后端了）
 - .env 在仓库根，改后必须重启 uvicorn
 
 ## 4. API 清单（全部 /api 前缀，见 app/transport/api.py）
@@ -199,7 +199,7 @@ OpenAI 兼容：`app/transport/openai_compat.py`（`/v1/chat/completions`，mode
   - 数字人事件队列满**静默丢最新** → 改丢最旧 + 计数 + 限频告警；SSE 长连接加 15s 心跳注释帧
   - 历史分页两条路径语义不一致（pending/backfill 忽略 offset 且投影为空时回落重算）→ 统一为倒序分页 + `limit/offset` 校验
   - 顺手：`sync()` 清理"目录已消失"的残留插件行（原只 INSERT OR IGNORE，手动删目录会留幽灵条目）
-- [x] **模拟 MES 连接器（2026-10-07，制造业作品集起步）**：`scripts/gen_mes_data.py`（模拟 CNC 机加工 MES 库，90 天/异常注入/固定 seed 可复现）+ `connectors/mes_connector.py`（只读 MCP server，6 个只读工具，SQLite `mode=ro`，`MES_DB_PATH` 可切真实库）+ 登记 `数据根/connectors.json` 的 `mes` 连接器；SSE 对话端到端实测两场景（问数回答与连接器返回逐项核验一致；主动组合 5 工具做良率/设备/OEE 分析），详见 AGENT.md 对应节
+- [x] **模拟 MES 连接器（2026-10-07，制造业作品集起步）**：`scripts/gen_mes_data.py`（模拟 CNC 机加工 MES 库，90 天/异常注入/固定 seed 可复现）+ `connectors/mes/mes_connector.py`（只读 MCP server，6 个只读工具，SQLite `mode=ro`，`MES_DB_PATH` 可切真实库）+ 登记 `数据根/connectors.json` 的 `mes` 连接器；SSE 对话端到端实测两场景（问数回答与连接器返回逐项核验一致；主动组合 5 工具做良率/设备/OEE 分析），详见 AGENT.md 对应节
 - [x] **写路径 + HITL 人工审批（2026-10-07，HANDOVER #10 落地）**：连接器新增写工具 `mes_submit_work_report`/`mes_list_work_reports`（写独立台账库 `data/mes_operations.db`，与只读快照物理隔离，读库仍 `mode=ro`）；审批规则 `connectors/rules/dangerous_shell_commands.yaml`（规则 `MES_WRITE_NEEDS_APPROVAL`，HIGH）；后端 `build_agent_config` 默认开 `tool_guard_enabled=True/mode="require_approval"`（默认规则目录=仓库 connectors/rules），`chat.py` 译 `HITL_REQUIRED→approval_requested` 暂停流 + 新增 `resume_chat`，`chat_api.py` 新增 `POST /api/agents/{id}/chat/approval`；前端审批卡片（ApprovalCard + useChatStream.submitApproval）；端到端实测：报工触发审批帧（含 HIGH 风险说明）→ approve 续跑落库 +1 → reject 不落库 → 只读回归无审批。验证脚本 `scripts/e2e_hitl_test.py`
 
 ### 8.2 仍待办（按"对单机日用的实际影响"排序）
@@ -220,7 +220,7 @@ OpenAI 兼容：`app/transport/openai_compat.py`（`/v1/chat/completions`，mode
 
 ### 8.3 明确不做（用户拍板，别再排）
 
-- 🚫 **分发到其他 Mac**（2026-10-06 拍板）：没有发布计划，而发布要花钱买 Apple Developer 账号 → **codesign / notarize / 自动更新 / 首启向导一律不做**。打包链保留只作本机验证（打包配置/图标/单实例锁/CSP 的真实回归）；**日常一律 `make start`**。记录见 `AGENT.md` 与 `shells/nuomi-avatar/README.md`
+- 🚫 **分发到其他 Mac**（2026-10-06 拍板）：没有发布计划，而发布要花钱买 Apple Developer 账号 → **codesign / notarize / 自动更新 / 首启向导一律不做**。打包链保留只作本机验证（打包配置/图标/单实例锁/CSP 的真实回归）；**日常一律 `make start`**。记录见 `AGENT.md` 与 `avatar/nuomi-avatar/README.md`
 - 🚫 **轨迹抽屉 octop 完整版**（2026-10-05）：简版够用，可观测性走 Langfuse
 - 🚫 **AI 数字人模型升级**（已全 3D）、**前端 bundle code-split**（本地 1.3MB 收益低）、**表情观感幅度**、**模型资产补全**（cat 缺失不补）
 - ⏸ **OCR** 与 **TTS 说话**虽在 8.2，但都是"用户拍板暂缓/待办"，不是被遗忘
@@ -230,7 +230,7 @@ OpenAI 兼容：`app/transport/openai_compat.py`（`/v1/chat/completions`，mode
 ```
 027c584  AI 数字人接入（nuomi-avatar 二次开发）        → 5602480 删 nuomi-avatar 大脑
 ba7bce6  AI 数字人协议层（emotion，后废除）      → 6c0711a 能力域：插件/技能接入 octop-harness
-ef05d9e  目录重组（shells/frontend 分层）+ MCP
+ef05d9e  目录重组（avatar/frontend 分层）+ MCP
 50eeaa9  frontend 控制台（Vite + React + antd）
 f27f8ae  壳打通：控制面板 → /console/
 55041a5  交接文档初版 + 协议文档

@@ -6,7 +6,7 @@
 # .icns 属于「构建产物」——用 macOS 自带的 sips + iconutil 可重复生成，
 # 不必把二进制产物塞进版本库（build/ 已 gitignore）。
 #
-# 用法：npm run icon   （在 shells/nuomi-avatar 下执行；需要 macOS）
+# 用法：npm run icon   （在 avatar/nuomi-avatar 下执行；需要 macOS）
 # 产物：build/icon.icns
 # =============================================================================
 set -euo pipefail

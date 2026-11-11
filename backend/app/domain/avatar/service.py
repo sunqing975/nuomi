@@ -23,11 +23,11 @@ MODEL_DIR_3D = settings.workspace_path / "models" / "3D"
 # 自己回写），2026-10-06 起不入库：入库只会让 git status 长期脏 + 误把上一台机器的
 # 模型绝对路径当代码提交（AGENT.md:483/:496 已经两次「这次别把它带上」）。
 # 模板是 config.example.json，缺文件时由 _shell_config() / 壳 main.js 各自播种。
-SHELL_CONFIG = REPO_ROOT / "shells" / "nuomi-avatar" / "config.json"
-SHELL_CONFIG_EXAMPLE = REPO_ROOT / "shells" / "nuomi-avatar" / "config.example.json"
+SHELL_CONFIG = REPO_ROOT / "avatar" / "nuomi-avatar" / "config.json"
+SHELL_CONFIG_EXAMPLE = REPO_ROOT / "avatar" / "nuomi-avatar" / "config.example.json"
 STATE_FILE = settings.workspace_path / "nuomi-state.json"
-SHELL_ANIM_DIR = REPO_ROOT / "shells" / "nuomi-avatar" / "assets" / "animations"
-FBX2VRMA_DIR = REPO_ROOT / "shells" / "nuomi-avatar" / "tools" / "fbx2vrma"
+SHELL_ANIM_DIR = REPO_ROOT / "avatar" / "nuomi-avatar" / "assets" / "animations"
+FBX2VRMA_DIR = REPO_ROOT / "avatar" / "nuomi-avatar" / "tools" / "fbx2vrma"
 
 
 def _load_json(path: Path) -> dict:

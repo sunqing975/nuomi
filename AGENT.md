@@ -27,7 +27,7 @@
 - **不背历史数据**：新库起步，不写迁移脚本，旧会话/旧结构数据直接放弃。
 - **页面不抄 Octop**：保留 nuomi 自己的设计，AI 数字人主界面 = 角色（卡通人物），不是聊天列表。
 - **分层依赖**：`transport → domain → infra/harness → octop-harness`；infra 禁 import domain/transport。
-- **仓库结构**：`backend/`（Python+FastAPI+harness）、`shells/nuomi-avatar/`（AI 数字人壳）、`frontend/`（控制台）、`assets/models/`（模型种子）、`docs/`、`experts/`。旧 nuomi-avatar 时代 `plugins/`、`skills/` 资产已于 2026-10-04 删除（harness 插件/技能由工作区 `plugins/`、`skills/` 承载，支持前端 zip 导入）。
+- **仓库结构**：`backend/`（Python+FastAPI+harness）、`avatar/nuomi-avatar/`（AI 数字人壳）、`frontend/`（控制台）、`assets/models/`（模型种子）、`docs/`、`experts/`。旧 nuomi-avatar 时代 `plugins/`、`skills/` 资产已于 2026-10-04 删除（harness 插件/技能由工作区 `plugins/`、`skills/` 承载，支持前端 zip 导入）。
 - **LLM**：默认 DeepSeek（`LLM_API_KEY` > `DEEPSEEK_API_KEY` > `ARK_API_KEY`，base_url https://api.deepseek.com，model deepseek-chat）。本机真实 key 在环境变量 `DEEPSEEK_API_KEY`（.env 中 LLM_API_KEY 为空）。
 - **知识库技术决策（2026-10-04，M6 前置调研完成）**：参照 Octop `infra/knowledge/` 实现（每 KB = docs 目录 + 主库元数据行 + `index.sqlite` sidecar 向量索引；异步 parse→chunk(800/120)→embed；内置 `search_knowledge` 工具 + 中间件每轮改写工具描述；引用标记 `<!--octop-kb-citations-->`）。**已拍板：①嵌入先做本地模型（远端 API 后置）；②OCR 进 M6（RapidOCR 本地，图片 png/jpg/jpeg/webp + 扫描 PDF）；③知识库绑定粒度 = 对话框 per-turn 选择，显式指定才注入（无「默认打开」；2026-10-04 用户拍板与技能/连接器同维度，default_open 全链路已删）；④模型目录 `models/ai/<type>/`（embedding + .downloaded 标记 / ocr 预留；`2D/` AI 数字人资产不动）；⑤嵌入实现 = **完全仿 Octop**：手写 HF 多源下载（官方+镜像竞速，Octop 自研逻辑）+ **fastembed 加载推理**（`TextEmbedding(cache_dir=models/ai/embedding)`，不手写 onnxruntime 管线）；默认模型 `BAAI/bge-small-zh-v1.5`**。方案/API 清单/工作量：`docs/knowledge-base-research.md`。
 - **专家 workspace 模型（2026-10-04 A2 对齐 octop，用户拍板）**：每专家独立 workspace `数据根/agent-workspaces/<agent_id>/`。persona 走 harness 记忆文件标准（USER/SOUL/AGENTS/MEMORY.md 放 workspace 根，harness 每轮自动注入、改文件即生效；无 IDENTITY.md 概念，身份写 USER.md「关于我」）；manifest（`.octop/manifest.json`，octop 双语格式）为展示元数据权威（name/description/welcome_message/icon_name/color/quick_prompts，后端 `enrich_agent` 归一化，DB 字段兜底）；记忆/会话/技能按专家隔离（各自 memory.sqlite/sessions/_builtin_skills）。**模板匹配**：experts/<agent_id|name>/ 优先，再按 manifest（id/label.zh）匹配（糯米=experts/nuomi/，color #f59e0b）。
@@ -78,7 +78,7 @@ SSE 事件协议（当前完整）：`token` / `reasoning` / `tool_call_chunk`�
 - **Provider 模型探测（2026-10-04）**：`POST /settings/providers/probe`（body base_url/api_key，不落盘）调 OpenAI 兼容 `/models` 拉取模型列表；新增 Provider 弹窗「探测模型」按钮 → 勾选列表（默认勾选第一个作为默认模型）→ 回填；探测失败 400 带原因
 - **对话框输入区优化（2026-10-04）**：能力选择器（技能/连接器/知识库/模型）独立一行（提示文案已移除，2026-10-04 用户要求不显示），输入框独占整行 flex:1 + autoSize（1–6 行）；会话左栏 240→200、模型 Select 180→150、placeholder 缩短
 - **模型默认自动（2026-10-04）**：对话框「模型」Select 首项新增「自动（默认）」（value 哨兵 `auto`，前端 Chat.tsx `MODEL_AUTO`），默认选中；选中「自动」时请求体 `model=null`，由后端按 agent 默认模型解析（`stream_chat` model=None → 默认模型）；用户显式选择具体模型才覆盖，移除模型 chip 回到「自动」。`ChatStreamOptions.model` 类型放开为 `string | null`。替代原「模型必选」语义（必选校验已删）
-- **形态与遗留清理（2026-10-04，用户拍板）**：默认形态 = **AI 数字人壳 shells/nuomi-avatar**（Electron，`npm start`，经 config.json `llm.api_url` → 后端 :8000 `/api/v1` OpenAI 兼容端点对话）；**web 控制台只是调试形态**（:5173，vite 代理 /api → :8000）。Makefile 重写：`make start` 启动AI 数字人壳（替换已失效的 tauri desktop 目标，`desktop/` 目录 v0.13 已删）、`make web` 调试、stop/status/logs 同步改为AI 数字人壳；tauri 遗留（README desktop/ 引用、demo 脚本里的 tauri build 检查项、.logs/desktop.log）已清理；当时的桌面化设计文档已随本轮文档清理删除（其仍有效的决策——NUOMI_HOME 工作区、SQLite 合一、单用户、目录结构收敛——全部以本文件「环境事实」章节为准）。AI 数字人壳重启 = 杀 Electron 进程后 `shells/nuomi-avatar && npm start`
+- **形态与遗留清理（2026-10-04，用户拍板）**：默认形态 = **AI 数字人壳 avatar/nuomi-avatar**（Electron，`npm start`，经 config.json `llm.api_url` → 后端 :8000 `/api/v1` OpenAI 兼容端点对话）；**web 控制台只是调试形态**（:5173，vite 代理 /api → :8000）。Makefile 重写：`make start` 启动AI 数字人壳（替换已失效的 tauri desktop 目标，`desktop/` 目录 v0.13 已删）、`make web` 调试、stop/status/logs 同步改为AI 数字人壳；tauri 遗留（README desktop/ 引用、demo 脚本里的 tauri build 检查项、.logs/desktop.log）已清理；当时的桌面化设计文档已随本轮文档清理删除（其仍有效的决策——NUOMI_HOME 工作区、SQLite 合一、单用户、目录结构收敛——全部以本文件「环境事实」章节为准）。AI 数字人壳重启 = 杀 Electron 进程后 `avatar/nuomi-avatar && npm start`
 - **连接器 env 支持（2026-10-04）**：ConnectorBody 增 `env: dict[str,str]`（键名校验 `^[A-Za-z_][A-Za-z0-9_]*$`，非法 400，空键过滤）；spec 透传 harness——octop-harness `aload_mcp_tools` 原生合并 stdio env（SDK 默认子集 + spec env，PROTECTED_ENV_KEYS 不覆盖），**sse/http 传输不注入 env**；前端连接器表单加 key-value 环境变量编辑（Form.List，卡片仅显示键名不显示值）；测试 `tests/test_connectors_api.py`（API CRUD + `load_mcp_tools` 集成验证 env 注入子进程），pytest 26 项全过 + ruff/mypy 干净；端到端实测：对话调 `read_env` 返回连接器 env 配置值 ✓
 - 后续：~~M3 Agent 生命周期 → M4 会话 → M5 插件 → M6 技能/连接器/知识库 → M7 AI 数字人前端 → M8 产品体验~~ **全部完成（2026-10-05）**，见路线图勾选；后续新功能一律插件化开发（2026-10-05 用户拍板）
 
@@ -226,7 +226,7 @@ SSE 事件协议（当前完整）：`token` / `reasoning` / `tool_call_chunk`�
   → 找不到 → 退回 `python3` 失败并等满 30s。所以**打包产物仅在「后端已在跑」时可用**。
 - **日常使用一律 `make start`**（壳启动自动拉起后端），不走 `.app`。
 - 若将来改主意要做独立 App，第一件事不是签名而是**自带 Python 运行时**（PyInstaller / embeddable
-  Python），细节见 `shells/nuomi-avatar/README.md` 的「打包与分发」5 条前置。
+  Python），细节见 `avatar/nuomi-avatar/README.md` 的「打包与分发」5 条前置。
 
 ## 审查发现与修正（2026-10-06，独立对抗性审查后）
 
@@ -276,9 +276,9 @@ SSE 事件协议（当前完整）：`token` / `reasoning` / `tool_call_chunk`�
 - **插件互斥 bug 修复**：切到无插件模型时所有模型插件全禁用（之前只在新模型有插件时才互斥）
 - **当前局限**：~~手写骨骼动画不自然（硬编码角度，无膝盖/手腕细节）~~ **已过时**：手写动画已删（2026-10-05"动作清单只以 VRMA 为准"），只播 VRMA 文件
 - **Mixamo FBX → VRMA 转换链路已走通（2026-10-04）**：
-  - 工具链：`shells/nuomi-avatar/tools/fbx2vrma/`（npm `fbx2vrma-converter` 1.0.2 + FBX2glTF 0.9.7 darwin-x64 二进制）。**arm64 机器无原生 FBX2glTF**（官方仅 darwin-x64），需 Rosetta 2（`softwareupdate --install-rosetta --agree-to-license` 已装）；npm install 用 `--ignore-scripts`（其 setup.sh postinstall 会失败）
+  - 工具链：`avatar/nuomi-avatar/tools/fbx2vrma/`（npm `fbx2vrma-converter` 1.0.2 + FBX2glTF 0.9.7 darwin-x64 二进制）。**arm64 机器无原生 FBX2glTF**（官方仅 darwin-x64），需 Rosetta 2（`softwareupdate --install-rosetta --agree-to-license` 已装）；npm install 用 `--ignore-scripts`（其 setup.sh postinstall 会失败）
   - 命令：`node node_modules/fbx2vrma-converter/fbx2vrma-converter.js -i <in.fbx> -o <out.vrma>`——自动 Mixamo→VRM humanoid 骨骼映射（mixamorig:* → hips/spine/chest...），默认 30fps
-  - 产物：`shells/nuomi-avatar/assets/animations/elbow_punch.vrma`（2.25s、22 骨骼、55 帧、113KB）
+  - 产物：`avatar/nuomi-avatar/assets/animations/elbow_punch.vrma`（2.25s、22 骨骼、55 帧、113KB）
   - 验证：`tools/fbx2vrma/verify-vrma.js`（Node 直跑，与壳 loadVRMA 同款加载链：GLTFLoader+VRMLoaderPlugin 载 VRM 模型 → VRMAnimationLoaderPlugin 载 .vrma → createVRMAnimationClip → 22 tracks 标准 humanoid 骨骼 + Head 采样四元数差异确认驱动）。**Node 环境需浏览器 polyfill：self/createImageBitmap/URL.createObjectURL/ProgressEvent**（脚本已内置，不渲染纹理）
 - **VRMA 播放链路已接入（2026-10-04，端到端验证通过）**：
   - 壳 `vrm-model-setup.js` 初始化时自动扫描 `assets/animations/*.vrma`，文件名去扩展名注册（await loadVRMA）
@@ -298,12 +298,12 @@ SSE 事件协议（当前完整）：`token` / `reasoning` / `tool_call_chunk`�
 - **物理删 2D 全部完成**：壳（libs/ 5 个 live2d/pixi 文件、layer1-liveness.js、unified-interaction-controller.js、model-interaction.js×2、index.html 5 个 script、app.js 全部 Live2D/GIF/情绪映射/Layer1 死代码、unified-model-adapter.js 删 Live2D 兼容层只留 VRM 直通、model-scanner.js 重写只留 _scanVRM）；后端（list_models 2D 扫描、_seed_builtin_models、generate_model_plugin/_generate_semantic_plugin 整块删除）；前端（AvatarModels/Plugins 文案+删 model_plugin 字段，build 通过）；资产（/Users/superman/Nuomi/models/2D 物理删、仓库 assets/models/2D git rm、6 个旧模型插件目录删）。**app.js 兜底 modelType 已改 'vrm'**
 - **表情映射关键事实（本次根因）**：壳端 three-vrm 的 ExpressionManager 键 = **VRM 1.0 标准名**（neutral/aa/ih/ou/ee/oh/blink/happy/angry/sad/relaxed/lookUp/lookDown/lookLeft/lookRight/blinkLeft/blinkRight）。three-vrm `_v0Import` 用 `v0v1PresetNameMap` 把 0.x preset 变体映射到标准名（a→aa、joy→happy、sorrow→sad、fun→relaxed、lookup→lookUp、blink_l→blinkLeft…），**非标准 preset（joy/sorrow/lookup）不在映射表则回退原始 name（Joy/…大写语义名）**。后端 `_vrm_expr_name()` 同步这张映射表（`_V0_TO_V1` + `_EXPRESSION_ALIASES` 兜底自定义名），保证后端 enum 与壳端 setValue 键一致——**这就是之前"表情看不出变化"的根因：后端返回 joy/sorrow/fun/lookup，壳 setValue 不命中**。壳适配器另加 `_exprByLower` 小写索引 + `_resolveExpression()`，大小写不敏感
 - **端到端实测（2026-10-04）**：对话"做个生气的表情" → tool_call `set_expression {"expression":"angry"}` → tool_result `{"motion":null,"expressions":["angry"],"label":"生气"}` → 壳日志 `AI 数字人动作: 生气 / AI 数字人表情: angry`（无"不可用"报错）；"向我挥手打招呼" → `do_action {"action":"wave_hand"}` → `{"motion":"wave_hand","label":"挥手打招呼"}` ✓
-- **重启规范（沿用）**：后端 pkill -9 杀干净再启（旧进程会占 8000 导致新进程 bind 失败）；**后端 health ok 后再单独启壳**（`cd shells/nuomi-avatar && nohup npm start > /tmp/nuomi-avatar-launch.log 2>&1 &`）；改壳代码后必须重启壳验证
+- **重启规范（沿用）**：后端 pkill -9 杀干净再启（旧进程会占 8000 导致新进程 bind 失败）；**后端 health ok 后再单独启壳**（`cd avatar/nuomi-avatar && nohup npm start > /tmp/nuomi-avatar-launch.log 2>&1 &`）；改壳代码后必须重启壳验证
 - **遗留**：~~表情观感幅度（权重 setValue 1.0/恢复 3s）用户已搁置，后续可调 playAvatarExpression 的 EXPRESSION_RECOVERY_MS 与权重~~ → **已废弃（2026-10-05 用户拍板）**：不同模型表情数据不同（有/无 binds），幅度调整无统一意义，保持现状；Git 提交本次全部改动
 
 ## AI 数字人改名 + 丢弃 myspy + 导入预览 + 3D 观感（2026-10-04 深夜）
 
-- **全量改名（桌宠→AI 数字人）**：后端 `app/domain/pet`→`avatar`、`app/infra/pet_events.py`→`avatar_events.py`（事件 type 改 `avatar_action`/`avatar_status`）、API `/api/pet/*`→`/api/avatar/*`；壳 `shells/myspy`→`shells/nuomi-avatar`（git mv，**myspy 完全丢弃**，自研壳）、IPC start-pet→start-avatar 等、petWindow→avatarWindow；前端 PetModels.tsx→AvatarModels.tsx、菜单「桌宠」→「AI 数字人」；插件 vrm-pet→vrm-avatar（目录 mv + DB UPDATE + plugin.yaml 手改）；docs/README/Makefile/AGENT.md 全量换词。54 文件 131 行变化，26 tests/ruff/mypy 全过，重启验证 `/api/avatar/models` 正常、壳从新目录加载 VRM 正常
+- **全量改名（桌宠→AI 数字人）**：后端 `app/domain/pet`→`avatar`、`app/infra/pet_events.py`→`avatar_events.py`（事件 type 改 `avatar_action`/`avatar_status`）、API `/api/pet/*`→`/api/avatar/*`；壳 `avatar/myspy`→`avatar/nuomi-avatar`（git mv，**myspy 完全丢弃**，自研壳）、IPC start-pet→start-avatar 等、petWindow→avatarWindow；前端 PetModels.tsx→AvatarModels.tsx、菜单「桌宠」→「AI 数字人」；插件 vrm-pet→vrm-avatar（目录 mv + DB UPDATE + plugin.yaml 手改）；docs/README/Makefile/AGENT.md 全量换词。54 文件 131 行变化，26 tests/ruff/mypy 全过，重启验证 `/api/avatar/models` 正常、壳从新目录加载 VRM 正常
 - **改名遗漏修复（2 处）**：壳 app.js SSE 订阅 `ev.type === 'pet_action'`/`'pet_status'` 未换 → 改 `avatar_action`/`avatar_status`（不改则预览广播壳收不到）；playPetActionPayload→playAvatarActionPayload
 - **3D 观感修复（#12）**：renderer.shadowMap(PCFSoft)+主光 castShadow(1024/bias -0.001)+暖色补光；vrmGroup 全 mesh castShadow/receiveShadow；渲染循环慢速自转（_orbitTheta += delta*0.1，鼠标悬停暂停、右键拖拽后暂停 8s）；右键旋转灵敏度 0.005→0.012。壳重启验证通过
 - **导入/预览（#14，后端 3 端点 + 前端 UI + 壳 watch）**：
@@ -397,7 +397,7 @@ SSE 事件协议（当前完整）：`token` / `reasoning` / `tool_call_chunk`�
 ## 壳自动拉起后端 uvicorn（2026-10-05）
 
 - **目标**：`make start` 一条命令全自动——壳启动时检测后端 `/api/health`，未就绪则 spawn uvicorn（此前需手动先 make backend）
-- **实现**：`shells/nuomi-avatar/main.js` 新增 `ensureBackend()`（app.whenReady 最先执行，`finally` 内再建窗口）：`http.get(origin + '/api/health')` 检测 → 未就绪 spawn `backend/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port <config.json llm.api_url 端口>`（cwd=backend，仓库根 .env 自动读入；stdio：stdout 丢弃防 uvicorn 访问日志刷屏、stderr 带 `[backend]` 前缀进壳日志；最多等 30s 健康检查）
+- **实现**：`avatar/nuomi-avatar/main.js` 新增 `ensureBackend()`（app.whenReady 最先执行，`finally` 内再建窗口）：`http.get(origin + '/api/health')` 检测 → 未就绪 spawn `backend/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port <config.json llm.api_url 端口>`（cwd=backend，仓库根 .env 自动读入；stdio：stdout 丢弃防 uvicorn 访问日志刷屏、stderr 带 `[backend]` 前缀进壳日志；最多等 30s 健康检查）
 - **设计决策**：退出壳后端**保持常驻**（与手动启动行为一致；浏览器/控制台不断连；下次启动检测到就绪直接复用不重复拉起）
 - **验证**：①后端停 → npm start → 日志「后端未就绪，自动拉起 uvicorn … 后端已由壳拉起并就绪」+ health 200 + 数字人/控制面板正常；②壳退出后端仍在 → 再次 npm start → 日志「后端已就绪」（未重复拉起）；③测试后环境已清理（uvicorn/electron 0 残留）
 
@@ -483,7 +483,7 @@ SSE 事件协议（当前完整）：`token` / `reasoning` / `tool_call_chunk`�
 - **背景**：L1（页头骨架 + 主色）完成后用户继续 L2。审计遗留三大粗糙源：网格三套（Row/Col、List grid、手写 grid）、空态三种（locale emptyText / 手写 Empty / Card 包 Empty）、卡片语汇不统一（size、手写加粗标题、硬编码色）
 - **L2 内容**：① EntityGrid 增强：新增 `loading` prop（居中 Spin），网格/加载/空态一体化（此前 P0-3 抽了 EntityGrid 但没有任何页面在用——历史欠账，本轮铺开）；② 网格三套归一：Experts/Knowledge/AvatarModels 的 Row/Col、Plugins/Skills/Connectors 的 List grid、Market 手写 grid div 全部换成 EntityGrid（auto-fill minmax 自适应 + 等高），并去掉卡片无谓的 List.Item 包裹；③ 空态统一全部走 EntityGrid emptyText / EmptyState；④ 卡片语汇统一：全部卡片 size="small"，AvatarModels 去掉手写 `<b>` 加粗标题、选中态 borderColor 硬编码 #f59e0b → var(--accent)，Experts 头像底色硬编码 → var(--accent)，Market 去掉 Modal 内重复 level-4 大标题（市场名合进描述）
 - **死代码清理（用户偏好当场清）**：index.css 的 `.nuomi-grid` 等高 hack 规则（List/Row 时代遗留，兼容两种挂载的 hack）全量删除——页面已无引用（EntityGrid CSS grid 天然等高）
-- **验证**：tsc 过、vitest 60 全绿（新增 EntityGrid loading 1 条）、npm run build 成功、后端 /api/health + /console/ 200、壳重启"糯米启动完成"；提交未包含 shells/nuomi-avatar/config.json（壳运行时写入 avatar_enabled 状态的现场改动，不混入）
+- **验证**：tsc 过、vitest 60 全绿（新增 EntityGrid loading 1 条）、npm run build 成功、后端 /api/health + /console/ 200、壳重启"糯米启动完成"；提交未包含 avatar/nuomi-avatar/config.json（壳运行时写入 avatar_enabled 状态的现场改动，不混入）
 - **遗留（L3 待做，等用户确认节奏）**：hover 反馈/间距节奏/字体层级/选中态微交互等细节工艺；antd Modal/Form/Table 等表单语汇未动；Chat 对话页未做视觉统一（全宽主界面，L1/L2 未触碰）
 
 ## 前端视觉优化 L3 细节工艺 + 全站文案优化（2026-10-06，commit 2312dd8，端到端验证通过）
@@ -496,7 +496,7 @@ SSE 事件协议（当前完整）：`token` / `reasoning` / `tool_call_chunk`�
   - **Plugins**：描述「工具由 LLM 按需调用」→「AI 按需调用」；页脚删 ctx.tool 术语
   - **Knowledge/Experts/Settings** 页头描述精简；Knowledge 空态「点击右上角」→「点「新建知识库」创建」
 - **保留（刻意不动的）**：Storage 表现层接入协议说明（开发者技术页，SSE/API 端点保留）；Settings Tab 内 Provider 字段名（配置标识，改名会破坏字段语义）；SkillHub/Mixamo 品牌名
-- **验证**：tsc 过、vitest 60 全绿、build 成功、后端 /api/health + /console/ 200、壳重启「糯米启动完成」；未提交 shells/nuomi-avatar/config.json（壳运行时状态写入 avatar_enabled，与代码无关）
+- **验证**：tsc 过、vitest 60 全绿、build 成功、后端 /api/health + /console/ 200、壳重启「糯米启动完成」；未提交 avatar/nuomi-avatar/config.json（壳运行时状态写入 avatar_enabled，与代码无关）
 - **经验**：MCP 术语中文化只动「用户可见文案层」（label/description/徽标），协议字段值（transport: stdio/sse/http）与 API 契约不动——展示层翻译、数据层不动，避免破坏前后端契约
 
 ## 管理页内容架构精简：卡片信息模型 + 页脚说明处置（2026-10-06，commit 7b0e6d9，端到端验证通过）
@@ -607,7 +607,7 @@ SSE 事件协议（当前完整）：`token` / `reasoning` / `tool_call_chunk`�
 - **背景**：用户计划入行制造业，产品下一步往「和制造业系统联动」走；拍板先做**个人入行作品集**（不改产品形态、不做 B 端变形），默认场景机加工（CNC）
 - **新增两个组件（backend/frontend/shell 核心代码零改动）**：
   - `scripts/gen_mes_data.py`：模拟 MES 数据生成器（CNC 场景，90 天，固定 seed 可复现，`--end-date` 可固定某次生成；schema 仿真实 MES：equipment/work_orders/work_reports/quality_events/equipment_events；注入异常：A-01 刀具磨损良率跳水（近 14~12 天）、B-02 冷却液高温报警（近 6 天）；排产量按设备节拍 65%~90% 约束，保证 OEE 性能率 <1 贴近真实）
-  - `connectors/mes_connector.py`：只读 MES 连接器（MCP server stdio，6 个只读工具：get_daily_production / get_yield_trend / get_alarms / get_equipment_status / get_work_orders / get_oee_summary；SQLite `mode=ro` 打开双保险；`MES_DB_PATH` env 可指向真实库，接真实系统只改这个）
+  - `connectors/mes/mes_connector.py`：只读 MES 连接器（MCP server stdio，6 个只读工具：get_daily_production / get_yield_trend / get_alarms / get_equipment_status / get_work_orders / get_oee_summary；SQLite `mode=ro` 打开双保险；`MES_DB_PATH` env 可指向真实库，接真实系统只改这个）
   - `scripts/check_mes_connector.py`：MCP 客户端验证脚本（拉起连接器逐工具调用）
 - **登记**：写 `数据根/connectors.json` 的 `mes` 连接器（stdio，command=backend/.venv/bin/python，args=连接器绝对路径）；重启后端生效（`/api/connectors` 可见）
 - **端到端实测（2026-10-07，SSE 对话挂载 connectors=["mes"]）**：
@@ -620,7 +620,7 @@ SSE 事件协议（当前完整）：`token` / `reasoning` / `tool_call_chunk`�
 
 - **背景**：用户拍板做「带护栏的写操作」作为作品集最深的展示——连接器不再只读，报工写入走 harness 原生 HITL（Human-In-The-Loop）人工审批
 - **连接器侧（新增写路径，读库不动）**：
-  - `mes_submit_work_report(work_order_id, quantity, operator, note)`：写**独立操作台账库** `connectors/data/mes_operations.db`（表 work_reports：work_order_id/quantity CHECK>0/operator/note/submitted_at），与只读 MES 快照物理隔离；读库仍 `mode=ro`（写不进去，双保险）
+  - `mes_submit_work_report(work_order_id, quantity, operator, note)`：写**独立操作台账库** `connectors/mes/data/mes_operations.db`（表 work_reports：work_order_id/quantity CHECK>0/operator/note/submitted_at），与只读 MES 快照物理隔离；读库仍 `mode=ro`（写不进去，双保险）
   - `mes_list_work_reports(limit=20)`：读回台账做闭环核验
 - **审批规则（harness 原生 ToolGuard）**：
   - `connectors/rules/dangerous_shell_commands.yaml`：单规则 `MES_WRITE_NEEDS_APPROVAL`（tools:[mes_submit_work_report], params:[work_order_id], severity HIGH, patterns:[".+"]）；**文件名是 harness 固定要求**（RuleBasedToolGuardian 只读 `dangerous_shell_commands.yaml`），自定义目录替代内置（不启用内置 shell 规则，行为最小化）

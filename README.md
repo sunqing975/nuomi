@@ -8,13 +8,13 @@
 |---|---|---|
 | 大脑（机制层） | [octop-harness](https://pypi.org/project/octop-harness/) | Agent 运行时（LangChain Deep Agents）：循环/工具/记忆/checkpointer/技能/MCP |
 | 业务层 | Python + FastAPI | 专家/会话/能力领域服务（自研）；插件三层能力（工具注册 / 事件订阅发布 / 聊天卡片 UI） |
-| 形象层（AI 数字人壳） | shells/nuomi-avatar/（自研，Electron + three.js + @pixiv/three-vrm） | 纯表现层：VRM 3D 渲染、情绪表情、流式字幕、工具执行状态；大脑全在 backend（详见 [shells/nuomi-avatar/README.md](shells/nuomi-avatar/README.md)） |
+| 形象层（AI 数字人壳） | avatar/nuomi-avatar/（自研，Electron + three.js + @pixiv/three-vrm） | 纯表现层：VRM 3D 渲染、情绪表情、流式字幕、工具执行状态；大脑全在 backend（详见 [avatar/nuomi-avatar/README.md](avatar/nuomi-avatar/README.md)） |
 | 存储 | SQLite | agents/threads/thread_messages 投影表（对齐 Octop schema，已建成） |
 
 > **AI 数字人模型版权说明**：VRM 模型资产在工作区（数据根）的 `models/3D/`，不入库。
 > 数据根默认 macOS `~/Library/Application Support/Nuomi`（其它平台 `~/.nuomi`），可用 `.env` 里的 `NUOMI_HOME` 覆盖。
 > 用户自导入模型按各自 License 使用（示例模型 6309260419351179234.vrm 为 CC0）；
-> 若需分发项目请使用宽松 License 的模型。动作资产为 Mixamo 导出的 `.vrma` 动画文件（`shells/nuomi-avatar/assets/animations/`）。
+> 若需分发项目请使用宽松 License 的模型。动作资产为 Mixamo 导出的 `.vrma` 动画文件（`avatar/nuomi-avatar/assets/animations/`）。
 
 ## 快速开始
 
@@ -23,7 +23,7 @@
 ```bash
 cd backend && uv sync && cd ..                    # 后端 venv → backend/.venv（uv 管理，无 pip）
 cd frontend && npm ci && cd ..                    # 控制台前端构建依赖
-cd shells/nuomi-avatar && npm install && cd ..    # AI 数字人壳（Electron）
+cd avatar/nuomi-avatar && npm install && cd ..    # AI 数字人壳（Electron）
 ```
 
 配置 LLM：把**仓库根**的 `.env.example` 复制为**仓库根**的 `.env`，填上 `LLM_API_KEY`：
@@ -101,16 +101,16 @@ cd backend && .venv/bin/python probe_harness.py   # harness 冒烟：DeepSeek �
 「糯米 × 制造业系统联动」作品集的演示链路，不依赖任何真实工厂系统：
 
 ```bash
-python3 scripts/gen_mes_data.py      # 生成模拟 CNC 机加工 MES 库（connectors/data/mes.db，90 天，固定 seed 可复现）
+python3 scripts/gen_mes_data.py      # 生成模拟 CNC 机加工 MES 库（connectors/mes/data/mes.db，90 天，固定 seed 可复现）
 backend/.venv/bin/python scripts/check_mes_connector.py   # MCP 客户端验证 6 个只读工具
 ```
 
 在控制台「连接器」页新建 `mes` 连接器：传输方式=**本地进程**，命令=`backend/.venv/bin/python`，
-参数=`connectors/mes_connector.py`；对话时挂载即可问「昨天 A 线生产情况」「设备状态 / 良率趋势」。
+参数=`connectors/mes/mes_connector.py`；对话时挂载即可问「昨天 A 线生产情况」「设备状态 / 良率趋势」。
 接真实工厂系统：把环境变量 `MES_DB_PATH` 指向真实 MES 只读数据库即可，连接器代码不动。
 
 **写路径 + 人工审批（HITL）**：连接器还带一个报工写工具（`mes_submit_work_report`，写入独立的
-`connectors/data/mes_operations.db` 台账库）。报工是高风险写操作，糯米侧默认**每次都要人工批准**才执行——
+`connectors/mes/data/mes_operations.db` 台账库）。报工是高风险写操作，糯米侧默认**每次都要人工批准**才执行——
 对话中让糯米报工会先弹审批卡片（显示工具与参数），点「批准」才落库，点「拒绝」则丢弃，全程有据可查：
 ```bash
 python3 scripts/e2e_hitl_test.py      # 端到端验证：触发审批 → 批准落库 → 拒绝不落库 → 只读回归
@@ -176,5 +176,5 @@ transport（FastAPI 路由） → domain（领域服务） → infra/harness（�
 本项目以 MIT 许可证开源，全文见仓库根的 [LICENSE](LICENSE)（Copyright (c) 2026 Nuomi contributors）。
 
 依赖与第三方资产按各自的 License 使用：octop-harness 为开源依赖；
-数字人壳自研（Electron / three.js / @pixiv/three-vrm 等运行时依赖见 `shells/nuomi-avatar/package.json`）；
+数字人壳自研（Electron / three.js / @pixiv/three-vrm 等运行时依赖见 `avatar/nuomi-avatar/package.json`）；
 VRM 模型与 `.vrma` 动作资产见上文「AI 数字人模型版权说明」。
