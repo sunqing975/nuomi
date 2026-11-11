@@ -21,6 +21,14 @@ async def health() -> dict:
     return {"status": "ok"}
 
 
+@router.get("/version")
+async def version() -> dict:
+    """应用版本（权威 = backend/pyproject.toml）。"""
+    from app.config import APP_VERSION
+
+    return {"version": APP_VERSION}
+
+
 @router.get("/session-token")
 async def session_token() -> dict:
     """本机 API token（同源客户端获取，用于 ``/api/*`` 写操作）。

@@ -14,7 +14,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.config import REPO_ROOT, settings
+from app.config import APP_VERSION, REPO_ROOT, settings
 from app.domain.agents.seed import default_system_prompt, default_welcome_message
 from app.domain.agents.service import agent_service
 from app.infra.harness.manager import manager
@@ -169,7 +169,7 @@ def _sync_plugins() -> None:
         plugin_service.sync()
 
 
-app = FastAPI(title="nuomi", version="0.13.0", lifespan=lifespan)
+app = FastAPI(title="nuomi", version=APP_VERSION, lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,

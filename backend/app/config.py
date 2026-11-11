@@ -16,6 +16,20 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
+def _app_version() -> str:
+    """版本号唯一权威 = backend/pyproject.toml 的 [project].version（tomllib 标准库读取）。"""
+    import tomllib
+
+    try:
+        data = tomllib.loads((REPO_ROOT / "backend" / "pyproject.toml").read_text("utf-8"))
+        return str(data["project"]["version"])
+    except Exception:
+        return "0.0.0"
+
+
+APP_VERSION = _app_version()
+
+
 def default_data_root() -> Path:
     """NUOMI_HOME 未设置时的默认值（macOS 惯例 Application Support）。"""
     if sys.platform == "darwin":

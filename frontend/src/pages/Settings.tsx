@@ -542,6 +542,11 @@ function PluginConfigTab({ pluginId, pluginName }: { pluginId: string; pluginNam
 
 export default function SettingsPage() {
   const [pluginTabs, setPluginTabs] = useState<Array<{ id: string; name: string }>>([]);
+  const [appVersion, setAppVersion] = useState('…');
+
+  useEffect(() => {
+    get<{ version: string }>('/version').then(v => setAppVersion(v.version)).catch(() => setAppVersion('?'));
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -583,7 +588,7 @@ export default function SettingsPage() {
   return (
     <PageLayout
       title="设置"
-      description="大模型服务、环境变量、遥测与插件自定义配置"
+      description={`版本 v${appVersion} · 大模型服务、环境变量、遥测与插件自定义配置`}
     >
       <Tabs defaultActiveKey="models" items={items} />
     </PageLayout>
