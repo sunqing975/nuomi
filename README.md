@@ -61,6 +61,7 @@ make web     # 调试控制台（vite dev，:5173，代理 /api → :8000）
 > 本机回环 API 有写操作鉴权：`/api/*` 的 `POST/PUT/PATCH/DELETE` 需带 `X-Nuomi-Token`，
 > 并校验 `Host`/`Origin` 白名单（见 `backend/app/infra/local_guard.py`）。
 > token 每次进程启动随机生成，同源客户端可从 `GET /api/session-token` 取；控制台与数字人壳已自动携带。
+> 例外：`/api/webhook/*` 免 token——它是外部系统发起对话的专用入口（纯本地部署）。
 
 ```bash
 TOKEN=$(curl -s http://127.0.0.1:8000/api/session-token | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')
@@ -73,6 +74,17 @@ curl -N -X POST http://127.0.0.1:8000/api/agents/{agent_id}/chat \
 
 事件流：`token`（流式文字）→ `reasoning`（深度思考）→ `tool_call_chunk`/`tool_result`（工具执行，带 `plugin_id`）→ `done`（完整回答）。
 插件事件层另发布 `conversation.started / conversation.completed`（供 TTS 播报等订阅）。
+
+### Webhook（外部系统发起对话）
+
+不用 token，指定专家异步跑一轮，立即返回 `thread_id`；结果在控制台该专家的会话列表可见
+（专家页 🔌 按钮有现成的调用示例）：
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/webhook/{agent_id} \
+  -H "Content-Type: application/json" \
+  -d '{"message": "日志报错了：……"}'
+```
 
 ### 验证
 
@@ -124,7 +136,11 @@ transport（FastAPI 路由） → domain（领域服务） → infra/harness（�
 - [x] 本机安全基线 + 质量门禁（守卫/脱敏/上传限流/`make check` 含前端测试，2026-10-06）
 - [x] 可移植性（`make start` 先建前端、`.env` 位置修正、LICENSE、个人路径清零，2026-10-06）
 - [x] 记忆可视化（对话页侧栏「我记住了你什么」抽屉：查看 + 遗忘，2026-10-06；P0-6 随导航三分组移入对话侧栏）
-- [x] 设计 token 单一来源 + 前端测试基建（vitest 60 例，2026-10-06）
+- [x] 设计 token 单一来源 + 前端测试基建（vitest 88 例，2026-11-11 更新计数）
+- [x] 知识库混合召回：BM25 关键词路 + 向量路加权融合 + 降级（2026-10-15）
+- [x] 对话可靠性：断连/刷新不丢轮次（半截落库标 interrupted）+ 控制台切页竞态修复（2026-10-17）
+- [x] 记忆策略收紧：只保留跨会话稳定事实（捕获/抽取/召回三层，2026-10-17）
+- [x] Webhook 对外入口：`POST /api/webhook/{agent_id}` 异步发起对话，专家页调用示例（2026-11-11）
 - [x] 控制台视觉统一 + 信息架构精简（2026-10-06）：卡片体系统一（知识库卡形态）、
       插件/技能市场独立页（页内按钮进入 + 面包屑返回）、专家运行状态真实性、
       导航三分组 + 可点击面包屑、文案精简（连接器不再暴露协议术语）、删存储页、
