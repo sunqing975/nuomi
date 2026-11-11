@@ -1,6 +1,6 @@
 [project]
 name = "nuomi-backend"
-version = "0.14.0"
+version = "0.14.1"
 description = "糯米 · 桌面 AI 人格工作台（octop-harness 为机制基础库，业务层自己写）"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"

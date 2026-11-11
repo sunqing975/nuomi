@@ -22,6 +22,7 @@
 
 ## 已确定的关键决策（v0.13）
 
+- **版本策略（2026-11-11 用户拍板）**：每次变更（含文档）都要升版本——**唯一权威 = `backend/pyproject.toml` 的 `[project].version`**（`config.py` tomllib 读取，`GET /api/version` 暴露，设置页展示）。feat 升 minor、fix/docs/chore 升 patch；GitHub 打 tag `v<x.y.z>`（`git tag vX.Y.Z && git push origin vX.Y.Z`，v0.14.0 为首个 tag）。
 - **推倒重来**：删除旧 backend/app（自研 engine 四层）、旧 frontend/（antd 界面）、Tauri 壳、sidecar、部署文件；git 历史保留（`87baddf` 起新基线）。
 - **不背历史数据**：新库起步，不写迁移脚本，旧会话/旧结构数据直接放弃。
 - **页面不抄 Octop**：保留 nuomi 自己的设计，AI 数字人主界面 = 角色（卡通人物），不是聊天列表。
