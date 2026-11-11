@@ -248,9 +248,12 @@ export default function ChatPage() {
   };
 
   const loadAgents = useCallback(async () => {
-    const rows = await get<Agent[]>('/agents');
+    // 只列启用的专家：停用 = 别再找我对话（后端对话端点也会拒绝），别让下拉框选到再报错
+    const rows = (await get<Agent[]>('/agents')).filter(a => a.enabled);
     setAgents(rows);
-    if (rows.length && !agentId) setAgentId(rows[0].agent_id);
+    // 当前选中的专家被停用了 → 切到第一个可用的（没有可用专家就清空）
+    if (agentId && !rows.some(a => a.agent_id === agentId)) setAgentId(rows[0]?.agent_id ?? '');
+    else if (rows.length && !agentId) setAgentId(rows[0].agent_id);
   }, [agentId]);
 
   useEffect(() => { loadAgents(); }, [loadAgents]);
